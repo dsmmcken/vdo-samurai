@@ -37,7 +37,7 @@ export function VideoElement({ stream, muted = false, className = '' }: VideoEle
       autoPlay
       playsInline
       muted={muted}
-      className={`w-full h-full object-cover ${className}`}
+      className={`${className}`}
     />
   );
 }

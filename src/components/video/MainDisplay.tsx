@@ -28,7 +28,7 @@ export function MainDisplay() {
 
   return (
     <div
-      className="relative aspect-video bg-[--color-dark-lighter] rounded-xl overflow-hidden"
+      className="relative h-full w-full bg-black"
       role="region"
       aria-label={`Main video display showing ${displayName}${isScreenShare ? ' screen share' : ''}`}
     >
@@ -50,19 +50,6 @@ export function MainDisplay() {
         </div>
       )}
 
-      {/* Display info overlay */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 sm:p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm sm:text-lg font-medium truncate">{displayName}</span>
-            {isScreenShare && (
-              <span className="bg-green-500/90 text-white text-xs px-2 py-0.5 sm:py-1 rounded-full flex-shrink-0">
-                Screen Share
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

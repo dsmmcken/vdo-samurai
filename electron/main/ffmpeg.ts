@@ -4,7 +4,7 @@ import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 // Configure fluent-ffmpeg to use the bundled ffmpeg binary
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -52,7 +52,7 @@ function sendProgressToRenderer(progress: number): void {
 }
 
 export async function getTempDir(): Promise<string> {
-  const dir = join(tmpdir(), 'vdo-samurai', uuidv4());
+  const dir = join(tmpdir(), 'vdo-samurai', randomUUID());
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }

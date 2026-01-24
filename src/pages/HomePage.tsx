@@ -26,6 +26,7 @@ function saveLastSession(roomCode: string, wasHost: boolean) {
 
 export function HomePage() {
   const [roomCode, setRoomCode] = useState('');
+  const [lastSession, setLastSession] = useState<LastSession | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const navigate = useNavigate();
@@ -33,11 +34,11 @@ export function HomePage() {
   const { requestStream } = useMediaStream();
   const { profile } = useUserStore();
 
-  const lastSession = getLastSession();
-
   useEffect(() => {
-    if (lastSession?.roomCode) {
-      setRoomCode(lastSession.roomCode);
+    const stored = getLastSession();
+    setLastSession(stored);
+    if (stored?.roomCode) {
+      setRoomCode(stored.roomCode);
     }
   }, []);
 

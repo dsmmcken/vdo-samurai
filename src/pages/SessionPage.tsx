@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
@@ -12,11 +12,26 @@ import { useFileTransfer } from '../hooks/useFileTransfer';
 import { signalingService } from '../services/p2p';
 import { MainDisplay } from '../components/video/MainDisplay';
 import { TileGrid } from '../components/video/TileGrid';
-import { JoinSession } from '../components/connection/JoinSession';
 import { RecordButton } from '../components/recording/RecordButton';
 import { CountdownOverlay } from '../components/recording/CountdownOverlay';
-import { OnAirIndicator } from '../components/recording/OnAirIndicator';
 import { TransferProgress } from '../components/recording/TransferProgress';
+import { useUserStore } from '../store/userStore';
+
+const LAST_SESSION_KEY = 'vdo-samurai-last-session';
+
+interface LastSession {
+  roomCode: string;
+  wasHost: boolean;
+}
+
+function getLastSession(): LastSession | null {
+  try {
+    const stored = localStorage.getItem(LAST_SESSION_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function SessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -24,8 +39,41 @@ export function SessionPage() {
   const { isConnected, isConnecting, isHost, localStream } = useSessionStore();
   const { localBlob } = useRecordingStore();
   const { isTransferring } = useTransferStore();
-  const { leaveSession } = useWebRTC();
+  const { createSession, joinSession, leaveSession } = useWebRTC();
   const { requestStream, stopStream, toggleVideo, toggleAudio } = useMediaStream();
+  const { profile } = useUserStore();
+  const reconnectAttemptedRef = useRef(false);
+
+  // Auto-reconnect on page refresh
+  useEffect(() => {
+    if (reconnectAttemptedRef.current) return;
+    if (isConnected || isConnecting || !sessionId || !profile?.displayName) return;
+
+    reconnectAttemptedRef.current = true;
+
+    const reconnect = async () => {
+      try {
+        const lastSession = getLastSession();
+        const wasHost = lastSession?.roomCode === sessionId && lastSession?.wasHost;
+
+        // Request media access first
+        await requestStream();
+
+        if (wasHost) {
+          // Rejoin as host
+          await createSession(profile.displayName, sessionId);
+        } else {
+          // Join as participant
+          await joinSession(sessionId, profile.displayName);
+        }
+      } catch (err) {
+        console.error('[SessionPage] Failed to reconnect:', err);
+        navigate('/');
+      }
+    };
+
+    reconnect();
+  }, [sessionId, isConnected, isConnecting, profile, requestStream, createSession, joinSession, navigate]);
 
   // Ensure local stream is available when connected
   useEffect(() => {
@@ -39,7 +87,7 @@ export function SessionPage() {
   }, [isConnected, localStream, requestStream]);
 
   const room = signalingService.getRoom();
-  const { isRecording, countdown, startTime, startRecording, stopRecording } = useRecording(
+  const { isRecording, countdown, startRecording, stopRecording } = useRecording(
     room ?? undefined
   );
   const { sendToAllPeers } = useFileTransfer(room ?? undefined);
@@ -81,15 +129,38 @@ export function SessionPage() {
     setAudioEnabled(enabled);
   };
 
-  // If not connected and we have a session ID, show join form
+  // If not connected and we have a session ID, auto-reconnect is in progress
   if (!isConnected && !isConnecting && sessionId) {
+    // Check if we have a profile - if not, redirect to home
+    if (!profile?.displayName) {
+      navigate('/');
+      return null;
+    }
+    // Show reconnecting state while auto-reconnect happens
     return (
-      <div className="max-w-md mx-auto py-8">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold mb-2">Join Session</h2>
-          <p className="text-gray-400">You've been invited to join a VDO Samurai session.</p>
+      <div className="h-full bg-black flex items-center justify-center">
+        <div className="text-center">
+          <svg
+            className="animate-spin h-12 w-12 mx-auto mb-4 text-[--color-primary]"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+              fill="none"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          <p className="text-gray-400">Reconnecting to session...</p>
         </div>
-        <JoinSession sessionId={sessionId} />
       </div>
     );
   }
@@ -97,7 +168,7 @@ export function SessionPage() {
   // Show loading while connecting
   if (isConnecting) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="h-full bg-black flex items-center justify-center">
         <div className="text-center">
           <svg
             className="animate-spin h-12 w-12 mx-auto mb-4 text-[--color-primary]"
@@ -125,35 +196,31 @@ export function SessionPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="h-full bg-black grid grid-rows-[1fr_auto] overflow-hidden">
       {/* Countdown overlay */}
       <CountdownOverlay countdown={countdown} />
-
-      {/* On-air indicator */}
-      <OnAirIndicator isRecording={isRecording} startTime={startTime} />
 
       {/* Transfer progress */}
       <TransferProgress />
 
-      {/* Main video display */}
-      <MainDisplay />
+      {/* Main video display with overlaid controls */}
+      <div className="min-h-0 p-2 sm:p-3 pb-1 flex items-center justify-center overflow-hidden">
+        <div className="relative w-full aspect-video max-h-full overflow-hidden rounded-lg">
+          <MainDisplay />
 
-      {/* Participant tiles */}
-      <TileGrid />
-
-      {/* Controls */}
-      <div
-        className="flex items-center justify-center gap-2 sm:gap-3 py-4 px-2 flex-wrap"
-        role="toolbar"
-        aria-label="Session controls"
-      >
+          {/* Controls - overlaid at bottom of video */}
+          <div
+            className="absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1 sm:gap-2"
+            role="toolbar"
+            aria-label="Session controls"
+          >
         {/* Video toggle */}
         <button
           onClick={handleToggleVideo}
-          className={`p-3 sm:p-4 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-dark] ${
+          className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
             videoEnabled
-              ? 'bg-gray-700 hover:bg-gray-600 text-white'
-              : 'bg-red-500 hover:bg-red-600 text-white'
+              ? 'bg-black/50 hover:bg-black/70 text-white'
+              : 'bg-red-500/70 hover:bg-red-500/90 text-white'
           }`}
           aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
           aria-pressed={videoEnabled}
@@ -195,10 +262,10 @@ export function SessionPage() {
         {/* Audio toggle */}
         <button
           onClick={handleToggleAudio}
-          className={`p-3 sm:p-4 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-dark] ${
+          className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
             audioEnabled
-              ? 'bg-gray-700 hover:bg-gray-600 text-white'
-              : 'bg-red-500 hover:bg-red-600 text-white'
+              ? 'bg-black/50 hover:bg-black/70 text-white'
+              : 'bg-red-500/70 hover:bg-red-500/90 text-white'
           }`}
           aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
           aria-pressed={audioEnabled}
@@ -260,7 +327,7 @@ export function SessionPage() {
         {/* Leave button */}
         <button
           onClick={handleLeave}
-          className="p-3 sm:p-4 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-dark]"
+          className="p-2 sm:p-3 rounded-full bg-red-500/70 hover:bg-red-500/90 text-white transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           aria-label="Leave session"
           title="Leave session"
         >
@@ -279,6 +346,13 @@ export function SessionPage() {
             />
           </svg>
         </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Participant tiles - fixed height row */}
+      <div className="px-2 sm:px-3 pb-2 sm:pb-3">
+        <TileGrid />
       </div>
     </div>
   );

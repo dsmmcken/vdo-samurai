@@ -29,10 +29,10 @@ export function ScreenShareButton() {
     <>
       <button
         onClick={handleClick}
-        className={`p-3 sm:p-4 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[--color-dark] ${
+        className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
           isSharing
-            ? 'bg-green-500 hover:bg-green-600 text-white'
-            : 'bg-gray-700 hover:bg-gray-600 text-white'
+            ? 'bg-green-500/70 hover:bg-green-500/90 text-white'
+            : 'bg-black/50 hover:bg-black/70 text-white'
         }`}
         aria-label={isSharing ? 'Stop sharing screen' : 'Share screen'}
         aria-pressed={isSharing}

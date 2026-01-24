@@ -1,10 +1,23 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useUserStore } from '../../store/userStore';
 import { useSessionStore } from '../../store/sessionStore';
+import { useRecordingStore } from '../../store/recordingStore';
 import { UserPopover } from '../user/UserPopover';
 import { ShareLink } from '../connection/ShareLink';
 import { ConnectionStatus } from '../connection/ConnectionStatus';
+
+function formatTime(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
 
 function getInitials(name: string): string {
   return name
@@ -20,17 +33,55 @@ const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 export function TitleBar() {
   const { profile } = useUserStore();
   const { sessionId, isConnected } = useSessionStore();
+  const { isRecording, startTime } = useRecordingStore();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [elapsed, setElapsed] = useState('00:00');
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const location = useLocation();
 
+  const updateElapsed = useCallback(() => {
+    if (startTime) {
+      setElapsed(formatTime(Date.now() - startTime));
+    }
+  }, [startTime]);
+
+  useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (!isRecording || !startTime) {
+      setElapsed('00:00');
+      return;
+    }
+
+    updateElapsed();
+    intervalRef.current = setInterval(updateElapsed, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isRecording, startTime, updateElapsed]);
+
   const isHomePage = location.pathname === '/';
+  const isSessionPage = location.pathname.startsWith('/session/');
   const initials = profile?.displayName ? getInitials(profile.displayName) : '';
   const showSessionControls = isConnected && sessionId;
 
+  const getBgClass = () => {
+    if (isHomePage) return 'bg-white border-b border-gray-200';
+    if (isSessionPage) return 'bg-black';
+    return 'bg-[--color-dark-lighter] border-b border-gray-700/50';
+  };
+
   return (
     <div
-      className={`h-9 ${isHomePage ? 'bg-white border-b border-gray-200' : 'bg-[--color-dark-lighter] border-b border-gray-700/50'} flex items-center justify-between pr-3 relative ${isMac ? 'pl-20' : 'pl-3'}`}
+      className={`h-9 ${getBgClass()} flex items-center justify-between pr-3 relative ${isMac ? 'pl-20' : 'pl-3'}`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       {/* Left side - App name/home link */}
@@ -52,6 +103,16 @@ export function TitleBar() {
           <>
             <ShareLink sessionId={sessionId} />
             <ConnectionStatus />
+            {isRecording && (
+              <div className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                </span>
+                <span>REC</span>
+                <span className="font-mono">{elapsed}</span>
+              </div>
+            )}
           </>
         )}
 

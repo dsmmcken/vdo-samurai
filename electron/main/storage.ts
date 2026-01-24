@@ -2,7 +2,7 @@ import { app, dialog, BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 // Get app data directory for persistent storage
 function getRecordingsDir(): string {
@@ -168,7 +168,7 @@ export async function saveTempFile(
   filename: string,
   buffer: ArrayBuffer
 ): Promise<string> {
-  const tempDir = join(getTempDir(), uuidv4());
+  const tempDir = join(getTempDir(), randomUUID());
   await ensureDir(tempDir);
 
   const filePath = join(tempDir, filename);
@@ -178,7 +178,7 @@ export async function saveTempFile(
 }
 
 export async function getTempPath(filename: string): Promise<string> {
-  const tempDir = join(getTempDir(), uuidv4());
+  const tempDir = join(getTempDir(), randomUUID());
   await ensureDir(tempDir);
   return join(tempDir, filename);
 }

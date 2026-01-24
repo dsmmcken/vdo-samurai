@@ -13,7 +13,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const isProfileComplete = useUserStore((state) => state.isProfileComplete());
 
   return (
-    <div className="min-h-screen bg-[--color-dark] text-white flex flex-col">
+    <div className="h-screen bg-[--color-dark] text-white grid grid-rows-[auto_1fr] overflow-hidden">
       <TitleBar />
       {!isProfileComplete ? (
         <ProfileSetup />
@@ -22,7 +22,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <SkipLink />
           <main
             id="main-content"
-            className="flex-1"
+            className="min-h-0 overflow-hidden"
             role="main"
           >
             <ErrorBoundary>{children}</ErrorBoundary>

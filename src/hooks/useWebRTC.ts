@@ -44,7 +44,6 @@ export function useWebRTC() {
           isHost: true
         });
 
-        toast.success('Session created', 'Share the link to invite participants');
 
         return newSessionId;
       } catch (err) {
