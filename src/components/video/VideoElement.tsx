@@ -32,12 +32,17 @@ export function VideoElement({ stream, muted = false, className = '' }: VideoEle
   }
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted={muted}
-      className={`${className}`}
-    />
+    <div
+      className={`overflow-hidden rounded-lg ${className}`}
+      style={{ anchorName: '--video-anchor' } as React.CSSProperties}
+    >
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={muted}
+        className="block w-full h-full"
+      />
+    </div>
   );
 }

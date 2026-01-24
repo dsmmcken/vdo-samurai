@@ -48,3 +48,26 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Video container with aspect ratio constraint using container queries */
+.video-container {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.video-cell {
+  aspect-ratio: 16 / 9;
+  width: 100cqw;
+  max-height: 100cqh;
+}
+
+/* When container is wider than 16:9, constrain by height instead */
+@container (aspect-ratio > 16/9) {
+  .video-cell {
+    width: auto;
+    height: 100cqh;
+    max-height: none;
+  }
+}

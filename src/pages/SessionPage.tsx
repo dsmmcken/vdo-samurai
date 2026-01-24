@@ -204,13 +204,11 @@ export function SessionPage() {
       <TransferProgress />
 
       {/* Main video display with overlaid controls */}
-      <div className="min-h-0 p-2 sm:p-3 pb-1 flex items-center justify-center overflow-hidden">
-        <div className="relative w-full aspect-video max-h-full overflow-hidden rounded-lg">
-          <MainDisplay />
-
-          {/* Controls - overlaid at bottom of video */}
+      <div className="min-h-0 p-2 sm:p-3 pb-1 video-container">
+        <MainDisplay>
+          {/* Controls - anchored to video via CSS anchor positioning */}
           <div
-            className="absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 flex items-center justify-center gap-1 sm:gap-2"
+            className="flex items-center justify-center gap-1 sm:gap-2"
             role="toolbar"
             aria-label="Session controls"
           >
@@ -347,7 +345,7 @@ export function SessionPage() {
           </svg>
         </button>
           </div>
-        </div>
+        </MainDisplay>
       </div>
 
       {/* Participant tiles - fixed height row */}
