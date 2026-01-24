@@ -58,51 +58,58 @@ export function UserPopover({ isOpen, onClose, anchorRef }: UserPopoverProps) {
     setIsEditing(false);
   };
 
+  const handleClearData = () => {
+    if (window.confirm('This will clear all app data and reset to a fresh state. Continue?')) {
+      localStorage.clear();
+      window.location.reload();
+    }
+  };
+
   if (!isOpen || !profile) return null;
 
   return (
     <div
       ref={popoverRef}
-      className="absolute right-2 top-full mt-1 w-72 bg-[--color-dark-lighter] border border-gray-700 rounded-lg shadow-xl z-50"
+      className="absolute right-2 top-full mt-1 w-72 border border-white/30 rounded-xl bg-white/70 backdrop-blur-xl shadow-lg z-50"
     >
       <div className="p-4">
         {isEditing ? (
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 Display Name
               </label>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-3 py-1.5 bg-[--color-dark] border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[--color-primary]"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg bg-white/50 text-sm text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
                 placeholder="How others see you"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
                 Full Name
               </label>
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-3 py-1.5 bg-[--color-dark] border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[--color-primary]"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg bg-white/50 text-sm text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
                 placeholder="For recordings"
               />
             </div>
             <div className="flex gap-2 pt-1">
               <button
                 onClick={handleCancel}
-                className="flex-1 px-3 py-1.5 text-sm text-gray-300 hover:text-white border border-gray-600 rounded hover:border-gray-500 transition-colors"
+                className="flex-1 px-3 py-1.5 text-sm text-gray-700 hover:text-black border border-gray-300 rounded-lg hover:bg-white/30 cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={!displayName.trim() || !fullName.trim()}
-                className="flex-1 px-3 py-1.5 text-sm bg-[--color-primary] hover:bg-[--color-primary]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition-colors"
+                className="flex-1 px-3 py-1.5 text-sm bg-black hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer transition-colors"
               >
                 Save
               </button>
@@ -111,16 +118,16 @@ export function UserPopover({ isOpen, onClose, anchorRef }: UserPopoverProps) {
         ) : (
           <div className="space-y-3">
             <div>
-              <div className="text-xs font-medium text-gray-400 mb-0.5">Display Name</div>
-              <div className="text-white">{profile.displayName}</div>
+              <div className="text-xs font-medium text-gray-600 mb-0.5">Display Name</div>
+              <div className="text-black font-medium">{profile.displayName}</div>
             </div>
             <div>
-              <div className="text-xs font-medium text-gray-400 mb-0.5">Full Name</div>
-              <div className="text-white">{profile.fullName}</div>
+              <div className="text-xs font-medium text-gray-600 mb-0.5">Full Name</div>
+              <div className="text-black font-medium">{profile.fullName}</div>
             </div>
             <button
               onClick={() => setIsEditing(true)}
-              className="w-full px-3 py-1.5 text-sm text-gray-300 hover:text-white border border-gray-600 rounded hover:border-gray-500 transition-colors flex items-center justify-center gap-2"
+              className="w-full px-3 py-1.5 text-sm text-gray-700 hover:text-black border border-gray-300 rounded-lg hover:bg-white/30 cursor-pointer transition-colors flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -129,6 +136,15 @@ export function UserPopover({ isOpen, onClose, anchorRef }: UserPopoverProps) {
             </button>
           </div>
         )}
+      </div>
+
+      <div className="border-t border-gray-300 p-2">
+        <button
+          onClick={handleClearData}
+          className="w-full px-3 py-1.5 text-xs text-gray-500 hover:text-red-600 cursor-pointer transition-colors"
+        >
+          Clear all data (debug)
+        </button>
       </div>
     </div>
   );

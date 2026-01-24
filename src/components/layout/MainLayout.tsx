@@ -22,7 +22,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <SkipLink />
           <main
             id="main-content"
-            className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-4"
+            className="flex-1"
             role="main"
           >
             <ErrorBoundary>{children}</ErrorBoundary>

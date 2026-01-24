@@ -19,23 +19,26 @@ export function ProfileSetup() {
   const isValid = displayName.trim() && fullName.trim();
 
   return (
-    <div className="flex-1 flex items-center justify-center p-4">
+    <div
+      className="flex-1 flex items-center justify-center p-4 min-h-screen bg-cover bg-center bg-no-repeat bg-fixed"
+      style={{ backgroundImage: 'url(/samurai-bg.jpg)' }}
+    >
       <div className="w-full max-w-md">
-        <div className="bg-[--color-dark-lighter] rounded-xl p-8 shadow-xl border border-gray-700">
+        <div className="flex flex-col items-center p-8 border border-white/30 rounded-xl bg-white/20 backdrop-blur-xl shadow-lg">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold mb-2">
-              Welcome to <span className="text-[--color-primary]">VDO</span> Samurai
+            <h1 className="text-2xl font-bold text-black mb-2">
+              Welcome to VDO Samurai
             </h1>
-            <p className="text-gray-400">
+            <p className="text-gray-600">
               Set up your profile to get started
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6 w-full">
             <div>
               <label
                 htmlFor="display-name"
-                className="block text-sm font-medium text-gray-300 mb-2"
+                className="block text-sm font-medium text-gray-700 mb-2"
               >
                 Display Name
               </label>
@@ -45,7 +48,7 @@ export function ProfileSetup() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="How others will see you"
-                className="w-full px-4 py-3 bg-[--color-dark] border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[--color-primary] transition-colors"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
                 autoFocus
                 required
               />
@@ -57,7 +60,7 @@ export function ProfileSetup() {
             <div>
               <label
                 htmlFor="full-name"
-                className="block text-sm font-medium text-gray-300 mb-2"
+                className="block text-sm font-medium text-gray-700 mb-2"
               >
                 Full Name
               </label>
@@ -67,7 +70,7 @@ export function ProfileSetup() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Your full name"
-                className="w-full px-4 py-3 bg-[--color-dark] border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[--color-primary] transition-colors"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
                 required
               />
               <p className="mt-1.5 text-xs text-gray-500">
@@ -78,11 +81,12 @@ export function ProfileSetup() {
             <button
               type="submit"
               disabled={!isValid}
-              className="w-full px-4 py-3 bg-[--color-primary] hover:bg-[--color-primary]/80 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors mt-2"
+              className="w-full px-4 py-3 bg-black text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors mt-2"
             >
               Continue
             </button>
           </form>
+
         </div>
       </div>
     </div>

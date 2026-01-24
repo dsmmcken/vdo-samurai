@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { useSessionStore } from '../store/sessionStore';
+import { generateRoomCode } from '../utils/roomCode';
 import { usePeerStore } from '../store/peerStore';
 import { signalingService, peerManager } from '../services/p2p';
 import { saveConnection } from '../services/storage/connectionHistory';
@@ -23,8 +23,8 @@ export function useWebRTC() {
   const initializedRef = useRef(false);
 
   const createSession = useCallback(
-    async (name: string) => {
-      const newSessionId = uuidv4();
+    async (name: string, existingSessionId?: string) => {
+      const newSessionId = existingSessionId || generateRoomCode();
       setIsConnecting(true);
       setError(null);
 

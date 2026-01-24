@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useUserStore } from '../../store/userStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { UserPopover } from '../user/UserPopover';
@@ -22,19 +22,21 @@ export function TitleBar() {
   const { sessionId, isConnected } = useSessionStore();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const location = useLocation();
 
+  const isHomePage = location.pathname === '/';
   const initials = profile?.displayName ? getInitials(profile.displayName) : '';
   const showSessionControls = isConnected && sessionId;
 
   return (
     <div
-      className={`h-9 bg-[--color-dark-lighter] border-b border-gray-700/50 flex items-center justify-between pr-3 relative ${isMac ? 'pl-20' : 'pl-3'}`}
+      className={`h-9 ${isHomePage ? 'bg-white border-b border-gray-200' : 'bg-[--color-dark-lighter] border-b border-gray-700/50'} flex items-center justify-between pr-3 relative ${isMac ? 'pl-20' : 'pl-3'}`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       {/* Left side - App name/home link */}
       <Link
         to="/"
-        className="text-sm font-bold text-[--color-primary] hover:text-[--color-primary]/80 transition-colors"
+        className={`text-sm font-bold ${isHomePage ? 'text-black hover:text-gray-700' : 'text-[--color-primary] hover:text-[--color-primary]/80'} transition-colors`}
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         aria-label="VDO Samurai - Go to home page"
       >
@@ -57,15 +59,15 @@ export function TitleBar() {
           <button
             ref={buttonRef}
             onClick={() => setIsPopoverOpen(!isPopoverOpen)}
-            className="w-7 h-7 rounded-full bg-[--color-primary]/20 hover:bg-[--color-primary]/30 flex items-center justify-center transition-colors"
+            className={`w-7 h-7 rounded-full ${isHomePage ? 'bg-gray-200 hover:bg-gray-300' : 'bg-[--color-primary]/20 hover:bg-[--color-primary]/30'} flex items-center justify-center transition-colors`}
             aria-label="User menu"
             aria-expanded={isPopoverOpen}
           >
             {initials ? (
-              <span className="text-xs font-medium text-[--color-primary]">{initials}</span>
+              <span className={`text-xs font-medium ${isHomePage ? 'text-black' : 'text-[--color-primary]'}`}>{initials}</span>
             ) : (
               <svg
-                className="w-4 h-4 text-[--color-primary]"
+                className={`w-4 h-4 ${isHomePage ? 'text-black' : 'text-[--color-primary]'}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
