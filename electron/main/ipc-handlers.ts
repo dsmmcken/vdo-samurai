@@ -1,0 +1,146 @@
+import { ipcMain, desktopCapturer } from 'electron';
+import {
+  compositeVideos,
+  cancelCurrentProcess,
+  trimVideo,
+  concatenateVideos,
+  getVideoInfo,
+  type CompositeOptions
+} from './ffmpeg';
+import {
+  saveChunk,
+  getChunks,
+  finalizeRecording,
+  deleteRecording,
+  listRecordings,
+  saveTempFile,
+  getTempPath,
+  readFile,
+  showSaveDialog,
+  saveFile
+} from './storage';
+
+export function registerIpcHandlers(): void {
+  // Screen capture handlers
+  ipcMain.handle('screen-capture:getSources', async () => {
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 }
+      });
+      return {
+        success: true,
+        sources: sources.map((source) => ({
+          id: source.id,
+          name: source.name,
+          thumbnail: source.thumbnail.toDataURL(),
+          displayId: source.display_id
+        }))
+      };
+    } catch (err) {
+      console.error('[IPC] screen-capture:getSources error:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to get screen sources'
+      };
+    }
+  });
+  // FFmpeg handlers
+  ipcMain.handle(
+    'ffmpeg:composite',
+    async (_event, options: CompositeOptions) => {
+      return compositeVideos(options);
+    }
+  );
+
+  ipcMain.handle('ffmpeg:cancel', () => {
+    return cancelCurrentProcess();
+  });
+
+  ipcMain.handle(
+    'ffmpeg:trim',
+    async (
+      _event,
+      inputPath: string,
+      outputPath: string,
+      startTime: number,
+      duration: number,
+      format: 'mp4' | 'webm'
+    ) => {
+      return trimVideo(inputPath, outputPath, startTime, duration, format);
+    }
+  );
+
+  ipcMain.handle(
+    'ffmpeg:concatenate',
+    async (_event, inputFiles: string[], outputPath: string, format: 'mp4' | 'webm') => {
+      return concatenateVideos(inputFiles, outputPath, format);
+    }
+  );
+
+  ipcMain.handle('ffmpeg:getVideoInfo', async (_event, inputPath: string) => {
+    return getVideoInfo(inputPath);
+  });
+
+  // Storage handlers
+  ipcMain.handle(
+    'storage:saveChunk',
+    async (_event, recordingId: string, chunk: unknown, index: number) => {
+      console.log(`[IPC] storage:saveChunk called for ${recordingId}, chunk ${index}`);
+      try {
+        const result = await saveChunk(recordingId, chunk as ArrayBuffer, index);
+        return result;
+      } catch (err) {
+        console.error('[IPC] storage:saveChunk error:', err);
+        return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      }
+    }
+  );
+
+  ipcMain.handle('storage:getChunks', async (_event, recordingId: string) => {
+    return getChunks(recordingId);
+  });
+
+  ipcMain.handle('storage:finalize', async (_event, recordingId: string) => {
+    return finalizeRecording(recordingId);
+  });
+
+  ipcMain.handle('storage:deleteRecording', async (_event, recordingId: string) => {
+    return deleteRecording(recordingId);
+  });
+
+  ipcMain.handle('storage:listRecordings', async () => {
+    return listRecordings();
+  });
+
+  ipcMain.handle(
+    'storage:saveTempFile',
+    async (_event, filename: string, buffer: ArrayBuffer) => {
+      return saveTempFile(filename, buffer);
+    }
+  );
+
+  ipcMain.handle('storage:getTempPath', async (_event, filename: string) => {
+    return getTempPath(filename);
+  });
+
+  ipcMain.handle('storage:readFile', async (_event, filePath: string) => {
+    return readFile(filePath);
+  });
+
+  ipcMain.handle('storage:showSaveDialog', async (_event, defaultName: string) => {
+    return showSaveDialog(defaultName);
+  });
+
+  ipcMain.handle(
+    'storage:saveFile',
+    async (_event, filePath: string, buffer: ArrayBuffer) => {
+      return saveFile(filePath, buffer);
+    }
+  );
+
+  // App handlers
+  ipcMain.handle('app:getVersion', () => {
+    return process.env.npm_package_version || '1.0.0';
+  });
+}

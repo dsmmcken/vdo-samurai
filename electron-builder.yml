@@ -1,0 +1,90 @@
+appId: com.vdosamurai.app
+productName: VDO Samurai
+copyright: Copyright © 2024 VDO Samurai
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{thumbs.db,Thumbs.db,desktop.ini,.eslintrc,.eslintrc.js,.eslintignore}"
+  - "!**/{node_modules,src,public,electron}"
+  - "!**/*.{ts,tsx,map,md}"
+  - "!{.prettierrc,.prettierignore,tsconfig*.json,vite.config.ts,electron.vite.config.ts}"
+
+extraResources:
+  - from: node_modules/@ffmpeg-installer
+    to: ffmpeg
+    filter:
+      - "**/*"
+
+asarUnpack:
+  - node_modules/@ffmpeg-installer/**/*
+
+mac:
+  category: public.app-category.video
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  darkModeSupport: true
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  category: Video
+  icon: build/icons
+
+publish:
+  provider: github
+  releaseType: draft
