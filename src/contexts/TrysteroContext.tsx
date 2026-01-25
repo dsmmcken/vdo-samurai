@@ -7,8 +7,29 @@ import {
   useRef,
   type ReactNode
 } from 'react';
-import { joinRoom, selfId, type Room } from 'trystero/mqtt';
+import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/mqtt';
 import { P2P_CONFIG, RTC_CONFIG } from '../services/p2p/config';
+
+// Debug: Log MQTT socket status
+const logMqttStatus = () => {
+  const sockets = getRelaySockets();
+  console.log('[TrysteroProvider] MQTT sockets:', Object.entries(sockets).map(([key, socket]) => ({
+    key,
+    readyState: socket?.readyState,
+    readyStateText: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][socket?.readyState ?? -1] || 'UNKNOWN'
+  })));
+};
+
+// Debug: Compute topic hash for verification
+const computeTopicHash = async (appId: string, roomId: string) => {
+  const topicPath = `Trystero@${appId}@${roomId}`;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(topicPath);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return { topicPath, hashHex };
+};
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
 
@@ -243,6 +264,17 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     // Check for existing peers
     const existingPeers = newRoom.getPeers();
     console.log('[TrysteroProvider] Existing peers in room:', existingPeers);
+
+    // Periodic debug logging
+    const debugInterval = setInterval(() => {
+      const peers = newRoom.getPeers();
+      console.log('[TrysteroProvider] DEBUG - Peers check:', {
+        peerCount: Object.keys(peers).length,
+        peers: Object.keys(peers),
+        selfId
+      });
+      logMqttStatus();
+    }, 10000);
   }, [addPeer, updatePeer, removePeer, setActiveScreenSharePeerId, setFocusedPeerId]);
 
   const joinSession = useCallback((newSessionId: string): Room => {
@@ -255,7 +287,23 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     }
 
     console.log('[TrysteroProvider] Joining room:', newSessionId, 'selfId:', selfId);
+    console.log('[TrysteroProvider] Config:', { appId: P2P_CONFIG.appId, roomId: newSessionId });
+
+    // Compute and log the expected topic hash for debugging
+    computeTopicHash(P2P_CONFIG.appId, newSessionId).then(({ topicPath, hashHex }) => {
+      console.log('[TrysteroProvider] Expected MQTT topic:', {
+        plaintext: topicPath,
+        sha1Hash: hashHex,
+        selfId: selfId
+      });
+    });
+
     const newRoom = joinRoom({ appId: P2P_CONFIG.appId, rtcConfig: RTC_CONFIG }, newSessionId);
+
+    // Log MQTT status after a short delay to allow connections
+    setTimeout(() => {
+      logMqttStatus();
+    }, 2000);
 
     roomRef.current = newRoom;
     setRoom(newRoom);
