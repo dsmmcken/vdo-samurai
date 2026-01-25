@@ -117,3 +117,25 @@ body {
     max-height: none;
   }
 }
+
+/* Animated diagonal stripes for transferring clips */
+@keyframes stripe-animate {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 0;
+  }
+}
+
+.clip-transferring {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(255, 255, 255, 0.15) 10px,
+    rgba(255, 255, 255, 0.15) 20px
+  );
+  background-size: 40px 40px;
+  animation: stripe-animate 1s linear infinite;
+}
