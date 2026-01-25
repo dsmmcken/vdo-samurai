@@ -1,5 +1,11 @@
 export const P2P_CONFIG = {
-  appId: 'vdo-samurai-v1'
+  appId: 'vdo-samurai-v1',
+  relayUrls: [
+    'wss://tracker.openwebtorrent.com:443/announce',
+    'wss://tracker.magnetoo.io:443/announce',
+    'wss://tracker.files.fm:7073/announce',
+    'wss://spacetradersapi-chatbox.herokuapp.com:443/announce'
+  ]
 };
 
 export const RTC_CONFIG: RTCConfiguration = {

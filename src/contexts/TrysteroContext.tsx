@@ -307,7 +307,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       });
     });
 
-    const newRoom = joinRoom({ appId: P2P_CONFIG.appId, rtcConfig: RTC_CONFIG }, newSessionId);
+    const newRoom = joinRoom({ appId: P2P_CONFIG.appId, relayUrls: P2P_CONFIG.relayUrls, rtcConfig: RTC_CONFIG }, newSessionId);
 
     // Log MQTT status after a short delay to allow connections
     setTimeout(() => {
