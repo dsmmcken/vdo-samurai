@@ -1,4 +1,4 @@
-import { joinRoom, type Room } from 'trystero/nostr';
+import { joinRoom, type Room } from 'trystero/mqtt';
 import { P2P_CONFIG, RTC_CONFIG } from './config';
 
 export class SignalingService {
@@ -13,11 +13,10 @@ export class SignalingService {
     this.sessionId = sessionId;
     console.log('[SignalingService] Joining room:', {
       appId: P2P_CONFIG.appId,
-      sessionId,
-      relayUrls: P2P_CONFIG.relayUrls
+      sessionId
     });
     this.room = joinRoom(
-      { appId: P2P_CONFIG.appId, relayUrls: P2P_CONFIG.relayUrls, rtcConfig: RTC_CONFIG },
+      { appId: P2P_CONFIG.appId, rtcConfig: RTC_CONFIG },
       sessionId
     );
 

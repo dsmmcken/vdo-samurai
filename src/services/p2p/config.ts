@@ -1,10 +1,5 @@
 export const P2P_CONFIG = {
-  appId: 'vdo-samurai-v1',
-  relayUrls: [
-    'wss://nostr.mutinywallet.com',
-    'wss://relay.nostr.band',
-    'wss://nostr-pub.wellorder.net'
-  ]
+  appId: 'vdo-samurai-v1'
 };
 
 export const RTC_CONFIG: RTCConfiguration = {
