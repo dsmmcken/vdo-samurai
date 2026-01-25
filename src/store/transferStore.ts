@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+export type RecordingType = 'camera' | 'screen';
+
 export interface Transfer {
   id: string;
   peerId: string;
@@ -17,6 +19,7 @@ export interface ReceivedRecording {
   peerName: string;
   blob: Blob;
   receivedAt: number;
+  type: RecordingType;
 }
 
 interface TransferState {

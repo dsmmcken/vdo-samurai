@@ -14,7 +14,7 @@ export interface QueuedTransfer {
 }
 
 type TransferUpdateCallback = (transfers: QueuedTransfer[]) => void;
-type TransferCompleteCallback = (peerId: string, blob: Blob) => void;
+type TransferCompleteCallback = (peerId: string, blob: Blob, filename: string) => void;
 
 export class TransferService {
   private protocols: Map<string, FileTransferProtocol> = new Map();
@@ -39,9 +39,9 @@ export class TransferService {
         this.updateTransfer(transferId, { progress });
       });
 
-      protocol.onComplete((transferId, blob) => {
+      protocol.onComplete((transferId, blob, filename) => {
         this.updateTransfer(transferId, { status: 'complete', progress: 1 });
-        this.onReceiveCallback?.(peerId, blob);
+        this.onReceiveCallback?.(peerId, blob, filename);
       });
 
       protocol.onError((transferId, error) => {

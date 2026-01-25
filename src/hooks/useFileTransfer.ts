@@ -1,8 +1,16 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { type Room } from 'trystero/torrent';
-import { useTransferStore, type Transfer } from '../store/transferStore';
+import { useTransferStore, type Transfer, type RecordingType } from '../store/transferStore';
 import { usePeerStore } from '../store/peerStore';
 import { transferService, type QueuedTransfer } from '../services/transfer';
+
+// Parse recording type from filename (e.g., "camera-recording-123.webm" or "screen-recording-123.webm")
+function parseRecordingType(filename: string): RecordingType {
+  if (filename.includes('screen-')) {
+    return 'screen';
+  }
+  return 'camera';
+}
 
 export function useFileTransfer(room?: Room) {
   const { transfers, setTransfers, addReceivedRecording, isTransferring } = useTransferStore();
@@ -43,13 +51,15 @@ export function useFileTransfer(room?: Room) {
         setTransfers(transferList);
       });
 
-      transferService.onReceive((peerId, blob) => {
+      transferService.onReceive((peerId, blob, filename) => {
         const peer = peers.find((p) => p.id === peerId);
+        const recordingType = parseRecordingType(filename || '');
         addReceivedRecording({
           peerId,
           peerName: peer?.name || `User-${peerId.slice(0, 4)}`,
           blob,
-          receivedAt: Date.now()
+          receivedAt: Date.now(),
+          type: recordingType
         });
       });
     }
@@ -83,10 +93,27 @@ export function useFileTransfer(room?: Room) {
     [peers]
   );
 
+  // Send multiple recordings (camera and/or screen) to all peers
+  const sendMultipleToAllPeers = useCallback(
+    (recordings: Array<{ blob: Blob; type: RecordingType }>) => {
+      const ids: string[] = [];
+      for (const peer of peers) {
+        for (const recording of recordings) {
+          const filename = `${recording.type}-recording-${Date.now()}.webm`;
+          const id = transferService.enqueue(peer.id, peer.name, recording.blob, filename);
+          ids.push(id);
+        }
+      }
+      return ids;
+    },
+    [peers]
+  );
+
   return {
     transfers,
     sendRecording,
     sendToAllPeers,
+    sendMultipleToAllPeers,
     isTransferring: isTransferring(),
     clearCompleted: () => transferService.clearCompleted()
   };

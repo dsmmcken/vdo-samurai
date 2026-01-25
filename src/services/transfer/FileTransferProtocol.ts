@@ -27,7 +27,7 @@ export interface AckMessage {
 }
 
 type ProgressCallback = (transferId: string, progress: number) => void;
-type CompleteCallback = (transferId: string, blob: Blob) => void;
+type CompleteCallback = (transferId: string, blob: Blob, filename: string) => void;
 type ErrorCallback = (transferId: string, error: string) => void;
 
 export class FileTransferProtocol {
@@ -134,7 +134,7 @@ export class FileTransferProtocol {
     if (hash !== transfer.metadata.hash) {
       this.onErrorCallback?.(transferId, 'Hash mismatch - transfer corrupted');
     } else {
-      this.onCompleteCallback?.(transferId, blob);
+      this.onCompleteCallback?.(transferId, blob, transfer.metadata.filename);
     }
 
     this.pendingTransfers.delete(transferId);
