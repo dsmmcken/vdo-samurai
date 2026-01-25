@@ -30,12 +30,14 @@ export function Timeline({ onPlayheadDragStart, onPlayheadDragEnd }: TimelinePro
   const { transfers, receivedRecordings } = useTransferStore();
 
   // Fit timeline to container width on first load
+  // This effect intentionally sets state once on initialization
   useEffect(() => {
     if (hasInitializedZoom || totalDuration <= 0 || !timelineRef.current) return;
 
     const containerWidth = timelineRef.current.clientWidth - 20; // Account for padding
     if (containerWidth > 0) {
       setZoomToFit(containerWidth);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHasInitializedZoom(true);
     }
   }, [totalDuration, hasInitializedZoom, setZoomToFit]);

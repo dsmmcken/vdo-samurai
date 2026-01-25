@@ -61,28 +61,27 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
   const { inputFiles, outputPath, format, layout } = options;
   const formatConfig = COMPOSITE_CONFIG.OUTPUT_FORMATS[format];
 
-  return new Promise(async (resolve) => {
-    try {
-      if (inputFiles.length === 0) {
-        resolve({ success: false, error: 'No input files provided' });
-        return;
-      }
+  try {
+    if (inputFiles.length === 0) {
+      return { success: false, error: 'No input files provided' };
+    }
 
-      if (inputFiles.length === 1) {
-        // Single file - probe first to check for audio
-        const hasAudio = await new Promise<boolean>((res) => {
-          ffmpeg.ffprobe(inputFiles[0], (err, metadata) => {
-            if (err) {
-              console.error('[FFmpeg] Probe error:', err);
-              res(false);
-              return;
-            }
-            res(metadata.streams.some((s) => s.codec_type === 'audio'));
-          });
+    if (inputFiles.length === 1) {
+      // Single file - probe first to check for audio
+      const hasAudio = await new Promise<boolean>((res) => {
+        ffmpeg.ffprobe(inputFiles[0], (err, metadata) => {
+          if (err) {
+            console.error('[FFmpeg] Probe error:', err);
+            res(false);
+            return;
+          }
+          res(metadata.streams.some((s) => s.codec_type === 'audio'));
         });
+      });
 
-        console.log('[FFmpeg] Single file, hasAudio:', hasAudio);
+      console.log('[FFmpeg] Single file, hasAudio:', hasAudio);
 
+      return new Promise((resolve) => {
         let stderrLog = '';
         let cmd = ffmpeg(inputFiles[0]).videoCodec(formatConfig.videoCodec);
 
@@ -122,52 +121,54 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
             resolve({ success: false, error: `${err.message}\n${stderrLog}` });
           })
           .save(outputPath);
-      } else {
-        // Multiple files - create layout
-        // First, probe all files to check for audio streams
-        const fileInfos = await Promise.all(
-          inputFiles.map(async (file) => {
-            try {
-              return await new Promise<{ hasAudio: boolean; hasVideo: boolean }>((res, rej) => {
-                ffmpeg.ffprobe(file, (err, metadata) => {
-                  if (err) {
-                    rej(err);
-                    return;
-                  }
-                  const hasAudio = metadata.streams.some((s) => s.codec_type === 'audio');
-                  const hasVideo = metadata.streams.some((s) => s.codec_type === 'video');
-                  res({ hasAudio, hasVideo });
-                });
+      });
+    } else {
+      // Multiple files - create layout
+      // First, probe all files to check for audio streams
+      const fileInfos = await Promise.all(
+        inputFiles.map(async (file) => {
+          try {
+            return await new Promise<{ hasAudio: boolean; hasVideo: boolean }>((res, rej) => {
+              ffmpeg.ffprobe(file, (err, metadata) => {
+                if (err) {
+                  rej(err);
+                  return;
+                }
+                const hasAudio = metadata.streams.some((s) => s.codec_type === 'audio');
+                const hasVideo = metadata.streams.some((s) => s.codec_type === 'video');
+                res({ hasAudio, hasVideo });
               });
-            } catch (e) {
-              console.error(`[FFmpeg] Failed to probe ${file}:`, e);
-              return { hasAudio: false, hasVideo: true };
-            }
-          })
-        );
+            });
+          } catch (e) {
+            console.error(`[FFmpeg] Failed to probe ${file}:`, e);
+            return { hasAudio: false, hasVideo: true };
+          }
+        })
+      );
 
-        console.log('[FFmpeg] File info:', fileInfos);
+      console.log('[FFmpeg] File info:', fileInfos);
 
-        const filterComplex = buildFilterComplex(inputFiles, layout, fileInfos);
+      const filterComplex = buildFilterComplex(inputFiles, layout, fileInfos);
 
-        let command = ffmpeg();
+      let command = ffmpeg();
 
-        // Add all input files
-        inputFiles.forEach((file) => {
-          command = command.input(file);
-        });
+      // Add all input files
+      inputFiles.forEach((file) => {
+        command = command.input(file);
+      });
 
-        // If no audio, add anullsrc as an input for the filter graph
-        if (!fileInfos.some((f) => f.hasAudio)) {
-          command = command.input('anullsrc=r=48000:cl=stereo').inputOptions(['-f', 'lavfi']);
-        }
+      // If no audio, add anullsrc as an input for the filter graph
+      if (!fileInfos.some((f) => f.hasAudio)) {
+        command = command.input('anullsrc=r=48000:cl=stereo').inputOptions(['-f', 'lavfi']);
+      }
 
+      const outputOpts = ['-y'];
+      if (filterComplex.needsShortest) {
+        outputOpts.push('-shortest');
+      }
+
+      return new Promise((resolve) => {
         let stderrLog = '';
-        const outputOpts = ['-y'];
-        if (filterComplex.needsShortest) {
-          outputOpts.push('-shortest');
-        }
-
         currentProcess = command
           .complexFilter(filterComplex.filter, filterComplex.outputs)
           .videoCodec(formatConfig.videoCodec)
@@ -200,15 +201,15 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
             resolve({ success: false, error: `${err.message}\n${stderrLog}` });
           })
           .save(outputPath);
-      }
-    } catch (err) {
-      currentProcess = null;
-      resolve({
-        success: false,
-        error: err instanceof Error ? err.message : 'Unknown error'
       });
     }
-  });
+  } catch (err) {
+    currentProcess = null;
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error'
+    };
+  }
 }
 
 interface FileInfo {
@@ -383,14 +384,14 @@ export async function concatenateVideos(
 ): Promise<CompositeResult> {
   const formatConfig = COMPOSITE_CONFIG.OUTPUT_FORMATS[format];
 
-  return new Promise(async (resolve) => {
-    try {
-      // Create concat file list
-      const tempDir = await getTempDir();
-      const concatFile = join(tempDir, 'concat.txt');
-      const concatContent = inputFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-      await fs.writeFile(concatFile, concatContent);
+  try {
+    // Create concat file list
+    const tempDir = await getTempDir();
+    const concatFile = join(tempDir, 'concat.txt');
+    const concatContent = inputFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+    await fs.writeFile(concatFile, concatContent);
 
+    return new Promise((resolve) => {
       let stderrLog = '';
       currentProcess = ffmpeg()
         .input(concatFile)
@@ -438,13 +439,13 @@ export async function concatenateVideos(
           resolve({ success: false, error: `${err.message}\n${stderrLog}` });
         })
         .save(outputPath);
-    } catch (err) {
-      resolve({
-        success: false,
-        error: err instanceof Error ? err.message : 'Unknown error'
-      });
-    }
-  });
+    });
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error'
+    };
+  }
 }
 
 export function cancelCurrentProcess(): boolean {

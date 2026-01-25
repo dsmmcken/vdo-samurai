@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUserStore } from '../../store/userStore';
 import { usePopoverStore } from '../../store/popoverStore';
+import { useDelayedUnmount } from '../../hooks/useDelayedUnmount';
 
 interface UserPopoverProps {
   anchorRef: React.RefObject<HTMLButtonElement | null>;
@@ -15,29 +16,16 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
   const [fullName, setFullName] = useState(profile?.fullName || '');
-  const [isExiting, setIsExiting] = useState(false);
-  const [shouldRender, setShouldRender] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const isOpen = activePopover === 'user';
+  const { shouldRender, isExiting } = useDelayedUnmount(isOpen);
 
-  // Handle mount/unmount with exit animation
-  useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true);
-      setIsExiting(false);
-    } else if (shouldRender) {
-      setIsExiting(true);
-      const timer = setTimeout(() => {
-        setShouldRender(false);
-        setIsExiting(false);
-      }, 150); // Match float-out duration
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen, shouldRender]);
-
+  // Sync form state when popover opens
+  // This effect intentionally sets state to reset form when opening
   useEffect(() => {
     if (isOpen && profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDisplayName(profile.displayName);
       setFullName(profile.fullName);
       setIsEditing(false);

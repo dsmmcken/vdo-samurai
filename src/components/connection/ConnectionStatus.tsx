@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useSessionStore } from '../../store/sessionStore';
 import { usePeerStore } from '../../store/peerStore';
 import { usePopoverStore } from '../../store/popoverStore';
+import { useDelayedUnmount } from '../../hooks/useDelayedUnmount';
 
 interface ConnectionStatusProps {
   onReconnect?: () => void;
@@ -15,27 +16,11 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
   const location = useLocation();
   const isSessionPage = location.pathname.startsWith('/session/');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isExiting, setIsExiting] = useState(false);
-  const [shouldRender, setShouldRender] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const showDetails = activePopover === 'connection';
-
-  // Handle mount/unmount with exit animation
-  useEffect(() => {
-    if (showDetails) {
-      setShouldRender(true);
-      setIsExiting(false);
-    } else if (shouldRender) {
-      setIsExiting(true);
-      const timer = setTimeout(() => {
-        setShouldRender(false);
-        setIsExiting(false);
-      }, 150); // Match float-out duration
-      return () => clearTimeout(timer);
-    }
-  }, [showDetails, shouldRender]);
+  const { shouldRender, isExiting } = useDelayedUnmount(showDetails);
 
   // Click outside handler
   useEffect(() => {

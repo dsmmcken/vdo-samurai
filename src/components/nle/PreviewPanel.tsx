@@ -20,7 +20,7 @@ export function PreviewPanel({ onPlay, onPause }: PreviewPanelProps) {
 
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
   const [isWaitingForTransfer, setIsWaitingForTransfer] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
   // Create and manage blob URLs - only create if not already exists
   const getVideoUrl = useCallback((peerId: string | null): string | null => {
@@ -94,7 +94,9 @@ export function PreviewPanel({ onPlay, onPause }: PreviewPanelProps) {
   }, [clips, playheadPosition, getVideoUrl, currentVideoUrl]);
 
   // Update preview when playhead position changes
+  // This effect intentionally calls setState via updatePreview to sync video preview with playhead
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     updatePreview();
   }, [updatePreview]);
 

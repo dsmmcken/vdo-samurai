@@ -1,5 +1,6 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import { usePopoverStore } from '../../store/popoverStore';
+import { useDelayedUnmount } from '../../hooks/useDelayedUnmount';
 
 interface RecordingCompletePopoverProps {
   anchorRef: React.RefObject<HTMLButtonElement | null>;
@@ -13,26 +14,10 @@ export function RecordingCompletePopover({
   onDiscard,
 }: RecordingCompletePopoverProps) {
   const { activePopover, closePopover } = usePopoverStore();
-  const [isExiting, setIsExiting] = useState(false);
-  const [shouldRender, setShouldRender] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const isOpen = activePopover === 'recordingComplete';
-
-  // Handle mount/unmount with exit animation
-  useEffect(() => {
-    if (isOpen) {
-      setShouldRender(true);
-      setIsExiting(false);
-    } else if (shouldRender) {
-      setIsExiting(true);
-      const timer = setTimeout(() => {
-        setShouldRender(false);
-        setIsExiting(false);
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen, shouldRender]);
+  const { shouldRender, isExiting } = useDelayedUnmount(isOpen);
 
   // Handle click outside
   useEffect(() => {
