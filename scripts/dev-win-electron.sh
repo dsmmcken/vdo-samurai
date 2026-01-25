@@ -23,4 +23,16 @@ echo "Starting Windows Electron at: $WIN_PATH"
 echo "(Make sure you have Electron installed globally on Windows: npm install -g electron)"
 
 # Use PowerShell with explicit working directory to avoid UNC path issues
-powershell.exe -WorkingDirectory 'C:\' -Command "Push-Location '$WIN_PATH'; \$env:NODE_ENV='development'; electron .; Pop-Location"
+# Run in background and trap Ctrl+C to kill it properly
+cleanup() {
+    echo ""
+    echo "Stopping Electron..."
+    taskkill.exe /F /IM electron.exe >/dev/null 2>&1
+    kill $PS_PID 2>/dev/null
+    exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+powershell.exe -WorkingDirectory 'C:\' -Command "Push-Location '$WIN_PATH'; \$env:NODE_ENV='development'; electron .; Pop-Location" &
+PS_PID=$!
+wait $PS_PID
