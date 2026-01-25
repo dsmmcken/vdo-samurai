@@ -265,7 +265,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     const existingPeers = newRoom.getPeers();
     console.log('[TrysteroProvider] Existing peers in room:', existingPeers);
 
-    // Periodic debug logging
+    // Periodic debug logging (temporary - will be removed)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const debugInterval = setInterval(() => {
       const peers = newRoom.getPeers();
       console.log('[TrysteroProvider] DEBUG - Peers check:', {
