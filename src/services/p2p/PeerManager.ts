@@ -1,4 +1,4 @@
-import { type Room } from 'trystero/torrent';
+import { type Room } from 'trystero/mqtt';
 import type { Peer } from '../../types';
 
 interface PeerInfoData {
@@ -45,6 +45,8 @@ export class PeerManager {
     this.localName = name;
     this.isHost = isHost;
 
+    console.log('[PeerManager] Initializing with room, setting up peer handlers...');
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [sendPeerInfo, onPeerInfo] = room.makeAction<any>('peer-info');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,8 +57,9 @@ export class PeerManager {
     this.sendScreenShareStatus = sendScreenShareStatus;
     this.sendActiveScreenShare = sendActiveScreenShare;
 
+    console.log('[PeerManager] Registering onPeerJoin handler');
     room.onPeerJoin((peerId) => {
-      console.log('Peer joined:', peerId);
+      console.log('[PeerManager] Peer joined:', peerId);
 
       this.peers.set(peerId, {
         id: peerId,
@@ -93,7 +96,7 @@ export class PeerManager {
     });
 
     room.onPeerLeave((peerId) => {
-      console.log('Peer left:', peerId);
+      console.log('[PeerManager] Peer left:', peerId);
       this.peers.delete(peerId);
       this.peersWithScreenShareAvailable.delete(peerId);
 
