@@ -9,6 +9,8 @@ import {
 } from 'react';
 import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/mqtt';
 import { P2P_CONFIG, RTC_CONFIG } from '../services/p2p/config';
+import { usePeerStore } from '../store/peerStore';
+import { useSessionStore } from '../store/sessionStore';
 
 // Debug: Log MQTT socket status
 const logMqttStatus = () => {
@@ -30,8 +32,6 @@ const computeTopicHash = async (appId: string, roomId: string) => {
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return { topicPath, hashHex };
 };
-import { usePeerStore } from '../store/peerStore';
-import { useSessionStore } from '../store/sessionStore';
 
 interface PeerInfoData {
   type: string;
@@ -266,8 +266,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     console.log('[TrysteroProvider] Existing peers in room:', existingPeers);
 
     // Periodic debug logging (temporary - will be removed)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const debugInterval = setInterval(() => {
+    setInterval(() => {
       const peers = newRoom.getPeers();
       console.log('[TrysteroProvider] DEBUG - Peers check:', {
         peerCount: Object.keys(peers).length,
@@ -339,6 +338,34 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     };
   }, [clearPeers]);
 
+  // Set active screen share (defined first as it's used by addLocalStream and removeLocalStream)
+  const setActiveScreenShare = useCallback((peerId: string | null) => {
+    if (!roomRef.current) return;
+
+    const previousActive = stateRef.current.activeScreenSharePeerId;
+    stateRef.current.activeScreenSharePeerId = peerId;
+
+    // Broadcast to all peers
+    if (sendersRef.current.sendActiveScreenShare) {
+      const msg: ActiveScreenShareData = {
+        type: 'active-screen-share',
+        peerId
+      };
+      sendersRef.current.sendActiveScreenShare(msg);
+    }
+
+    // Handle local stream state
+    if (stateRef.current.localScreenStream) {
+      if (peerId === selfId && previousActive !== selfId) {
+        roomRef.current.addStream(stateRef.current.localScreenStream, undefined, { type: 'screen' });
+      } else if (peerId !== selfId && previousActive === selfId) {
+        roomRef.current.removeStream(stateRef.current.localScreenStream);
+      }
+    }
+
+    setActiveScreenSharePeerId(peerId);
+  }, [setActiveScreenSharePeerId]);
+
   // Add local stream
   const addLocalStream = useCallback((stream: MediaStream, metadata?: { type: string }) => {
     if (!roomRef.current) {
@@ -371,7 +398,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     if (!stateRef.current.activeScreenSharePeerId) {
       setActiveScreenShare(selfId);
     }
-  }, []);
+  }, [setActiveScreenShare]);
 
   // Remove local stream
   const removeLocalStream = useCallback((stream: MediaStream, isScreen: boolean = false) => {
@@ -400,35 +427,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     }
 
     roomRef.current.removeStream(stream);
-  }, []);
-
-  // Set active screen share
-  const setActiveScreenShare = useCallback((peerId: string | null) => {
-    if (!roomRef.current) return;
-
-    const previousActive = stateRef.current.activeScreenSharePeerId;
-    stateRef.current.activeScreenSharePeerId = peerId;
-
-    // Broadcast to all peers
-    if (sendersRef.current.sendActiveScreenShare) {
-      const msg: ActiveScreenShareData = {
-        type: 'active-screen-share',
-        peerId
-      };
-      sendersRef.current.sendActiveScreenShare(msg);
-    }
-
-    // Handle local stream state
-    if (stateRef.current.localScreenStream) {
-      if (peerId === selfId && previousActive !== selfId) {
-        roomRef.current.addStream(stateRef.current.localScreenStream, undefined, { type: 'screen' });
-      } else if (peerId !== selfId && previousActive === selfId) {
-        roomRef.current.removeStream(stateRef.current.localScreenStream);
-      }
-    }
-
-    setActiveScreenSharePeerId(peerId);
-  }, [setActiveScreenSharePeerId]);
+  }, [setActiveScreenShare]);
 
   // Broadcast focus change
   const broadcastFocusChange = useCallback((peerId: string | null) => {
