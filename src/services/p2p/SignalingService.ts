@@ -1,5 +1,5 @@
 import { joinRoom, type Room } from 'trystero/torrent';
-import { P2P_CONFIG } from './config';
+import { P2P_CONFIG, RTC_CONFIG } from './config';
 
 export class SignalingService {
   private room: Room | null = null;
@@ -11,7 +11,10 @@ export class SignalingService {
     }
 
     this.sessionId = sessionId;
-    this.room = joinRoom({ appId: P2P_CONFIG.appId }, sessionId);
+    this.room = joinRoom(
+      { appId: P2P_CONFIG.appId, trackerUrls: P2P_CONFIG.trackerUrls, rtcConfig: RTC_CONFIG },
+      sessionId
+    );
 
     return this.room;
   }
