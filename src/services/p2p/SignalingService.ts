@@ -11,6 +11,11 @@ export class SignalingService {
     }
 
     this.sessionId = sessionId;
+    console.log('[SignalingService] Joining room:', {
+      appId: P2P_CONFIG.appId,
+      sessionId,
+      trackerUrls: P2P_CONFIG.trackerUrls
+    });
     this.room = joinRoom(
       { appId: P2P_CONFIG.appId, trackerUrls: P2P_CONFIG.trackerUrls, rtcConfig: RTC_CONFIG },
       sessionId
