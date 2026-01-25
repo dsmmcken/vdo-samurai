@@ -98,8 +98,7 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
         }
 
         currentProcess = cmd
-          .videoBitrate(COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE)
-          .outputOptions(['-y'])
+          .outputOptions(['-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE, '-y'])
           .on('start', (cmdStr) => {
             console.log('[FFmpeg] Command:', cmdStr);
           })
@@ -173,9 +172,11 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
           .complexFilter(filterComplex.filter, filterComplex.outputs)
           .videoCodec(formatConfig.videoCodec)
           .audioCodec(formatConfig.audioCodec)
-          .videoBitrate(COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE)
-          .audioBitrate(COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE)
-          .outputOptions(outputOpts)
+          .outputOptions([
+            '-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
+            '-b:a', COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
+            ...outputOpts
+          ])
           .on('start', (cmd) => {
             console.log('[FFmpeg] Command:', cmd);
           })
@@ -345,9 +346,11 @@ export async function trimVideo(
       .setDuration(duration)
       .videoCodec(formatConfig.videoCodec)
       .audioCodec(formatConfig.audioCodec)
-      .videoBitrate(COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE)
-      .audioBitrate(COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE)
-      .outputOptions(['-y'])
+      .outputOptions([
+        '-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
+        '-b:a', COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
+        '-y'
+      ])
       .on('start', (cmd) => {
         console.log('[FFmpeg Trim] Command:', cmd);
       })
@@ -394,9 +397,11 @@ export async function concatenateVideos(
         .inputOptions(['-f', 'concat', '-safe', '0'])
         .videoCodec(formatConfig.videoCodec)
         .audioCodec(formatConfig.audioCodec)
-        .videoBitrate(COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE)
-        .audioBitrate(COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE)
-        .outputOptions(['-y'])
+        .outputOptions([
+          '-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
+          '-b:a', COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
+          '-y'
+        ])
         .on('start', (cmd) => {
           console.log('[FFmpeg Concat] Command:', cmd);
         })
