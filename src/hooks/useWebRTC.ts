@@ -95,10 +95,12 @@ export function useWebRTC() {
   );
 
   const leaveSession = useCallback(() => {
-    signalingService.leaveSession();
-    peerManager.clear();
+    // Reset session state first to ensure UI updates immediately
     clearPeers();
     reset();
+    // Then clean up signaling and peers
+    signalingService.leaveSession();
+    peerManager.clear();
   }, [clearPeers, reset]);
 
   // Add local stream to peers when it becomes available
