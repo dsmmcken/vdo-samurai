@@ -14,7 +14,8 @@
     "package:linux": "electron-vite build && electron-builder --linux",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"*.{json,js,ts}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"*.{json,js,ts}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"*.{json,js,ts}\"",
+    "tsc": "tsc --noEmit"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
