@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useSessionStore } from '../../store/sessionStore';
 import { usePeerStore } from '../../store/peerStore';
+import { usePopoverStore } from '../../store/popoverStore';
 
 interface ConnectionStatusProps {
   onReconnect?: () => void;
@@ -9,8 +11,50 @@ interface ConnectionStatusProps {
 export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
   const { isConnected, isConnecting, sessionId } = useSessionStore();
   const { peers } = usePeerStore();
+  const { activePopover, togglePopover, closePopover } = usePopoverStore();
+  const location = useLocation();
+  const isSessionPage = location.pathname.startsWith('/session/');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [showDetails, setShowDetails] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const showDetails = activePopover === 'connection';
+
+  // Handle mount/unmount with exit animation
+  useEffect(() => {
+    if (showDetails) {
+      setShouldRender(true);
+      setIsExiting(false);
+    } else if (shouldRender) {
+      setIsExiting(true);
+      const timer = setTimeout(() => {
+        setShouldRender(false);
+        setIsExiting(false);
+      }, 150); // Match float-out duration
+      return () => clearTimeout(timer);
+    }
+  }, [showDetails, shouldRender]);
+
+  // Click outside handler
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        closePopover();
+      }
+    }
+
+    if (showDetails) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showDetails, closePopover]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -47,15 +91,16 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
   return (
     <div className="relative">
       <button
-        onClick={() => setShowDetails(!showDetails)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[--color-dark-lighter] hover:bg-gray-700 transition-colors"
+        ref={buttonRef}
+        onClick={() => togglePopover('connection')}
+        className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors cursor-pointer ${isSessionPage ? 'bg-gray-800 hover:bg-gray-700' : 'bg-[--color-dark-lighter] hover:bg-gray-700'}`}
         aria-label={`Connection status: ${getStatusText()}`}
         aria-expanded={showDetails}
       >
         <span
           className={`w-2 h-2 rounded-full ${getStatusColor()} ${isConnecting ? 'animate-pulse' : ''}`}
         />
-        <span className="text-sm text-gray-300">{getStatusText()}</span>
+        <span className="text-xs text-gray-300">{getStatusText()}</span>
         {peers.length > 0 && (
           <span className="text-xs text-gray-500">
             ({peers.length} peer{peers.length !== 1 ? 's' : ''})
@@ -63,8 +108,13 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
         )}
       </button>
 
-      {showDetails && (
-        <div className="absolute top-full right-0 mt-2 w-72 bg-[--color-dark-lighter] rounded-xl shadow-xl border border-gray-700 p-4 z-50">
+      {shouldRender && (
+        <div
+          ref={popoverRef}
+          className={`absolute top-full right-0 mt-2 w-72 rounded-xl shadow-xl border border-gray-700 p-4 z-50 backdrop-blur-xl ${
+            isExiting ? 'popover-exit' : 'popover-enter'
+          } ${isSessionPage ? 'bg-black/80' : 'bg-[--color-dark-lighter]/80'}`}
+        >
           <div className="space-y-4">
             {/* Network status */}
             <div>
@@ -111,7 +161,7 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
               <button
                 onClick={() => {
                   onReconnect();
-                  setShowDetails(false);
+                  closePopover();
                 }}
                 className="w-full py-2 px-4 bg-[--color-primary] hover:bg-[--color-primary-dark] text-white rounded-lg text-sm font-medium transition-colors"
               >

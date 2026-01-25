@@ -23,24 +23,24 @@ export function ShareLink({ sessionId }: ShareLinkProps) {
     <button
       onClick={copyToClipboard}
       className={`
-        flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+        flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer
         ${
           copied
             ? 'bg-green-500 text-white'
-            : 'bg-[--color-primary] hover:bg-[--color-primary]/80 text-white'
+            : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
         }
       `}
     >
       {copied ? (
         <>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
           Copied!
         </>
       ) : (
         <>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
