@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
+import { useRecordingStore } from '../store/recordingStore';
 import { screenCaptureService } from '../services/media/ScreenCaptureService';
 import { peerManager } from '../services/p2p';
+import { screenRecorder } from '../services/recording';
 
 export function useScreenShare() {
   const [isSharing, setIsSharing] = useState(false);
@@ -9,6 +11,7 @@ export function useScreenShare() {
   const [error, setError] = useState<string | null>(null);
 
   const { setLocalScreenStream, setActiveScreenSharePeerId } = useSessionStore();
+  const { isRecording, setScreenRecordingId, setLocalScreenBlob } = useRecordingStore();
   const streamRef = useRef<MediaStream | null>(null);
 
   const startSharingWithSource = useCallback(
@@ -24,8 +27,30 @@ export function useScreenShare() {
         // Add screen stream to peer manager (will only stream if we become active)
         peerManager.addLocalStream(stream, { type: 'screen' });
 
+        // If recording is active, start screen recording
+        if (isRecording && !screenRecorder.isRecording()) {
+          try {
+            const screenId = await screenRecorder.start(stream);
+            setScreenRecordingId(screenId);
+            console.log('[useScreenShare] Started screen recording during active session:', screenId);
+          } catch (err) {
+            console.error('[useScreenShare] Failed to start screen recording:', err);
+          }
+        }
+
         // Handle stream end (user clicks "Stop sharing" in browser)
-        screenCaptureService.onEnd(() => {
+        screenCaptureService.onEnd(async () => {
+          // If screen recording is active, stop it and save the blob
+          if (screenRecorder.isRecording()) {
+            try {
+              const screenBlob = await screenRecorder.stop();
+              setLocalScreenBlob(screenBlob);
+              console.log('[useScreenShare] Stopped screen recording on stream end, blob size:', screenBlob.size);
+            } catch (err) {
+              console.error('[useScreenShare] Failed to stop screen recording:', err);
+            }
+          }
+
           if (streamRef.current) {
             peerManager.removeLocalStream(streamRef.current, true);
           }
@@ -46,7 +71,7 @@ export function useScreenShare() {
         throw err;
       }
     },
-    [setLocalScreenStream]
+    [setLocalScreenStream, isRecording, setScreenRecordingId, setLocalScreenBlob]
   );
 
   const startSharing = useCallback(async () => {
@@ -63,7 +88,18 @@ export function useScreenShare() {
     setShowPicker(false);
   }, []);
 
-  const stopSharing = useCallback(() => {
+  const stopSharing = useCallback(async () => {
+    // If screen recording is active, stop it and save the blob
+    if (screenRecorder.isRecording()) {
+      try {
+        const screenBlob = await screenRecorder.stop();
+        setLocalScreenBlob(screenBlob);
+        console.log('[useScreenShare] Stopped screen recording, blob size:', screenBlob.size);
+      } catch (err) {
+        console.error('[useScreenShare] Failed to stop screen recording:', err);
+      }
+    }
+
     if (streamRef.current) {
       peerManager.removeLocalStream(streamRef.current, true);
     }
@@ -71,7 +107,7 @@ export function useScreenShare() {
     setLocalScreenStream(null);
     setIsSharing(false);
     streamRef.current = null;
-  }, [setLocalScreenStream]);
+  }, [setLocalScreenStream, setLocalScreenBlob]);
 
   // Subscribe to active screen share changes
   useEffect(() => {

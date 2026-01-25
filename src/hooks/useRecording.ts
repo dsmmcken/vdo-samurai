@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import { type Room } from 'trystero/torrent';
 import { useRecordingStore } from '../store/recordingStore';
 import { useSessionStore } from '../store/sessionStore';
-import { localRecorder, recordingCoordinator } from '../services/recording';
+import { localRecorder, screenRecorder, recordingCoordinator } from '../services/recording';
 
 export function useRecording(room?: Room) {
-  const { localStream, isHost } = useSessionStore();
+  const { localRecordingStream, localScreenStream, isHost } = useSessionStore();
   const {
     isRecording,
     countdown,
@@ -15,7 +15,9 @@ export function useRecording(room?: Room) {
     setStartTime,
     setEndTime,
     setRecordingId,
+    setScreenRecordingId,
     setLocalBlob,
+    setLocalScreenBlob,
     reset
   } = useRecordingStore();
 
@@ -33,28 +35,54 @@ export function useRecording(room?: Room) {
       recordingCoordinator.onStart(async () => {
         setCountdown(null);
 
-        if (localStream) {
+        // Start camera recording using high-quality stream
+        if (localRecordingStream) {
           try {
-            const id = await localRecorder.start(localStream);
+            const id = await localRecorder.start(localRecordingStream);
             setRecordingId(id);
             setIsRecording(true);
             setStartTime(Date.now());
           } catch (err) {
-            console.error('Failed to start recording:', err);
+            console.error('Failed to start camera recording:', err);
+          }
+        }
+
+        // Start screen recording if screen share is active
+        if (localScreenStream) {
+          try {
+            const screenId = await screenRecorder.start(localScreenStream);
+            setScreenRecordingId(screenId);
+            console.log('[useRecording] Started screen recording:', screenId);
+          } catch (err) {
+            console.error('Failed to start screen recording:', err);
           }
         }
       });
 
       recordingCoordinator.onStop(async () => {
         setEndTime(Date.now());
+
+        // Stop camera recording
         if (localRecorder.isRecording()) {
           try {
             const blob = await localRecorder.stop();
             setLocalBlob(blob);
           } catch (err) {
-            console.error('Failed to stop recording:', err);
+            console.error('Failed to stop camera recording:', err);
           }
         }
+
+        // Stop screen recording
+        if (screenRecorder.isRecording()) {
+          try {
+            const screenBlob = await screenRecorder.stop();
+            setLocalScreenBlob(screenBlob);
+            console.log('[useRecording] Stopped screen recording, blob size:', screenBlob.size);
+          } catch (err) {
+            console.error('Failed to stop screen recording:', err);
+          }
+        }
+
         setIsRecording(false);
       });
     }
@@ -63,18 +91,22 @@ export function useRecording(room?: Room) {
       if (initializedRef.current) {
         recordingCoordinator.clear();
         localRecorder.cleanup();
+        screenRecorder.cleanup();
         initializedRef.current = false;
       }
     };
   }, [
     room,
-    localStream,
+    localRecordingStream,
+    localScreenStream,
     setCountdown,
     setIsRecording,
     setStartTime,
     setEndTime,
     setRecordingId,
-    setLocalBlob
+    setScreenRecordingId,
+    setLocalBlob,
+    setLocalScreenBlob
   ]);
 
   const startRecording = useCallback(async () => {
@@ -92,6 +124,7 @@ export function useRecording(room?: Room) {
 
   const resetRecording = useCallback(() => {
     localRecorder.cleanup();
+    screenRecorder.cleanup();
     reset();
   }, [reset]);
 
