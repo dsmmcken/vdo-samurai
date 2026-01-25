@@ -33,7 +33,7 @@ export const useCompositeStore = create<CompositeStore>((set, get) => ({
   outputBlob: null,
   outputUrl: null,
   error: null,
-  outputFormat: 'webm',
+  outputFormat: 'mp4',
   layout: 'grid',
 
   setStatus: (status) => set({ status }),

@@ -9,14 +9,9 @@ interface VideoElementProps {
 export function VideoElement({ stream, muted = false, className = '' }: VideoElementProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  console.log('[VideoElement] Rendering with stream:', !!stream, stream?.getVideoTracks());
-
   useEffect(() => {
     const video = videoRef.current;
-    console.log('[VideoElement] useEffect - video element:', !!video, 'stream:', !!stream);
     if (video && stream) {
-      const videoTracks = stream.getVideoTracks();
-      console.log('[VideoElement] Setting srcObject, video tracks:', videoTracks, 'enabled:', videoTracks.map(t => t.enabled));
       video.srcObject = stream;
       // Explicitly play to handle browser autoplay restrictions
       video.play().catch((err) => {
@@ -27,7 +22,6 @@ export function VideoElement({ stream, muted = false, className = '' }: VideoEle
   }, [stream]);
 
   if (!stream) {
-    console.log('[VideoElement] No stream, returning null');
     return null;
   }
 
@@ -41,7 +35,7 @@ export function VideoElement({ stream, muted = false, className = '' }: VideoEle
         autoPlay
         playsInline
         muted={muted}
-        className="block w-full h-full"
+        className="block w-full h-full object-cover"
       />
     </div>
   );
