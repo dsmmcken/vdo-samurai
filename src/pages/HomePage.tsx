@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { useUserStore } from '../store/userStore';
+import { CherryBlossomButton } from '../components/ui/CherryBlossomButton';
 
 const LAST_SESSION_KEY = 'vdo-samurai-last-session';
 
@@ -113,17 +114,18 @@ export function HomePage() {
             placeholder="Enter room code"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
           />
-          <button
+          <CherryBlossomButton
             type="submit"
             disabled={isJoining || !roomCode.trim()}
-            className="w-full mt-4 px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            containerClassName="mt-4"
+            className="w-full px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
           >
             {isJoining
               ? 'Joining...'
               : lastSession?.roomCode === roomCode.trim()
                 ? 'Rejoin Room'
                 : 'Join Room'}
-          </button>
+          </CherryBlossomButton>
         </form>
 
         <div className="flex items-center w-full my-6">
@@ -132,13 +134,13 @@ export function HomePage() {
           <div className="flex-1 border-t border-gray-300"></div>
         </div>
 
-        <button
+        <CherryBlossomButton
           onClick={handleCreate}
           disabled={isCreating}
           className="w-full px-4 py-2 bg-white/50 text-black border border-gray-300 rounded-lg font-medium hover:bg-white/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
         >
           {isCreating ? 'Creating...' : 'Create Room'}
-        </button>
+        </CherryBlossomButton>
       </div>
     </div>
   );
