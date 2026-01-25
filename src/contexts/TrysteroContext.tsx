@@ -7,24 +7,24 @@ import {
   useRef,
   type ReactNode
 } from 'react';
-import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/mqtt';
+import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/torrent';
 import { P2P_CONFIG, RTC_CONFIG } from '../services/p2p/config';
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
 import { transferService } from '../services/transfer/TransferService';
 
-// Debug: Log MQTT socket status
-const logMqttStatus = () => {
+// Debug: Log tracker socket status
+const logTrackerStatus = () => {
   const sockets = getRelaySockets();
-  console.log('[TrysteroProvider] MQTT sockets:', Object.entries(sockets).map(([key, socket]) => ({
+  console.log('[TrysteroProvider] Torrent tracker sockets:', Object.entries(sockets).map(([key, socket]) => ({
     key,
     readyState: socket?.readyState,
     readyStateText: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][socket?.readyState ?? -1] || 'UNKNOWN'
   })));
 };
 
-// Debug: Compute topic hash for verification
-const computeTopicHash = async (appId: string, roomId: string) => {
+// Debug: Compute info hash for verification
+const computeInfoHash = async (appId: string, roomId: string) => {
   const topicPath = `Trystero@${appId}@${roomId}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(topicPath);
@@ -282,7 +282,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         peers: Object.keys(peers),
         selfId
       });
-      logMqttStatus();
+      logTrackerStatus();
     }, 10000);
   }, [addPeer, updatePeer, removePeer, setActiveScreenSharePeerId, setFocusedPeerId]);
 
@@ -299,8 +299,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     console.log('[TrysteroProvider] Config:', { appId: P2P_CONFIG.appId, roomId: newSessionId });
 
     // Compute and log the expected topic hash for debugging
-    computeTopicHash(P2P_CONFIG.appId, newSessionId).then(({ topicPath, hashHex }) => {
-      console.log('[TrysteroProvider] Expected MQTT topic:', {
+    computeInfoHash(P2P_CONFIG.appId, newSessionId).then(({ topicPath, hashHex }) => {
+      console.log('[TrysteroProvider] Expected torrent info hash:', {
         plaintext: topicPath,
         sha1Hash: hashHex,
         selfId: selfId
@@ -311,7 +311,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
     // Log MQTT status after a short delay to allow connections
     setTimeout(() => {
-      logMqttStatus();
+      logTrackerStatus();
     }, 2000);
 
     roomRef.current = newRoom;
