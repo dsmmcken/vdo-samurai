@@ -135,6 +135,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('screen-capture:getSources')
   },
 
+  // Window controls (for frameless windows on Linux)
+  window: {
+    minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
+    maximize: (): Promise<void> => ipcRenderer.invoke('window:maximize'),
+    close: (): Promise<void> => ipcRenderer.invoke('window:close'),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized')
+  },
+
   // Platform info
   platform: process.platform,
 

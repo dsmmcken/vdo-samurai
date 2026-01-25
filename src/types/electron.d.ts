@@ -94,6 +94,12 @@ export interface ElectronAPI {
   screenCapture: {
     getSources: () => Promise<ScreenSourcesResult>;
   };
+  window: {
+    minimize: () => Promise<void>;
+    maximize: () => Promise<void>;
+    close: () => Promise<void>;
+    isMaximized: () => Promise<boolean>;
+  };
   platform: NodeJS.Platform;
   getVersion: () => Promise<string>;
 }

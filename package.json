@@ -6,6 +6,9 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:server": "vite",
+    "dev:electron": "electron-vite build && NODE_ENV=development electron .",
+    "dev:win": "./scripts/dev-win-electron.sh",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-vite build && electron-builder",
@@ -35,6 +38,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.23",
+    "cross-env": "^7.0.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^5.0.0",
@@ -48,5 +52,11 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"
+  },
+  "optionalDependencies": {
+    "@ffmpeg-installer/darwin-arm64": "^4.1.5",
+    "@ffmpeg-installer/darwin-x64": "^4.1.0",
+    "@ffmpeg-installer/win32-ia32": "^4.1.0",
+    "@ffmpeg-installer/win32-x64": "^4.1.0"
   }
 }
