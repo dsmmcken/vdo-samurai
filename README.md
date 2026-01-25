@@ -1,73 +1,84 @@
-# React + TypeScript + Vite
+# VDO Samurai
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A peer-to-peer desktop application for screen sharing and recording. No central servers required.
 
-Currently, two official plugins are available:
+## How It Works
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Each participant records their own video locally at full quality. When the session ends, recordings are transferred directly to the host via P2P, who can then composite and export the final video.
 
-## React Compiler
+This approach ensures **maximum quality** regardless of network conditions during the call. Unlike cloud recording services that depend on real-time bandwidth, VDO Samurai captures pristine local footage and syncs it afterwards.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Features
 
-## Expanding the ESLint configuration
+- **Local-First Recording** - Every peer records themselves locally, no quality loss from streaming
+- **P2P File Transfer** - Recordings sent directly to host after session, no cloud upload
+- **Video Compositing** - Host combines all recordings with FFmpeg for final export
+- **Decentralized** - Uses Trystero with WebTorrent trackers for signaling, no account needed
+- **P2P Screen Sharing** - Share your screen directly with peers using WebRTC
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Tech Stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **Electron + React** - Cross-platform desktop app
+- **WebRTC** - Real-time peer-to-peer video streaming
+- **Trystero** - Decentralized signaling via WebTorrent trackers
+- **FFmpeg** - Video processing and compositing
+- **Zustand** - State management
+- **TypeScript** - Full type safety
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Getting Started
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Install dependencies
+npm install
+
+# Start development
+npm run dev
+
+# Build for production
+npm run build
+
+# Package for distribution
+npm run package
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Development
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev          # Start with hot reload
+npm run lint         # Run ESLint
+npm run format       # Format with Prettier
+npm run tsc          # Type check
 ```
+
+### Windows Development (WSL)
+
+For developing on Windows with WSL:
+
+```bash
+# Terminal 1: Start the dev server
+npm run dev:server
+
+# Terminal 2: Run Windows Electron
+npm run dev:win
+```
+
+Requires Electron installed globally on Windows: `npm install -g electron`
+
+## Project Structure
+
+```
+electron/
+  main/           # Main process, IPC handlers, FFmpeg
+  preload/        # Context bridge for renderer
+src/
+  components/     # React components
+  pages/          # HomePage, SessionPage, CompositePage
+  services/       # P2P, recording, compositing logic
+  store/          # Zustand state stores
+  hooks/          # Custom React hooks
+  types/          # TypeScript definitions
+```
+
+## License
+
+MIT
