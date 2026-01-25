@@ -1,4 +1,4 @@
-import { joinRoom, type Room } from 'trystero/torrent';
+import { joinRoom, type Room } from 'trystero/nostr';
 import { P2P_CONFIG, RTC_CONFIG } from './config';
 
 export class SignalingService {
@@ -14,10 +14,10 @@ export class SignalingService {
     console.log('[SignalingService] Joining room:', {
       appId: P2P_CONFIG.appId,
       sessionId,
-      trackerUrls: P2P_CONFIG.trackerUrls
+      relayUrls: P2P_CONFIG.relayUrls
     });
     this.room = joinRoom(
-      { appId: P2P_CONFIG.appId, trackerUrls: P2P_CONFIG.trackerUrls, rtcConfig: RTC_CONFIG },
+      { appId: P2P_CONFIG.appId, relayUrls: P2P_CONFIG.relayUrls, rtcConfig: RTC_CONFIG },
       sessionId
     );
 
