@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
 import { screenCaptureService } from '../services/media/ScreenCaptureService';
-import { peerManager } from '../services/p2p';
+import { usePeerManager } from './usePeerManager';
 import { screenRecorder } from '../services/recording';
 
 export function useScreenShare() {
@@ -10,9 +10,12 @@ export function useScreenShare() {
   const [showPicker, setShowPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { setLocalScreenStream, setActiveScreenSharePeerId } = useSessionStore();
+  const { setLocalScreenStream } = useSessionStore();
   const { isRecording, setScreenRecordingId, setLocalScreenBlob } = useRecordingStore();
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Get peer manager methods for stream management
+  const { addLocalStream, removeLocalStream } = usePeerManager();
 
   const startSharingWithSource = useCallback(
     async (sourceId?: string) => {
@@ -25,7 +28,7 @@ export function useScreenShare() {
         setIsSharing(true);
 
         // Add screen stream to peer manager (will only stream if we become active)
-        peerManager.addLocalStream(stream, { type: 'screen' });
+        addLocalStream(stream, { type: 'screen' });
 
         // If recording is active, start screen recording
         if (isRecording && !screenRecorder.isRecording()) {
@@ -52,7 +55,7 @@ export function useScreenShare() {
           }
 
           if (streamRef.current) {
-            peerManager.removeLocalStream(streamRef.current, true);
+            removeLocalStream(streamRef.current, true);
           }
           setLocalScreenStream(null);
           setIsSharing(false);
@@ -71,7 +74,7 @@ export function useScreenShare() {
         throw err;
       }
     },
-    [setLocalScreenStream, isRecording, setScreenRecordingId, setLocalScreenBlob]
+    [setLocalScreenStream, isRecording, setScreenRecordingId, setLocalScreenBlob, addLocalStream, removeLocalStream]
   );
 
   const startSharing = useCallback(async () => {
@@ -101,24 +104,13 @@ export function useScreenShare() {
     }
 
     if (streamRef.current) {
-      peerManager.removeLocalStream(streamRef.current, true);
+      removeLocalStream(streamRef.current, true);
     }
     screenCaptureService.stopScreenShare();
     setLocalScreenStream(null);
     setIsSharing(false);
     streamRef.current = null;
-  }, [setLocalScreenStream, setLocalScreenBlob]);
-
-  // Subscribe to active screen share changes
-  useEffect(() => {
-    peerManager.setOnActiveScreenShareChange((peerId) => {
-      setActiveScreenSharePeerId(peerId);
-    });
-
-    return () => {
-      peerManager.setOnActiveScreenShareChange(() => {});
-    };
-  }, [setActiveScreenSharePeerId]);
+  }, [setLocalScreenStream, setLocalScreenBlob, removeLocalStream]);
 
   // Cleanup on unmount
   useEffect(() => {

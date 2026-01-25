@@ -11,7 +11,6 @@ import { ScreenShareButton } from '../components/video/ScreenShareButton';
 import { useRecording } from '../hooks/useRecording';
 import { useEditPoints } from '../hooks/useEditPoints';
 import { useFileTransfer } from '../hooks/useFileTransfer';
-import { signalingService } from '../services/p2p';
 import { MainDisplay } from '../components/video/MainDisplay';
 import { TileGrid } from '../components/video/TileGrid';
 import { RecordButton } from '../components/recording/RecordButton';
@@ -101,11 +100,8 @@ export function SessionPage() {
     }
   }, [isConnected, localStream, requestStream]);
 
-  const room = signalingService.getRoom();
-  const { isRecording, countdown, startRecording, stopRecording } = useRecording(
-    room ?? undefined
-  );
-  const { sendMultipleToAllPeers } = useFileTransfer(room ?? undefined);
+  const { isRecording, countdown, startRecording, stopRecording } = useRecording();
+  const { sendMultipleToAllPeers } = useFileTransfer();
 
   // Initialize edit points tracking
   useEditPoints();

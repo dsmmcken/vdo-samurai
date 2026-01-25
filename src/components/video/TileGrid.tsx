@@ -1,14 +1,12 @@
 import { useSessionStore } from '../../store/sessionStore';
 import { usePeerStore } from '../../store/peerStore';
 import { useFocus } from '../../hooks/useFocus';
-import { signalingService } from '../../services/p2p';
 import { UserTile } from './UserTile';
 
 export function TileGrid() {
   const { localStream, localScreenStream, isHost } = useSessionStore();
   const { peers } = usePeerStore();
-  const room = signalingService.getRoom();
-  const { focusedPeerId, changeFocus } = useFocus(room ?? undefined);
+  const { focusedPeerId, changeFocus } = useFocus();
 
   const totalParticipants = peers.length + 1;
 

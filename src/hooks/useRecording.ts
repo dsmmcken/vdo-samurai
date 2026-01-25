@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { type Room } from 'trystero/torrent';
 import { useRecordingStore } from '../store/recordingStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useTrystero } from '../contexts/TrysteroContext';
 import { localRecorder, screenRecorder, recordingCoordinator } from '../services/recording';
 
-export function useRecording(room?: Room) {
+export function useRecording() {
+  const { room } = useTrystero();
   const { localRecordingStream, localScreenStream, isHost } = useSessionStore();
   const {
     isRecording,

@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { type Room } from 'trystero/torrent';
 import { useTransferStore, type Transfer, type RecordingType } from '../store/transferStore';
 import { usePeerStore } from '../store/peerStore';
+import { useTrystero } from '../contexts/TrysteroContext';
 import { transferService, type QueuedTransfer } from '../services/transfer';
 
 // Parse recording type from filename (e.g., "camera-recording-123.webm" or "screen-recording-123.webm")
@@ -12,7 +12,8 @@ function parseRecordingType(filename: string): RecordingType {
   return 'camera';
 }
 
-export function useFileTransfer(room?: Room) {
+export function useFileTransfer() {
+  const { room } = useTrystero();
   const { transfers, setTransfers, addReceivedRecording, isTransferring } = useTransferStore();
   const { peers } = usePeerStore();
   const initializedRef = useRef(false);

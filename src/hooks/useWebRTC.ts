@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
 import { generateRoomCode } from '../utils/roomCode';
 import { usePeerStore } from '../store/peerStore';
-import { signalingService, peerManager } from '../services/p2p';
+import { useTrystero } from '../contexts/TrysteroContext';
+import { usePeerManager } from './usePeerManager';
 import { saveConnection } from '../services/storage/connectionHistory';
 import { toast } from '../components/ui/toastStore';
 
@@ -13,14 +14,19 @@ export function useWebRTC() {
     localStream,
     setSessionId,
     setIsHost,
+    setUserName,
     setIsConnecting,
     setIsConnected,
     setError,
     reset
   } = useSessionStore();
 
-  const { setPeers, clearPeers } = usePeerStore();
+  const { clearPeers } = usePeerStore();
+  const { joinSession: trysteroJoin, leaveSession: trysteroLeave, isConnected: trysteroConnected } = useTrystero();
   const initializedRef = useRef(false);
+
+  // Initialize peer manager - sets up all peer event handlers
+  const peerManager = usePeerManager();
 
   const createSession = useCallback(
     async (name: string, existingSessionId?: string) => {
@@ -29,13 +35,12 @@ export function useWebRTC() {
       setError(null);
 
       try {
-        const room = await signalingService.joinSession(newSessionId);
-        peerManager.initialize(room, name, true);
-        peerManager.setOnPeersUpdate(setPeers);
-
+        trysteroJoin(newSessionId);
+        setUserName(name);
         setSessionId(newSessionId);
         setIsHost(true);
         setIsConnected(true);
+        initializedRef.current = true;
 
         saveConnection({
           sessionId: newSessionId,
@@ -43,7 +48,6 @@ export function useWebRTC() {
           timestamp: Date.now(),
           isHost: true
         });
-
 
         return newSessionId;
       } catch (err) {
@@ -55,7 +59,7 @@ export function useWebRTC() {
         setIsConnecting(false);
       }
     },
-    [setSessionId, setIsHost, setIsConnecting, setIsConnected, setError, setPeers]
+    [trysteroJoin, setSessionId, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
   );
 
   const joinSession = useCallback(
@@ -64,13 +68,12 @@ export function useWebRTC() {
       setError(null);
 
       try {
-        const room = await signalingService.joinSession(existingSessionId);
-        peerManager.initialize(room, name, false);
-        peerManager.setOnPeersUpdate(setPeers);
-
+        trysteroJoin(existingSessionId);
+        setUserName(name);
         setSessionId(existingSessionId);
         setIsHost(false);
         setIsConnected(true);
+        initializedRef.current = true;
 
         saveConnection({
           sessionId: existingSessionId,
@@ -91,35 +94,33 @@ export function useWebRTC() {
         setIsConnecting(false);
       }
     },
-    [setSessionId, setIsHost, setIsConnecting, setIsConnected, setError, setPeers]
+    [trysteroJoin, setSessionId, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
   );
 
   const leaveSession = useCallback(() => {
     // Reset session state first to ensure UI updates immediately
     clearPeers();
     reset();
-    // Then clean up signaling and peers
-    signalingService.leaveSession();
-    peerManager.clear();
-  }, [clearPeers, reset]);
+    // Then clean up trystero
+    trysteroLeave();
+    initializedRef.current = false;
+  }, [clearPeers, reset, trysteroLeave]);
 
   // Add local stream to peers when it becomes available
   useEffect(() => {
-    if (localStream && signalingService.isConnected()) {
+    if (localStream && trysteroConnected) {
       peerManager.addLocalStream(localStream, { type: 'camera' });
     }
-  }, [localStream]);
+  }, [localStream, trysteroConnected, peerManager]);
 
   // Cleanup on unmount
   useEffect(() => {
-    const wasInitialized = initializedRef.current;
     return () => {
-      if (wasInitialized) {
-        signalingService.leaveSession();
-        peerManager.clear();
+      if (initializedRef.current) {
+        trysteroLeave();
       }
     };
-  }, []);
+  }, [trysteroLeave]);
 
   return {
     sessionId,
@@ -127,11 +128,7 @@ export function useWebRTC() {
     createSession,
     joinSession,
     leaveSession,
-    addStream: (stream: MediaStream, metadata?: { type: string }) => {
-      peerManager.addLocalStream(stream, metadata);
-    },
-    removeStream: (stream: MediaStream) => {
-      peerManager.removeLocalStream(stream);
-    }
+    addStream: peerManager.addLocalStream,
+    removeStream: peerManager.removeLocalStream
   };
 }
