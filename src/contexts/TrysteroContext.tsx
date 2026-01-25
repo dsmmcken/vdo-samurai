@@ -11,6 +11,7 @@ import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/mqtt';
 import { P2P_CONFIG, RTC_CONFIG } from '../services/p2p/config';
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
+import { transferService } from '../services/transfer/TransferService';
 
 // Debug: Log MQTT socket status
 const logMqttStatus = () => {
@@ -153,6 +154,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         isHost: false
       });
 
+      // Notify transfer service about new peer
+      transferService.addPeer(peerId);
+
       // Send our info to the new peer
       const info: PeerInfoData = {
         type: 'peer-info',
@@ -185,6 +189,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     newRoom.onPeerLeave((peerId) => {
       console.log('[TrysteroProvider] Peer left:', peerId);
       removePeer(peerId);
+      transferService.removePeer(peerId);
       stateRef.current.peersWithScreenShareAvailable.delete(peerId);
 
       // If the leaving peer was the active screen sharer, clear it

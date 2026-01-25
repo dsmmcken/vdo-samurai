@@ -23,45 +23,52 @@ export class TransferService {
   private onUpdateCallback: TransferUpdateCallback | null = null;
   private onReceiveCallback: TransferCompleteCallback | null = null;
 
+  private sendTransfer: ((data: unknown, peerId: string) => void) | null = null;
+
   initialize(room: Room): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [sendTransfer, onTransfer] = room.makeAction<any>('xfer');
-
-    // Setup protocol for each peer
-    room.onPeerJoin((peerId) => {
-      const protocol = new FileTransferProtocol();
-
-      protocol.initialize((data) => {
-        sendTransfer(data, peerId);
-      });
-
-      protocol.onProgress((transferId, progress) => {
-        this.updateTransfer(transferId, { progress });
-      });
-
-      protocol.onComplete((transferId, blob, filename) => {
-        this.updateTransfer(transferId, { status: 'complete', progress: 1 });
-        this.onReceiveCallback?.(peerId, blob, filename);
-      });
-
-      protocol.onError((transferId, error) => {
-        this.updateTransfer(transferId, { status: 'error', error });
-      });
-
-      this.protocols.set(peerId, protocol);
-    });
-
-    room.onPeerLeave((peerId) => {
-      const protocol = this.protocols.get(peerId);
-      protocol?.clear();
-      this.protocols.delete(peerId);
-    });
+    this.sendTransfer = sendTransfer;
 
     // Handle incoming transfer messages
     onTransfer((data: unknown, peerId: string) => {
       const protocol = this.protocols.get(peerId);
       protocol?.handleMessage(data);
     });
+  }
+
+  // Called by TrysteroContext when a peer joins
+  addPeer(peerId: string): void {
+    if (this.protocols.has(peerId) || !this.sendTransfer) return;
+
+    const sendTransfer = this.sendTransfer;
+    const protocol = new FileTransferProtocol();
+
+    protocol.initialize((data) => {
+      sendTransfer(data, peerId);
+    });
+
+    protocol.onProgress((transferId, progress) => {
+      this.updateTransfer(transferId, { progress });
+    });
+
+    protocol.onComplete((transferId, blob, filename) => {
+      this.updateTransfer(transferId, { status: 'complete', progress: 1 });
+      this.onReceiveCallback?.(peerId, blob, filename);
+    });
+
+    protocol.onError((transferId, error) => {
+      this.updateTransfer(transferId, { status: 'error', error });
+    });
+
+    this.protocols.set(peerId, protocol);
+  }
+
+  // Called by TrysteroContext when a peer leaves
+  removePeer(peerId: string): void {
+    const protocol = this.protocols.get(peerId);
+    protocol?.clear();
+    this.protocols.delete(peerId);
   }
 
   enqueue(peerId: string, peerName: string, blob: Blob, filename: string): string {
@@ -157,6 +164,7 @@ export class TransferService {
     this.protocols.clear();
     this.onUpdateCallback = null;
     this.onReceiveCallback = null;
+    this.sendTransfer = null;
   }
 }
 
