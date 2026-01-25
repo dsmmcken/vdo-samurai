@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useSessionStore } from '../store/sessionStore';
 import { generateRoomCode } from '../utils/roomCode';
 import { usePeerStore } from '../store/peerStore';
@@ -23,9 +23,8 @@ export function useWebRTC() {
 
   const { clearPeers } = usePeerStore();
   const { joinSession: trysteroJoin, leaveSession: trysteroLeave, isConnected: trysteroConnected } = useTrystero();
-  const initializedRef = useRef(false);
 
-  // Initialize peer manager - sets up all peer event handlers
+  // Get peer manager methods from context
   const peerManager = usePeerManager();
 
   const createSession = useCallback(
@@ -40,7 +39,6 @@ export function useWebRTC() {
         setSessionId(newSessionId);
         setIsHost(true);
         setIsConnected(true);
-        initializedRef.current = true;
 
         saveConnection({
           sessionId: newSessionId,
@@ -73,7 +71,6 @@ export function useWebRTC() {
         setSessionId(existingSessionId);
         setIsHost(false);
         setIsConnected(true);
-        initializedRef.current = true;
 
         saveConnection({
           sessionId: existingSessionId,
@@ -103,7 +100,6 @@ export function useWebRTC() {
     reset();
     // Then clean up trystero
     trysteroLeave();
-    initializedRef.current = false;
   }, [clearPeers, reset, trysteroLeave]);
 
   // Add local stream to peers when it becomes available
@@ -113,14 +109,8 @@ export function useWebRTC() {
     }
   }, [localStream, trysteroConnected, peerManager]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (initializedRef.current) {
-        trysteroLeave();
-      }
-    };
-  }, [trysteroLeave]);
+  // NOTE: No cleanup on unmount - session persists until explicit leaveSession call
+  // This prevents React StrictMode double-mount from breaking the connection
 
   return {
     sessionId,
