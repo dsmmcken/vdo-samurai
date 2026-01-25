@@ -1,11 +1,6 @@
 export const P2P_CONFIG = {
-  appId: 'vdo-samurai-v1',
-  relayUrls: [
-    'wss://tracker.openwebtorrent.com:443/announce',
-    'wss://tracker.magnetoo.io:443/announce',
-    'wss://tracker.files.fm:7073/announce',
-    'wss://spacetradersapi-chatbox.herokuapp.com:443/announce'
-  ]
+  appId: 'vdo-samurai-v1'
+  // Uses Nostr default relays (18 relays including relay.damus.io, nos.lol, etc.)
 };
 
 export const RTC_CONFIG: RTCConfiguration = {

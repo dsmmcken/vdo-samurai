@@ -7,16 +7,16 @@ import {
   useRef,
   type ReactNode
 } from 'react';
-import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/torrent';
+import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/nostr';
 import { P2P_CONFIG, RTC_CONFIG } from '../services/p2p/config';
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
 import { transferService } from '../services/transfer/TransferService';
 
-// Debug: Log tracker socket status
-const logTrackerStatus = () => {
+// Debug: Log relay socket status
+const logRelayStatus = () => {
   const sockets = getRelaySockets();
-  console.log('[TrysteroProvider] Torrent tracker sockets:', Object.entries(sockets).map(([key, socket]) => ({
+  console.log('[TrysteroProvider] Nostr relay sockets:', Object.entries(sockets).map(([key, socket]) => ({
     key,
     readyState: socket?.readyState,
     readyStateText: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][socket?.readyState ?? -1] || 'UNKNOWN'
@@ -282,7 +282,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         peers: Object.keys(peers),
         selfId
       });
-      logTrackerStatus();
+      logRelayStatus();
     }, 10000);
   }, [addPeer, updatePeer, removePeer, setActiveScreenSharePeerId, setFocusedPeerId]);
 
@@ -300,18 +300,18 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
     // Compute and log the expected topic hash for debugging
     computeInfoHash(P2P_CONFIG.appId, newSessionId).then(({ topicPath, hashHex }) => {
-      console.log('[TrysteroProvider] Expected torrent info hash:', {
+      console.log('[TrysteroProvider] Expected Nostr topic hash:', {
         plaintext: topicPath,
         sha1Hash: hashHex,
         selfId: selfId
       });
     });
 
-    const newRoom = joinRoom({ appId: P2P_CONFIG.appId, relayUrls: P2P_CONFIG.relayUrls, rtcConfig: RTC_CONFIG }, newSessionId);
+    const newRoom = joinRoom({ appId: P2P_CONFIG.appId, rtcConfig: RTC_CONFIG }, newSessionId);
 
     // Log MQTT status after a short delay to allow connections
     setTimeout(() => {
-      logTrackerStatus();
+      logRelayStatus();
     }, 2000);
 
     roomRef.current = newRoom;
