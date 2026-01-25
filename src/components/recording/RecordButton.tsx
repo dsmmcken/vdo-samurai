@@ -1,3 +1,5 @@
+import { forwardRef } from 'react';
+
 interface RecordButtonProps {
   isRecording: boolean;
   isHost: boolean;
@@ -6,27 +8,21 @@ interface RecordButtonProps {
   onStop: () => void;
 }
 
-export function RecordButton({
-  isRecording,
-  isHost,
-  countdown,
-  onStart,
-  onStop
-}: RecordButtonProps) {
+export const RecordButton = forwardRef<HTMLButtonElement, RecordButtonProps>(function RecordButton(
+  { isRecording, isHost, countdown, onStart, onStop },
+  ref
+) {
   // Only show to host
   if (!isHost) return null;
 
   const isCountingDown = countdown !== null;
   const isDisabled = isCountingDown;
 
-  const buttonText = isCountingDown
-    ? 'Starting...'
-    : isRecording
-      ? 'Stop'
-      : 'Record';
+  const buttonText = isCountingDown ? 'Starting...' : isRecording ? 'Stop' : 'Record';
 
   return (
     <button
+      ref={ref}
       onClick={isRecording ? onStop : onStart}
       disabled={isDisabled}
       aria-label={buttonText}
@@ -49,4 +45,4 @@ export function RecordButton({
       <span className="text-sm">{buttonText}</span>
     </button>
   );
-}
+});
