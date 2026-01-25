@@ -83,6 +83,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
   const peerHandlersInitializedRef = useRef(false);
+  const debugIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Store refs
   const { addPeer, updatePeer, removePeer, clearPeers } = usePeerStore();
@@ -271,7 +272,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     console.log('[TrysteroProvider] Existing peers in room:', existingPeers);
 
     // Periodic debug logging (temporary - will be removed)
-    setInterval(() => {
+    if (debugIntervalRef.current) {
+      clearInterval(debugIntervalRef.current);
+    }
+    debugIntervalRef.current = setInterval(() => {
       const peers = newRoom.getPeers();
       console.log('[TrysteroProvider] DEBUG - Peers check:', {
         peerCount: Object.keys(peers).length,
@@ -325,6 +329,11 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     roomRef.current?.leave();
     roomRef.current = null;
     peerHandlersInitializedRef.current = false;
+    // Clear debug interval
+    if (debugIntervalRef.current) {
+      clearInterval(debugIntervalRef.current);
+      debugIntervalRef.current = null;
+    }
     setRoom(null);
     setSessionId(null);
     clearPeers();
