@@ -32,7 +32,10 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+const platform = window.electronAPI?.platform;
+const isMac = platform === 'darwin';
+// Windows and Linux use frameless windows with custom controls
+const useCustomControls = platform === 'win32' || platform === 'linux';
 
 export function TitleBar() {
   const { profile } = useUserStore();
@@ -44,10 +47,34 @@ export function TitleBar() {
   const { stopStream } = useMediaStream();
   const navigate = useNavigate();
   const [elapsed, setElapsed] = useState('00:00');
+  const [isMaximized, setIsMaximized] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const location = useLocation();
   const isUserPopoverOpen = activePopover === 'user';
+
+  // Check maximized state for frameless windows (Windows/Linux)
+  useEffect(() => {
+    if (!useCustomControls) return;
+
+    const checkMaximized = async () => {
+      const maximized = await window.electronAPI.window.isMaximized();
+      setIsMaximized(maximized);
+    };
+
+    checkMaximized();
+
+    // Check periodically since there's no event listener for maximize/unmaximize
+    const interval = setInterval(checkMaximized, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMinimize = () => window.electronAPI.window.minimize();
+  const handleMaximize = async () => {
+    await window.electronAPI.window.maximize();
+    setIsMaximized(!isMaximized);
+  };
+  const handleClose = () => window.electronAPI.window.close();
 
   const updateElapsed = useCallback(() => {
     if (startTime) {
@@ -102,7 +129,7 @@ export function TitleBar() {
 
   return (
     <div
-      className={`h-9 ${getBgClass()} flex items-center justify-between pr-3 relative ${isMac ? 'pl-20' : 'pl-3'}`}
+      className={`h-9 ${getBgClass()} flex items-center justify-between ${useCustomControls ? 'pr-0' : 'pr-3'} relative ${isMac ? 'pl-20' : 'pl-3'}`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       {/* Left side - App name/home link */}
@@ -185,6 +212,46 @@ export function TitleBar() {
               </svg>
             )}
           </button>
+        )}
+
+        {/* Window controls for Windows/Linux */}
+        {useCustomControls && (
+          <div className="flex items-center ml-2">
+            <button
+              onClick={handleMinimize}
+              className={`w-7 h-7 flex items-center justify-center hover:bg-gray-500/30 transition-colors cursor-pointer ${isHomePage ? 'text-gray-600 hover:text-gray-800' : 'text-gray-400 hover:text-white'}`}
+              aria-label="Minimize"
+            >
+              <svg className="w-3 h-0.5" fill="currentColor" viewBox="0 0 12 2">
+                <rect width="12" height="2" />
+              </svg>
+            </button>
+            <button
+              onClick={handleMaximize}
+              className={`w-7 h-7 flex items-center justify-center hover:bg-gray-500/30 transition-colors cursor-pointer ${isHomePage ? 'text-gray-600 hover:text-gray-800' : 'text-gray-400 hover:text-white'}`}
+              aria-label={isMaximized ? 'Restore' : 'Maximize'}
+            >
+              {isMaximized ? (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 12 12">
+                  <rect x="2.5" y="0.5" width="9" height="9" rx="1" />
+                  <rect x="0.5" y="2.5" width="9" height="9" rx="1" fill={isHomePage ? 'white' : '#0f0f23'} />
+                </svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 12 12">
+                  <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={handleClose}
+              className={`w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors cursor-pointer ${isHomePage ? 'text-gray-600' : 'text-gray-400'}`}
+              aria-label="Close"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 12 12">
+                <path d="M1 1l10 10M11 1L1 11" />
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 

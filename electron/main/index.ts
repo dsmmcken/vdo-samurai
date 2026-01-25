@@ -1,11 +1,15 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, Menu, ipcMain } from 'electron';
 import { join } from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 
+const isMac = process.platform === 'darwin';
+
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  // On macOS, use hiddenInset for native traffic lights
+  // On Windows/Linux, use frameless window for custom title bar
+  const windowOptions: Electron.BrowserWindowConstructorOptions = {
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -16,10 +20,22 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false
     },
-    titleBarStyle: 'hiddenInset',
     backgroundColor: '#0f0f23',
     show: false
-  });
+  };
+
+  if (isMac) {
+    windowOptions.titleBarStyle = 'hiddenInset';
+  } else {
+    windowOptions.frame = false;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+
+  // Hide menu on Windows/Linux for cleaner look (no File/Edit/View)
+  if (!isMac) {
+    Menu.setApplicationMenu(null);
+  }
 
   // Show window when ready to prevent visual flash
   mainWindow.once('ready-to-show', () => {
@@ -61,6 +77,27 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     registerIpcHandlers();
     createWindow();
+
+    // Window control IPC handlers
+    ipcMain.handle('window:minimize', () => {
+      mainWindow?.minimize();
+    });
+
+    ipcMain.handle('window:maximize', () => {
+      if (mainWindow?.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow?.maximize();
+      }
+    });
+
+    ipcMain.handle('window:close', () => {
+      mainWindow?.close();
+    });
+
+    ipcMain.handle('window:isMaximized', () => {
+      return mainWindow?.isMaximized() ?? false;
+    });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
