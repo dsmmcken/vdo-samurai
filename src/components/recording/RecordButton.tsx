@@ -43,7 +43,7 @@ export function RecordButton({
       `}
     >
       <span
-        className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${isRecording ? 'bg-white animate-pulse' : 'bg-red-500'}`}
+        className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isRecording ? 'bg-white' : 'bg-red-500 rounded-full'}`}
         aria-hidden="true"
       />
       <span className="text-sm">{buttonText}</span>
