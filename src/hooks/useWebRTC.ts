@@ -79,8 +79,6 @@ export function useWebRTC() {
           isHost: false
         });
 
-        toast.success('Joined session', 'You are now connected');
-
         return existingSessionId;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to join session';
