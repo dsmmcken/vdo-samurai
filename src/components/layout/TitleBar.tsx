@@ -1,8 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useRef, useEffect, useCallback, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUserStore } from '../../store/userStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useRecordingStore } from '../../store/recordingStore';
+import { usePopoverStore } from '../../store/popoverStore';
+import { useTransferStore } from '../../store/transferStore';
+import { useWebRTC } from '../../hooks/useWebRTC';
+import { useMediaStream } from '../../hooks/useMediaStream';
 import { UserPopover } from '../user/UserPopover';
 import { ShareLink } from '../connection/ShareLink';
 import { ConnectionStatus } from '../connection/ConnectionStatus';
@@ -34,11 +38,16 @@ export function TitleBar() {
   const { profile } = useUserStore();
   const { sessionId, isConnected } = useSessionStore();
   const { isRecording, startTime } = useRecordingStore();
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const { activePopover, togglePopover } = usePopoverStore();
+  const { isTransferring } = useTransferStore();
+  const { leaveSession } = useWebRTC();
+  const { stopStream } = useMediaStream();
+  const navigate = useNavigate();
   const [elapsed, setElapsed] = useState('00:00');
   const buttonRef = useRef<HTMLButtonElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const location = useLocation();
+  const isUserPopoverOpen = activePopover === 'user';
 
   const updateElapsed = useCallback(() => {
     if (startTime) {
@@ -73,6 +82,18 @@ export function TitleBar() {
   const initials = profile?.displayName ? getInitials(profile.displayName) : '';
   const showSessionControls = isConnected && sessionId;
 
+  const handleLeave = () => {
+    if (isTransferring()) {
+      const confirm = window.confirm(
+        'File transfers are in progress. Are you sure you want to leave?'
+      );
+      if (!confirm) return;
+    }
+    stopStream();
+    leaveSession();
+    navigate('/');
+  };
+
   const getBgClass = () => {
     if (isHomePage) return 'bg-white border-b border-gray-200';
     if (isSessionPage) return 'bg-black';
@@ -103,6 +124,28 @@ export function TitleBar() {
           <>
             <ShareLink sessionId={sessionId} />
             <ConnectionStatus />
+            <button
+              onClick={handleLeave}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/80 hover:bg-red-500 text-white text-xs font-medium transition-colors cursor-pointer"
+              aria-label="Leave session"
+              title="Leave session"
+            >
+              <svg
+                className="w-3 h-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.28 3H5z"
+                />
+              </svg>
+              Leave
+            </button>
             {isRecording && (
               <div className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium">
                 <span className="relative flex h-2 w-2">
@@ -119,16 +162,16 @@ export function TitleBar() {
         {profile && (
           <button
             ref={buttonRef}
-            onClick={() => setIsPopoverOpen(!isPopoverOpen)}
-            className={`w-7 h-7 rounded-full ${isHomePage ? 'bg-gray-200 hover:bg-gray-300' : 'bg-[--color-primary]/20 hover:bg-[--color-primary]/30'} flex items-center justify-center transition-colors`}
+            onClick={() => togglePopover('user')}
+            className={`w-6 h-6 rounded-full ${isHomePage ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-800 hover:bg-gray-700'} flex items-center justify-center transition-colors cursor-pointer`}
             aria-label="User menu"
-            aria-expanded={isPopoverOpen}
+            aria-expanded={isUserPopoverOpen}
           >
             {initials ? (
-              <span className={`text-xs font-medium ${isHomePage ? 'text-black' : 'text-[--color-primary]'}`}>{initials}</span>
+              <span className={`text-xs font-medium ${isHomePage ? 'text-black' : 'text-gray-300'}`}>{initials}</span>
             ) : (
               <svg
-                className={`w-4 h-4 ${isHomePage ? 'text-black' : 'text-[--color-primary]'}`}
+                className={`w-3 h-3 ${isHomePage ? 'text-black' : 'text-gray-300'}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -145,11 +188,7 @@ export function TitleBar() {
         )}
       </div>
 
-      <UserPopover
-        isOpen={isPopoverOpen}
-        onClose={() => setIsPopoverOpen(false)}
-        anchorRef={buttonRef}
-      />
+      <UserPopover anchorRef={buttonRef} />
     </div>
   );
 }

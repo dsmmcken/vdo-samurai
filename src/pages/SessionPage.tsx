@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
-import { useTransferStore } from '../store/transferStore';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { ScreenShareButton } from '../components/video/ScreenShareButton';
@@ -38,11 +37,17 @@ export function SessionPage() {
   const navigate = useNavigate();
   const { isConnected, isConnecting, isHost, localStream } = useSessionStore();
   const { localBlob } = useRecordingStore();
-  const { isTransferring } = useTransferStore();
-  const { createSession, joinSession, leaveSession } = useWebRTC();
-  const { requestStream, stopStream, toggleVideo, toggleAudio } = useMediaStream();
+  const { createSession, joinSession } = useWebRTC();
+  const { requestStream, toggleVideo, toggleAudio } = useMediaStream();
   const { profile } = useUserStore();
   const reconnectAttemptedRef = useRef(false);
+
+  // Mark reconnect as attempted when connected (prevents auto-reconnect after manual leave)
+  useEffect(() => {
+    if (isConnected) {
+      reconnectAttemptedRef.current = true;
+    }
+  }, [isConnected]);
 
   // Auto-reconnect on page refresh
   useEffect(() => {
@@ -106,18 +111,6 @@ export function SessionPage() {
       sendToAllPeers(localBlob, `recording-${Date.now()}.webm`);
     }
   }, [localBlob, isHost, sendToAllPeers]);
-
-  const handleLeave = () => {
-    if (isTransferring()) {
-      const confirm = window.confirm(
-        'File transfers are in progress. Are you sure you want to leave?'
-      );
-      if (!confirm) return;
-    }
-    stopStream();
-    leaveSession();
-    navigate('/');
-  };
 
   const handleToggleVideo = () => {
     const enabled = toggleVideo();
@@ -196,7 +189,7 @@ export function SessionPage() {
   }
 
   return (
-    <div className="h-full bg-black grid grid-rows-[1fr_auto] overflow-hidden">
+    <div className="h-full bg-black flex flex-col overflow-hidden">
       {/* Countdown overlay */}
       <CountdownOverlay countdown={countdown} />
 
@@ -204,7 +197,7 @@ export function SessionPage() {
       <TransferProgress />
 
       {/* Main video display with overlaid controls */}
-      <div className="min-h-0 p-2 sm:p-3 pb-1 video-container">
+      <div className="flex-1 min-h-0 p-2 sm:p-3 pb-1 video-container">
         <MainDisplay>
           {/* Controls - anchored to video via CSS anchor positioning */}
           <div
@@ -321,35 +314,12 @@ export function SessionPage() {
           onStart={startRecording}
           onStop={stopRecording}
         />
-
-        {/* Leave button */}
-        <button
-          onClick={handleLeave}
-          className="p-2 sm:p-3 rounded-full bg-red-500/70 hover:bg-red-500/90 text-white transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-          aria-label="Leave session"
-          title="Leave session"
-        >
-          <svg
-            className="w-5 h-5 sm:w-6 sm:h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.28 3H5z"
-            />
-          </svg>
-        </button>
           </div>
         </MainDisplay>
       </div>
 
       {/* Participant tiles - fixed height row */}
-      <div className="px-2 sm:px-3 pb-2 sm:pb-3">
+      <div className="flex-shrink-0 px-2 sm:px-3 pb-2 sm:pb-3">
         <TileGrid />
       </div>
     </div>
