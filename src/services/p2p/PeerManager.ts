@@ -45,6 +45,11 @@ export class PeerManager {
     this.localName = name;
     this.isHost = isHost;
 
+    // Get our peer ID from the room
+    const selfId = room.selfId;
+    console.log('[PeerManager] Initializing - selfId:', selfId);
+    this.localPeerId = selfId;
+
     console.log('[PeerManager] Initializing with room, setting up peer handlers...');
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,6 +61,10 @@ export class PeerManager {
 
     this.sendScreenShareStatus = sendScreenShareStatus;
     this.sendActiveScreenShare = sendActiveScreenShare;
+
+    // Check for existing peers
+    const existingPeers = room.getPeers();
+    console.log('[PeerManager] Existing peers in room:', existingPeers);
 
     console.log('[PeerManager] Registering onPeerJoin handler');
     room.onPeerJoin((peerId) => {
