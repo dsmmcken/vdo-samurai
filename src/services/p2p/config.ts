@@ -1,9 +1,9 @@
 export const P2P_CONFIG = {
   appId: 'vdo-samurai-v1',
   relayUrls: [
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://relay.snort.social'
+    'wss://nostr.mutinywallet.com',
+    'wss://relay.nostr.band',
+    'wss://nostr-pub.wellorder.net'
   ]
 };
 
