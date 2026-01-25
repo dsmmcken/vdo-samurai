@@ -5,6 +5,7 @@ interface SessionState {
   isHost: boolean;
   userName: string;
   localStream: MediaStream | null;
+  localRecordingStream: MediaStream | null; // High-quality stream for local recording
   localScreenStream: MediaStream | null;
   focusedPeerId: string | null;
   activeScreenSharePeerId: string | null; // Only one screen share streams at a time
@@ -16,6 +17,7 @@ interface SessionState {
   setIsHost: (isHost: boolean) => void;
   setUserName: (name: string) => void;
   setLocalStream: (stream: MediaStream | null) => void;
+  setLocalRecordingStream: (stream: MediaStream | null) => void;
   setLocalScreenStream: (stream: MediaStream | null) => void;
   setFocusedPeerId: (peerId: string | null) => void;
   setActiveScreenSharePeerId: (peerId: string | null) => void;
@@ -30,6 +32,7 @@ const initialState = {
   isHost: false,
   userName: '',
   localStream: null,
+  localRecordingStream: null,
   localScreenStream: null,
   focusedPeerId: null,
   activeScreenSharePeerId: null,
@@ -47,6 +50,10 @@ export const useSessionStore = create<SessionState>((set) => ({
   setLocalStream: (localStream) => {
     console.log('[sessionStore] setLocalStream called:', !!localStream, localStream?.getVideoTracks());
     set({ localStream });
+  },
+  setLocalRecordingStream: (localRecordingStream) => {
+    console.log('[sessionStore] setLocalRecordingStream called:', !!localRecordingStream, localRecordingStream?.getVideoTracks());
+    set({ localRecordingStream });
   },
   setLocalScreenStream: (localScreenStream) => set({ localScreenStream }),
   setFocusedPeerId: (focusedPeerId) => set({ focusedPeerId }),

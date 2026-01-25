@@ -44,3 +44,13 @@ export const MAIN_CONSTRAINTS: MediaConstraints = {
   },
   audio: true
 };
+
+// High-quality constraints for local recording (not streamed to peers)
+export const HIGH_QUALITY_CONSTRAINTS: MediaConstraints = {
+  video: {
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    frameRate: { ideal: 30 }
+  },
+  audio: true
+};
