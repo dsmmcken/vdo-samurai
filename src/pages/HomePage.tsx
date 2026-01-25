@@ -4,6 +4,9 @@ import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { useUserStore } from '../store/userStore';
 import { CherryBlossomButton } from '../components/ui/CherryBlossomButton';
+import { formatRoomCode } from '../utils/roomCode';
+
+const DEBUG_ROOM_CODE = formatRoomCode('debug_room', 'debug_password');
 
 const LAST_SESSION_KEY = 'vdo-samurai-last-session';
 
@@ -92,6 +95,22 @@ export function HomePage() {
     }
   };
 
+  const handleCreateDebugRoom = async () => {
+    if (!profile?.displayName) return;
+
+    setIsCreating(true);
+    try {
+      await requestStream();
+      await createSession(profile.displayName, DEBUG_ROOM_CODE);
+      saveLastSession(DEBUG_ROOM_CODE, true);
+      navigate(`/session/${DEBUG_ROOM_CODE}`);
+    } catch (err) {
+      console.error('Failed to create debug session:', err);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div
       className="min-h-screen w-full bg-cover bg-center bg-no-repeat bg-fixed flex items-center justify-center"
@@ -141,6 +160,16 @@ export function HomePage() {
         >
           {isCreating ? 'Creating...' : 'Create Room'}
         </CherryBlossomButton>
+
+        {import.meta.env.DEV && (
+          <button
+            onClick={handleCreateDebugRoom}
+            disabled={isCreating}
+            className="w-full mt-2 px-4 py-2 bg-yellow-500/50 text-black border border-yellow-600 rounded-lg font-medium hover:bg-yellow-500/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors text-sm"
+          >
+            Create Debug Room
+          </button>
+        )}
       </div>
     </div>
   );

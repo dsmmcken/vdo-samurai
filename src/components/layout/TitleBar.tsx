@@ -10,6 +10,7 @@ import { useMediaStream } from '../../hooks/useMediaStream';
 import { UserPopover } from '../user/UserPopover';
 import { ShareLink } from '../connection/ShareLink';
 import { ConnectionStatus } from '../connection/ConnectionStatus';
+import { formatRoomCode } from '../../utils/roomCode';
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -39,7 +40,10 @@ const useCustomControls = platform === 'win32' || platform === 'linux';
 
 export function TitleBar() {
   const { profile } = useUserStore();
-  const { sessionId, isConnected } = useSessionStore();
+  const { sessionId, sessionPassword, isConnected } = useSessionStore();
+
+  // Combine roomId and password for shareable link
+  const shareableCode = sessionId && sessionPassword ? formatRoomCode(sessionId, sessionPassword) : null;
   const { isRecording, startTime } = useRecordingStore();
   const { activePopover, togglePopover } = usePopoverStore();
   const { isTransferring } = useTransferStore();
@@ -107,7 +111,7 @@ export function TitleBar() {
   const isHomePage = location.pathname === '/';
   const isSessionPage = location.pathname.startsWith('/session/');
   const initials = profile?.displayName ? getInitials(profile.displayName) : '';
-  const showSessionControls = isConnected && sessionId;
+  const showSessionControls = isConnected && shareableCode;
 
   const handleLeave = () => {
     if (isTransferring()) {
@@ -149,7 +153,7 @@ export function TitleBar() {
       >
         {showSessionControls && (
           <>
-            <ShareLink sessionId={sessionId} />
+            <ShareLink sessionId={shareableCode} />
             <ConnectionStatus />
             <button
               onClick={handleLeave}

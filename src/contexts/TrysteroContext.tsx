@@ -11,6 +11,16 @@ import { joinRoom, selfId, getRelaySockets, type Room } from 'trystero/nostr';
 
 const APP_ID = 'vdo-samurai-v1';
 
+const RTC_CONFIG: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ]
+};
+
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
 import { transferService } from '../services/transfer/TransferService';
@@ -67,7 +77,7 @@ interface TrysteroContextValue {
   selfId: string;
   sessionId: string | null;
   isConnected: boolean;
-  joinSession: (sessionId: string) => Room;
+  joinSession: (sessionId: string, password: string) => Room;
   leaveSession: () => void;
   addLocalStream: (stream: MediaStream, metadata?: { type: string }) => void;
   removeLocalStream: (stream: MediaStream, isScreen?: boolean) => void;
@@ -298,7 +308,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   );
 
   const joinSession = useCallback(
-    (newSessionId: string): Room => {
+    (newSessionId: string, password: string): Room => {
       // Leave existing room if any
       if (roomRef.current) {
         console.log('[TrysteroProvider] Leaving existing room before joining new one');
@@ -319,7 +329,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         });
       });
 
-      const newRoom = joinRoom({ appId: APP_ID, rtcConfig: RTC_CONFIG }, newSessionId);
+      const newRoom = joinRoom({ appId: APP_ID, rtcConfig: RTC_CONFIG, password }, newSessionId);
 
       // Log MQTT status after a short delay to allow connections
       setTimeout(() => {

@@ -26,7 +26,7 @@ export function CreateSession() {
       setUserName(displayName);
       const sessionId = await createSession(displayName);
 
-      // Navigate to session
+      // Navigate to session (URL-encode to handle ?p= in the code)
       navigate(`/session/${sessionId}`);
     } catch (err) {
       console.error('Failed to create session:', err);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { useSessionStore } from '../store/sessionStore';
-import { generateRoomCode } from '../utils/roomCode';
+import { generateRoomCode, parseRoomCode, formatRoomCode } from '../utils/roomCode';
 import { usePeerStore } from '../store/peerStore';
 import { useTrystero } from '../contexts/TrysteroContext';
 import { usePeerManager } from './usePeerManager';
@@ -10,9 +10,11 @@ import { toast } from '../components/ui/toastStore';
 export function useWebRTC() {
   const {
     sessionId,
+    sessionPassword,
     isHost,
     localStream,
     setSessionId,
+    setSessionPassword,
     setIsHost,
     setUserName,
     setIsConnecting,
@@ -29,25 +31,32 @@ export function useWebRTC() {
 
   const createSession = useCallback(
     async (name: string, existingSessionId?: string) => {
-      const newSessionId = existingSessionId || generateRoomCode();
+      // Parse or generate room code with password
+      const { roomId, password } = existingSessionId
+        ? parseRoomCode(existingSessionId)
+        : parseRoomCode(generateRoomCode());
+
       setIsConnecting(true);
       setError(null);
 
       try {
-        trysteroJoin(newSessionId);
+        trysteroJoin(roomId, password);
         setUserName(name);
-        setSessionId(newSessionId);
+        setSessionId(roomId);
+        setSessionPassword(password);
         setIsHost(true);
         setIsConnected(true);
 
+        // Save full code (with password) for reconnection
+        const fullCode = formatRoomCode(roomId, password);
         saveConnection({
-          sessionId: newSessionId,
+          sessionId: fullCode,
           name,
           timestamp: Date.now(),
           isHost: true
         });
 
-        return newSessionId;
+        return fullCode;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create session';
         setError(message);
@@ -57,29 +66,35 @@ export function useWebRTC() {
         setIsConnecting(false);
       }
     },
-    [trysteroJoin, setSessionId, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
+    [trysteroJoin, setSessionId, setSessionPassword, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
   );
 
   const joinSession = useCallback(
     async (existingSessionId: string, name: string) => {
+      // Parse room code to get roomId and password
+      const { roomId, password } = parseRoomCode(existingSessionId);
+
       setIsConnecting(true);
       setError(null);
 
       try {
-        trysteroJoin(existingSessionId);
+        trysteroJoin(roomId, password);
         setUserName(name);
-        setSessionId(existingSessionId);
+        setSessionId(roomId);
+        setSessionPassword(password);
         setIsHost(false);
         setIsConnected(true);
 
+        // Save full code (with password) for reconnection
+        const fullCode = formatRoomCode(roomId, password);
         saveConnection({
-          sessionId: existingSessionId,
+          sessionId: fullCode,
           name,
           timestamp: Date.now(),
           isHost: false
         });
 
-        return existingSessionId;
+        return fullCode;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to join session';
         setError(message);
@@ -89,7 +104,7 @@ export function useWebRTC() {
         setIsConnecting(false);
       }
     },
-    [trysteroJoin, setSessionId, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
+    [trysteroJoin, setSessionId, setSessionPassword, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
   );
 
   const leaveSession = useCallback(() => {
@@ -110,8 +125,13 @@ export function useWebRTC() {
   // NOTE: No cleanup on unmount - session persists until explicit leaveSession call
   // This prevents React StrictMode double-mount from breaking the connection
 
+  // Get the full shareable code (roomId + password)
+  const shareableCode = sessionId && sessionPassword ? formatRoomCode(sessionId, sessionPassword) : null;
+
   return {
     sessionId,
+    sessionPassword,
+    shareableCode,
     isHost,
     createSession,
     joinSession,

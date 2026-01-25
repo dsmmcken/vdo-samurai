@@ -7,7 +7,7 @@ interface ShareLinkProps {
 export function ShareLink({ sessionId }: ShareLinkProps) {
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = `${window.location.origin}/session/${sessionId}`;
+  const shareUrl = `${window.location.origin}/#/session/${sessionId}`;
 
   const copyToClipboard = async () => {
     try {

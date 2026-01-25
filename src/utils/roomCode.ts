@@ -206,11 +206,48 @@ function randomIndex(length: number): number {
   return randomBytes[0] % length;
 }
 
+// Password delimiter for room codes
+const PASSWORD_DELIMITER = '?p=';
+
+// Generate cryptographically secure password (12 chars alphanumeric)
+export function generatePassword(): string {
+  const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const values = new Uint8Array(12);
+  crypto.getRandomValues(values);
+  return Array.from(values, (v) => charset[v % charset.length]).join('');
+}
+
+// Parsed room code structure
+export interface ParsedRoomCode {
+  roomId: string;
+  password: string;
+}
+
+// Parse "roomcode?p=password" format
+export function parseRoomCode(input: string): ParsedRoomCode {
+  const idx = input.lastIndexOf(PASSWORD_DELIMITER);
+  if (idx === -1) {
+    // No password found - generate one (for creating new rooms from legacy codes)
+    return { roomId: input, password: generatePassword() };
+  }
+  return {
+    roomId: input.substring(0, idx),
+    password: input.substring(idx + PASSWORD_DELIMITER.length)
+  };
+}
+
+// Format room ID and password for sharing
+export function formatRoomCode(roomId: string, password: string): string {
+  return `${roomId}${PASSWORD_DELIMITER}${password}`;
+}
+
+// Generate room code with password included
 export function generateRoomCode(): string {
   const verb = verbs[randomIndex(verbs.length)];
   const adjective = adjectives[randomIndex(adjectives.length)];
   const noun = nouns[randomIndex(nouns.length)];
   const shortId = crypto.randomUUID().split('-')[0];
+  const password = generatePassword();
 
-  return `${verb}-${adjective}-${noun}-${shortId}`;
+  return `${verb}-${adjective}-${noun}-${shortId}${PASSWORD_DELIMITER}${password}`;
 }

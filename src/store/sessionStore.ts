@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 interface SessionState {
   sessionId: string | null;
+  sessionPassword: string | null; // Password for Trystero encryption (kept separate from sessionId)
   isHost: boolean;
   userName: string;
   localStream: MediaStream | null;
@@ -14,6 +15,7 @@ interface SessionState {
   error: string | null;
 
   setSessionId: (id: string | null) => void;
+  setSessionPassword: (password: string | null) => void;
   setIsHost: (isHost: boolean) => void;
   setUserName: (name: string) => void;
   setLocalStream: (stream: MediaStream | null) => void;
@@ -29,6 +31,7 @@ interface SessionState {
 
 const initialState = {
   sessionId: null,
+  sessionPassword: null,
   isHost: false,
   userName: '',
   localStream: null,
@@ -45,6 +48,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   ...initialState,
 
   setSessionId: (sessionId) => set({ sessionId }),
+  setSessionPassword: (sessionPassword) => set({ sessionPassword }),
   setIsHost: (isHost) => set({ isHost }),
   setUserName: (userName) => set({ userName }),
   setLocalStream: (localStream) => {
