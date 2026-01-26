@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ScreenSource } from '../../types/electron';
 
 interface ScreenSourcePickerProps {
@@ -59,11 +60,21 @@ export function ScreenSourcePicker({ onSelect, onCancel }: ScreenSourcePickerPro
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onCancel, onSelect, selectedId]);
 
-  return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="screen-picker-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
       <div className="bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
         <div className="p-4 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">Choose what to share</h2>
+          <h2 id="screen-picker-title" className="text-xl font-semibold text-white">
+            Choose what to share
+          </h2>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -134,7 +145,8 @@ export function ScreenSourcePicker({ onSelect, onCancel }: ScreenSourcePickerPro
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
