@@ -4,7 +4,7 @@ import { generateRoomCode, parseRoomCode, formatRoomCode } from '../utils/roomCo
 import { usePeerStore } from '../store/peerStore';
 import { useTrystero } from '../contexts/TrysteroContext';
 import { usePeerManager } from './usePeerManager';
-import { saveConnection } from '../services/storage/connectionHistory';
+import { saveConnection } from '../utils/connectionHistory';
 import { toast } from '../components/ui/toastStore';
 
 export function useWebRTC() {

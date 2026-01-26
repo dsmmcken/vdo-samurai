@@ -1,4 +1,4 @@
-import { COMPOSITE_CONFIG } from './config';
+import { COMPOSITE_CONFIG } from './compositeConfig';
 
 type ProgressCallback = (progress: number, message: string) => void;
 
@@ -266,6 +266,3 @@ interface ElectronAPIExtended {
     readFile: (filePath: string) => Promise<ArrayBuffer>;
   };
 }
-
-// Singleton instance
-export const ffmpegService = new FFmpegService();

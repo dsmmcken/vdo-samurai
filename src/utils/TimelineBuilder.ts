@@ -1,5 +1,5 @@
-import type { EditPoint } from '../../store/recordingStore';
-import { COMPOSITE_CONFIG } from './config';
+import type { EditPoint } from '../store/recordingStore';
+import { COMPOSITE_CONFIG } from './compositeConfig';
 
 export interface VideoSource {
   id: string;
@@ -277,5 +277,3 @@ export class TimelineBuilder {
     return chunks;
   }
 }
-
-export const timelineBuilder = new TimelineBuilder();

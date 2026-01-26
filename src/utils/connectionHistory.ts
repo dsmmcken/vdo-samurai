@@ -1,4 +1,4 @@
-import type { ConnectionRecord } from '../../types';
+import type { ConnectionRecord } from '../types';
 
 const STORAGE_KEY = 'vdo-samurai-connections';
 const MAX_HISTORY = 10;

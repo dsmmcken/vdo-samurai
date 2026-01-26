@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { CompositeStatus } from '../services/compositing';
-import type { OutputFormat } from '../services/compositing/config';
+import type { OutputFormat } from '../utils/compositeConfig';
+
+export type CompositeStatus = 'idle' | 'loading' | 'processing' | 'complete' | 'error';
 
 interface CompositeStore {
   // State

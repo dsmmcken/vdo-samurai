@@ -2,9 +2,8 @@ import { useCallback, useEffect } from 'react';
 import { useNLEStore, getClipDuration } from '../../store/nleStore';
 import { useTransferStore } from '../../store/transferStore';
 import { useRecordingStore } from '../../store/recordingStore';
-import { useCompositeStore } from '../../store/compositeStore';
-import { compositeService, type VideoSource } from '../../services/compositing';
-import { FFmpegService } from '../../services/compositing/FFmpegService';
+import { useComposite, type VideoSource } from '../../hooks/useComposite';
+import { FFmpegService } from '../../utils/ffmpeg';
 import { Timeline } from './Timeline';
 import { PreviewPanel } from './PreviewPanel';
 import { TransferQueue } from './TransferQueue';
@@ -20,6 +19,8 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     useNLEStore();
   const { transfers, receivedRecordings } = useTransferStore();
   const { localBlob, localScreenBlob, startTime, endTime, editPoints } = useRecordingStore();
+
+  // Use the composite hook instead of direct service
   const {
     status: exportStatus,
     progress: exportProgress,
@@ -28,12 +29,10 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     outputBlob,
     outputUrl,
     outputFormat,
-    setStatus,
-    setProgress,
-    setOutputBlob,
-    setError,
+    composite,
     reset: resetExport,
-  } = useCompositeStore();
+    terminate: terminateComposite
+  } = useComposite();
 
   // Check if any transfers are still in progress
   const hasActiveTransfers = transfers.some(
@@ -98,7 +97,6 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
 
   const handleExport = useCallback(async () => {
     if (!localBlob) {
-      setError('No recording data available');
       return;
     }
 
@@ -107,7 +105,6 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     const exportEndTime = endTime || Date.now();
 
     if (exportEndTime <= exportStartTime) {
-      setError('Invalid recording time range');
       return;
     }
 
@@ -142,26 +139,13 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
       });
     }
 
-    // Sync composite service state with store
-    compositeService.onStateChange((state) => {
-      setStatus(state.status);
-      setProgress(state.progress, state.message);
-      if (state.outputBlob) {
-        setOutputBlob(state.outputBlob);
-      }
-      if (state.error) {
-        setError(state.error);
-      }
-    });
-
     try {
-      await compositeService.composite(sources, editPoints, exportStartTime, exportEndTime, {
+      await composite(sources, editPoints, exportStartTime, exportEndTime, {
         format: outputFormat,
         layout: 'focus',
       });
     } catch (err) {
       console.error('Export failed:', err);
-      setError(err instanceof Error ? err.message : 'Export failed');
     }
   }, [
     startTime,
@@ -171,16 +155,12 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     receivedRecordings,
     editPoints,
     outputFormat,
-    setStatus,
-    setProgress,
-    setOutputBlob,
-    setError,
+    composite,
   ]);
 
   const handleCancelExport = useCallback(() => {
-    compositeService.terminate();
-    resetExport();
-  }, [resetExport]);
+    terminateComposite();
+  }, [terminateComposite]);
 
   const handlePlayheadDragStart = useCallback(() => {
     setIsPlaying(false);

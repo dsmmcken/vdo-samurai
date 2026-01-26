@@ -1,4 +1,4 @@
-import { TRANSFER_CONFIG } from './config';
+import { TRANSFER_CONFIG } from './transferConfig';
 
 export interface TransferMetadata {
   id: string;

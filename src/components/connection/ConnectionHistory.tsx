@@ -1,25 +1,9 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  getConnectionHistory,
-  removeConnection,
-  clearConnectionHistory
-} from '../../services/storage/connectionHistory';
-import type { ConnectionRecord } from '../../types';
+import { useConnectionHistory } from '../../hooks/useConnectionHistory';
 
 export function ConnectionHistory() {
-  const [history, setHistory] = useState<ConnectionRecord[]>(() => getConnectionHistory());
+  const { history, removeConnection, clearHistory } = useConnectionHistory();
   const navigate = useNavigate();
-
-  const handleRemove = (sessionId: string) => {
-    removeConnection(sessionId);
-    setHistory(getConnectionHistory());
-  };
-
-  const handleClear = () => {
-    clearConnectionHistory();
-    setHistory([]);
-  };
 
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -41,7 +25,7 @@ export function ConnectionHistory() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold">Recent Sessions</h2>
         <button
-          onClick={handleClear}
+          onClick={clearHistory}
           className="text-sm text-gray-400 hover:text-white transition-colors"
         >
           Clear all
@@ -74,7 +58,7 @@ export function ConnectionHistory() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleRemove(record.sessionId);
+                removeConnection(record.sessionId);
               }}
               className="p-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
               aria-label="Remove from history"

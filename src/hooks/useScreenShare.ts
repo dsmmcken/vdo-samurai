@@ -1,9 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
-import { screenCaptureService } from '../services/media/ScreenCaptureService';
 import { usePeerManager } from './usePeerManager';
-import { screenRecorder } from '../services/recording';
+import { ScreenRecorder } from '../utils/ScreenRecorder';
+
+function isElectron(): boolean {
+  return typeof window !== 'undefined' && !!window.electronAPI;
+}
 
 export function useScreenShare() {
   const [isSharing, setIsSharing] = useState(false);
@@ -13,16 +16,67 @@ export function useScreenShare() {
   const { setLocalScreenStream } = useSessionStore();
   const { isRecording, setScreenRecordingId, setLocalScreenBlob } = useRecordingStore();
   const streamRef = useRef<MediaStream | null>(null);
+  const screenRecorderRef = useRef<ScreenRecorder | null>(null);
 
   // Get peer manager methods for stream management
   const { addLocalStream, removeLocalStream } = usePeerManager();
+
+  // Lazy initialization of screen recorder
+  const getScreenRecorder = useCallback(() => {
+    if (!screenRecorderRef.current) {
+      screenRecorderRef.current = new ScreenRecorder();
+    }
+    return screenRecorderRef.current;
+  }, []);
+
+  const startBrowserScreenShare = useCallback(async (): Promise<MediaStream> => {
+    return navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 }
+      },
+      audio: true
+    });
+  }, []);
+
+  const startElectronScreenShare = useCallback(async (sourceId: string): Promise<MediaStream> => {
+    // In Electron, we use getUserMedia with Chromium-specific constraints
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: sourceId,
+          minWidth: 1280,
+          maxWidth: 1920,
+          minHeight: 720,
+          maxHeight: 1080,
+          minFrameRate: 15,
+          maxFrameRate: 30
+        }
+      } as MediaTrackConstraints
+    });
+
+    return stream;
+  }, []);
 
   const startSharingWithSource = useCallback(
     async (sourceId?: string) => {
       try {
         setError(null);
         setShowPicker(false);
-        const stream = await screenCaptureService.startScreenShare(sourceId);
+
+        let stream: MediaStream;
+        if (isElectron()) {
+          if (!sourceId) {
+            throw new Error('Source ID required for Electron screen share');
+          }
+          stream = await startElectronScreenShare(sourceId);
+        } else {
+          stream = await startBrowserScreenShare();
+        }
+
         streamRef.current = stream;
         setLocalScreenStream(stream);
         setIsSharing(true);
@@ -31,6 +85,7 @@ export function useScreenShare() {
         addLocalStream(stream, { type: 'screen' });
 
         // If recording is active, start screen recording
+        const screenRecorder = getScreenRecorder();
         if (isRecording && !screenRecorder.isRecording()) {
           try {
             const screenId = await screenRecorder.start(stream);
@@ -42,25 +97,29 @@ export function useScreenShare() {
         }
 
         // Handle stream end (user clicks "Stop sharing" in browser)
-        screenCaptureService.onEnd(async () => {
-          // If screen recording is active, stop it and save the blob
-          if (screenRecorder.isRecording()) {
-            try {
-              const screenBlob = await screenRecorder.stop();
-              setLocalScreenBlob(screenBlob);
-              console.log('[useScreenShare] Stopped screen recording on stream end, blob size:', screenBlob.size);
-            } catch (err) {
-              console.error('[useScreenShare] Failed to stop screen recording:', err);
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.addEventListener('ended', async () => {
+            // If screen recording is active, stop it and save the blob
+            const recorder = getScreenRecorder();
+            if (recorder.isRecording()) {
+              try {
+                const screenBlob = await recorder.stop();
+                setLocalScreenBlob(screenBlob);
+                console.log('[useScreenShare] Stopped screen recording on stream end, blob size:', screenBlob.size);
+              } catch (err) {
+                console.error('[useScreenShare] Failed to stop screen recording:', err);
+              }
             }
-          }
 
-          if (streamRef.current) {
-            removeLocalStream(streamRef.current, true);
-          }
-          setLocalScreenStream(null);
-          setIsSharing(false);
-          streamRef.current = null;
-        });
+            if (streamRef.current) {
+              removeLocalStream(streamRef.current, true);
+            }
+            setLocalScreenStream(null);
+            setIsSharing(false);
+            streamRef.current = null;
+          });
+        }
 
         return stream;
       } catch (err) {
@@ -74,12 +133,22 @@ export function useScreenShare() {
         throw err;
       }
     },
-    [setLocalScreenStream, isRecording, setScreenRecordingId, setLocalScreenBlob, addLocalStream, removeLocalStream]
+    [
+      setLocalScreenStream,
+      isRecording,
+      setScreenRecordingId,
+      setLocalScreenBlob,
+      addLocalStream,
+      removeLocalStream,
+      getScreenRecorder,
+      startBrowserScreenShare,
+      startElectronScreenShare
+    ]
   );
 
   const startSharing = useCallback(async () => {
     // In Electron, show the picker first
-    if (screenCaptureService.needsSourcePicker()) {
+    if (isElectron()) {
       setShowPicker(true);
       return undefined;
     }
@@ -93,6 +162,7 @@ export function useScreenShare() {
 
   const stopSharing = useCallback(async () => {
     // If screen recording is active, stop it and save the blob
+    const screenRecorder = getScreenRecorder();
     if (screenRecorder.isRecording()) {
       try {
         const screenBlob = await screenRecorder.stop();
@@ -105,18 +175,19 @@ export function useScreenShare() {
 
     if (streamRef.current) {
       removeLocalStream(streamRef.current, true);
+      // Stop all tracks
+      streamRef.current.getTracks().forEach((track) => track.stop());
     }
-    screenCaptureService.stopScreenShare();
     setLocalScreenStream(null);
     setIsSharing(false);
     streamRef.current = null;
-  }, [setLocalScreenStream, setLocalScreenBlob, removeLocalStream]);
+  }, [setLocalScreenStream, setLocalScreenBlob, removeLocalStream, getScreenRecorder]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (streamRef.current) {
-        screenCaptureService.stopScreenShare();
+        streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);

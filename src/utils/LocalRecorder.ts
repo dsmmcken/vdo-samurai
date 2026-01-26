@@ -1,5 +1,5 @@
-import { getOptimalMimeType, RECORDING_OPTIONS, CHUNK_INTERVAL } from './config';
-import { saveRecordingChunk, finalizeRecording } from '../storage/recordingStorage';
+import { getOptimalMimeType, RECORDING_OPTIONS, CHUNK_INTERVAL } from './recordingConfig';
+import { saveRecordingChunk, finalizeRecording } from './recordingStorage';
 
 export class LocalRecorder {
   private mediaRecorder: MediaRecorder | null = null;
@@ -122,5 +122,3 @@ export class LocalRecorder {
     this.pendingSaves = [];
   }
 }
-
-export const localRecorder = new LocalRecorder();
