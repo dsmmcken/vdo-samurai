@@ -3,12 +3,7 @@ import { useNLEStore, getClipAtPlayhead, getTimeInClip } from '../../store/nleSt
 import { useRecordingStore } from '../../store/recordingStore';
 import { useTransferStore } from '../../store/transferStore';
 
-interface PreviewPanelProps {
-  onPlay?: () => void;
-  onPause?: () => void;
-}
-
-export function PreviewPanel({ onPlay, onPause }: PreviewPanelProps) {
+export function PreviewPanel() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const animationRef = useRef<number | null>(null);
   const urlsRef = useRef<Map<string | null, string>>(new Map());
@@ -158,7 +153,6 @@ export function PreviewPanel({ onPlay, onPause }: PreviewPanelProps) {
       if (newPosition >= totalDuration) {
         setPlayheadPosition(totalDuration);
         setIsPlaying(false);
-        onPause?.();
         return;
       }
 
@@ -173,59 +167,13 @@ export function PreviewPanel({ onPlay, onPause }: PreviewPanelProps) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, playheadPosition, totalDuration, setPlayheadPosition, setIsPlaying, currentVideoUrl, onPause]);
-
-  const togglePlayback = useCallback(() => {
-    if (isPlaying) {
-      setIsPlaying(false);
-      onPause?.();
-    } else {
-      // If at end, restart from beginning
-      if (playheadPosition >= totalDuration - 100) {
-        setPlayheadPosition(0);
-      }
-      setIsPlaying(true);
-      onPlay?.();
-    }
-  }, [isPlaying, playheadPosition, totalDuration, setIsPlaying, setPlayheadPosition, onPlay, onPause]);
-
-  const skipBackward = useCallback(() => {
-    setPlayheadPosition(Math.max(0, playheadPosition - 5000));
-  }, [playheadPosition, setPlayheadPosition]);
-
-  const skipForward = useCallback(() => {
-    setPlayheadPosition(Math.min(totalDuration, playheadPosition + 5000));
-  }, [playheadPosition, totalDuration, setPlayheadPosition]);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          togglePlayback();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          skipBackward();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          skipForward();
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePlayback, skipBackward, skipForward]);
+  }, [isPlaying, playheadPosition, totalDuration, setPlayheadPosition, setIsPlaying, currentVideoUrl]);
 
   return (
-    <div className="flex flex-col bg-black rounded-lg overflow-hidden">
-      {/* Video preview */}
-      <div className="relative aspect-video bg-gray-900">
+    <div className="h-full flex flex-col bg-black rounded-lg overflow-hidden">
+      {/* Video preview - uses container query grid for proper sizing */}
+      <div className="flex-1 min-h-0 video-container">
+        <div className="video-cell relative bg-gray-900">
         {isWaitingForTransfer ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
@@ -290,55 +238,7 @@ export function PreviewPanel({ onPlay, onPause }: PreviewPanelProps) {
             <p className="text-gray-500 text-sm">No clip at current position</p>
           </div>
         )}
-      </div>
-
-      {/* Playback controls */}
-      <div className="flex items-center justify-center gap-4 py-3 bg-gray-900/50">
-        <button
-          onClick={skipBackward}
-          className="p-2 text-gray-400 hover:text-white transition-colors"
-          title="Skip backward 5s"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"
-            />
-          </svg>
-        </button>
-
-        <button
-          onClick={togglePlayback}
-          className="p-3 bg-white text-black rounded-full hover:bg-gray-200 transition-colors"
-          title={isPlaying ? 'Pause' : 'Play'}
-        >
-          {isPlaying ? (
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-            </svg>
-          ) : (
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </button>
-
-        <button
-          onClick={skipForward}
-          className="p-2 text-gray-400 hover:text-white transition-colors"
-          title="Skip forward 5s"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z"
-            />
-          </svg>
-        </button>
+        </div>
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ interface NLEEditorProps {
 }
 
 export function NLEEditor({ onClose }: NLEEditorProps) {
-  const { clips, selectedClipId, deleteClip, splitClip, playheadPosition, setIsPlaying } =
+  const { clips, selectedClipId, deleteClip, splitClip, playheadPosition, setPlayheadPosition, isPlaying, setIsPlaying, totalDuration } =
     useNLEStore();
   const { transfers, receivedRecordings } = useTransferStore();
   const { localBlob, localScreenBlob, startTime, endTime, editPoints } = useRecordingStore();
@@ -62,12 +62,44 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     }
   }, [selectedClipId, clips, playheadPosition, splitClip]);
 
+  const togglePlayback = useCallback(() => {
+    if (isPlaying) {
+      setIsPlaying(false);
+    } else {
+      // If at end, restart from beginning
+      if (playheadPosition >= totalDuration - 100) {
+        setPlayheadPosition(0);
+      }
+      setIsPlaying(true);
+    }
+  }, [isPlaying, playheadPosition, totalDuration, setIsPlaying, setPlayheadPosition]);
+
+  const skipBackward = useCallback(() => {
+    setPlayheadPosition(Math.max(0, playheadPosition - 5000));
+  }, [playheadPosition, setPlayheadPosition]);
+
+  const skipForward = useCallback(() => {
+    setPlayheadPosition(Math.min(totalDuration, playheadPosition + 5000));
+  }, [playheadPosition, totalDuration, setPlayheadPosition]);
+
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          togglePlayback();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          skipBackward();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          skipForward();
+          break;
         case 's':
         case 'S':
           // Split clip at playhead
@@ -93,7 +125,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClipId, deleteClip, onClose, handleSplitClip]);
+  }, [selectedClipId, deleteClip, onClose, handleSplitClip, togglePlayback, skipBackward, skipForward]);
 
   const handleExport = useCallback(async () => {
     if (!localBlob) {
@@ -323,50 +355,99 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-2">
-          <button
-            onClick={handleSplitClip}
-            disabled={!selectedClipId}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
-              selectedClipId
-                ? 'text-gray-300 hover:text-white hover:bg-gray-800'
-                : 'text-gray-600 cursor-not-allowed'
-            }`}
-            title="Split clip at playhead (S)"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 7h8M8 12h8m-8 5h8"
-              />
-            </svg>
-            Split
-          </button>
+        <div className="flex-shrink-0 relative flex items-center justify-between px-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSplitClip}
+              disabled={!selectedClipId}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
+                selectedClipId
+                  ? 'text-gray-300 hover:text-white hover:bg-gray-800'
+                  : 'text-gray-600 cursor-not-allowed'
+              }`}
+              title="Split clip at playhead (S)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 7h8M8 12h8m-8 5h8"
+                />
+              </svg>
+              Split
+            </button>
 
-          <button
-            onClick={() => selectedClipId && deleteClip(selectedClipId)}
-            disabled={!selectedClipId}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
-              selectedClipId
-                ? 'text-gray-300 hover:text-red-400 hover:bg-gray-800'
-                : 'text-gray-600 cursor-not-allowed'
-            }`}
-            title="Delete selected clip (Delete)"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            Delete
-          </button>
+            <button
+              onClick={() => selectedClipId && deleteClip(selectedClipId)}
+              disabled={!selectedClipId}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
+                selectedClipId
+                  ? 'text-gray-300 hover:text-red-400 hover:bg-gray-800'
+                  : 'text-gray-600 cursor-not-allowed'
+              }`}
+              title="Delete selected clip (Delete)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+              Delete
+            </button>
+          </div>
 
-          <div className="flex-1" />
+          {/* Playback controls - absolutely centered */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
+            <button
+              onClick={skipBackward}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-800"
+              title="Skip backward 5s (←)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"
+                />
+              </svg>
+            </button>
+
+            <button
+              onClick={togglePlayback}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-800"
+              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            >
+              {isPlaying ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              )}
+            </button>
+
+            <button
+              onClick={skipForward}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded hover:bg-gray-800"
+              title="Skip forward 5s (→)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z"
+                />
+              </svg>
+            </button>
+          </div>
 
           <span className="text-xs text-gray-500">
             {clips.length} clip{clips.length !== 1 ? 's' : ''}
