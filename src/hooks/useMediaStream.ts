@@ -75,23 +75,39 @@ export function useMediaStream() {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
       if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        return videoTrack.enabled;
+        const newEnabled = !videoTrack.enabled;
+        videoTrack.enabled = newEnabled;
+        // Also toggle the recording stream video track to turn off camera light
+        if (localRecordingStream) {
+          const recordingVideoTrack = localRecordingStream.getVideoTracks()[0];
+          if (recordingVideoTrack) {
+            recordingVideoTrack.enabled = newEnabled;
+          }
+        }
+        return newEnabled;
       }
     }
     return false;
-  }, [localStream]);
+  }, [localStream, localRecordingStream]);
 
   const toggleAudio = useCallback(() => {
     if (localStream) {
       const audioTrack = localStream.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        return audioTrack.enabled;
+        const newEnabled = !audioTrack.enabled;
+        audioTrack.enabled = newEnabled;
+        // Also toggle the recording stream audio track
+        if (localRecordingStream) {
+          const recordingAudioTrack = localRecordingStream.getAudioTracks()[0];
+          if (recordingAudioTrack) {
+            recordingAudioTrack.enabled = newEnabled;
+          }
+        }
+        return newEnabled;
       }
     }
     return false;
-  }, [localStream]);
+  }, [localStream, localRecordingStream]);
 
   // Note: We don't stop tracks on unmount because the stream is stored in
   // global Zustand state and may be used by other components. Tracks are
