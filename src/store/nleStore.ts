@@ -31,6 +31,7 @@ interface NLEState {
   setMode: (mode: NLEMode) => void;
   initializeClips: (clips: NLEClip[]) => void;
   addClip: (clip: NLEClip) => void;
+  appendClips: (newClips: NLEClip[]) => void;
   updateClip: (clipId: string, updates: Partial<NLEClip>) => void;
   deleteClip: (clipId: string) => void;
   reorderClips: (clipIds: string[]) => void;
@@ -69,6 +70,24 @@ export const useNLEStore = create<NLEState>((set, get) => ({
     set((state) => {
       const newClips = [...state.clips, clip];
       return { clips: newClips };
+    }),
+
+  appendClips: (newClips) =>
+    set((state) => {
+      // Merge new clips with existing ones
+      const allClips = [...state.clips, ...newClips];
+      // Sort by globalStartTime if available, otherwise by startTime
+      allClips.sort((a, b) => {
+        const aTime = a.globalStartTime ?? a.startTime;
+        const bTime = b.globalStartTime ?? b.startTime;
+        return aTime - bTime;
+      });
+      // Re-assign order values
+      const reorderedClips = allClips.map((clip, index) => ({
+        ...clip,
+        order: index
+      }));
+      return { clips: reorderedClips };
     }),
 
   updateClip: (clipId, updates) =>
