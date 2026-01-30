@@ -10,7 +10,9 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const isProfileComplete = useUserStore((state) => state.isProfileComplete());
+  // Subscribe directly to profile to detect changes (not the method)
+  const profile = useUserStore((state) => state.profile);
+  const isProfileComplete = !!(profile?.displayName?.trim() && profile?.fullName?.trim());
 
   return (
     <div className="h-screen bg-[--color-dark] text-white grid grid-rows-[auto_1fr] overflow-hidden">

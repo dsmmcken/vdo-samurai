@@ -7,11 +7,9 @@ interface ShareLinkProps {
 export function ShareLink({ sessionId }: ShareLinkProps) {
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = `${window.location.origin}/#/session/${sessionId}`;
-
   const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(sessionId);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
