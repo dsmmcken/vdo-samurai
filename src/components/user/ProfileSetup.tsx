@@ -1,10 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useUserStore } from '../../store/userStore';
+
+const BG_IMAGE_URL = './samurai-bg.jpg';
 
 export function ProfileSetup() {
   const [displayName, setDisplayName] = useState('');
   const [fullName, setFullName] = useState('');
+  const [bgLoaded, setBgLoaded] = useState(false);
   const { setProfile } = useUserStore();
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setBgLoaded(true);
+    img.src = BG_IMAGE_URL;
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,8 +29,8 @@ export function ProfileSetup() {
 
   return (
     <div
-      className="flex-1 flex items-center justify-center p-4 min-h-screen bg-cover bg-center bg-no-repeat bg-fixed"
-      style={{ backgroundImage: 'url(/samurai-bg.jpg)' }}
+      className={`flex-1 flex items-center justify-center p-4 min-h-screen bg-cover bg-center bg-no-repeat bg-fixed bg-fade-in ${bgLoaded ? 'loaded' : ''}`}
+      style={{ backgroundImage: `url(${BG_IMAGE_URL})` }}
     >
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center p-8 border border-white/30 rounded-xl bg-white/20 backdrop-blur-xl shadow-lg">

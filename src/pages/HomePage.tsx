@@ -9,6 +9,7 @@ import { formatRoomCode } from '../utils/roomCode';
 const DEBUG_ROOM_CODE = formatRoomCode('debug_room', 'debug_password');
 
 const LAST_SESSION_KEY = 'vdo-samurai-last-session';
+const BG_IMAGE_URL = './samurai-bg.jpg';
 
 interface LastSession {
   roomCode: string;
@@ -33,6 +34,7 @@ export function HomePage() {
   const [lastSession, setLastSession] = useState<LastSession | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [bgLoaded, setBgLoaded] = useState(false);
   const navigate = useNavigate();
   const { createSession, joinSession } = useWebRTC();
   const { requestStream } = useMediaStream();
@@ -44,6 +46,12 @@ export function HomePage() {
     if (stored?.roomCode) {
       setRoomCode(stored.roomCode);
     }
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setBgLoaded(true);
+    img.src = BG_IMAGE_URL;
   }, []);
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -113,8 +121,8 @@ export function HomePage() {
 
   return (
     <div
-      className="min-h-screen w-full bg-cover bg-center bg-no-repeat bg-fixed flex items-center justify-center"
-      style={{ backgroundImage: 'url(/samurai-bg.jpg)' }}
+      className={`min-h-screen w-full bg-cover bg-center bg-no-repeat bg-fixed flex items-center justify-center bg-fade-in ${bgLoaded ? 'loaded' : ''}`}
+      style={{ backgroundImage: `url(${BG_IMAGE_URL})` }}
     >
       <div className="flex flex-col items-center p-8 border border-white/30 rounded-xl bg-white/20 backdrop-blur-xl shadow-lg w-full max-w-sm">
         <h1 className="text-3xl font-bold text-black mb-8">

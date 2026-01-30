@@ -35,8 +35,18 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: var(--color-dark);
+  background-color: white;
   color: white;
+}
+
+/* Background image fade-in */
+.bg-fade-in {
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.bg-fade-in.loaded {
+  opacity: 1;
 }
 
 #root {
