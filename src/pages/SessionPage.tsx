@@ -7,6 +7,7 @@ import { usePopoverStore } from '../store/popoverStore';
 import { usePeerStore } from '../store/peerStore';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
+import { useTrystero } from '../contexts/TrysteroContext';
 import { ScreenShareButton } from '../components/video/ScreenShareButton';
 import { useRecording } from '../hooks/useRecording';
 import { useEditPoints } from '../hooks/useEditPoints';
@@ -45,7 +46,8 @@ export function SessionPage() {
   const { openPopover } = usePopoverStore();
   const { peers } = usePeerStore();
   const { createSession, joinSession } = useWebRTC();
-  const { requestStream, toggleVideo, toggleAudio } = useMediaStream();
+  const { requestStream, toggleVideo, toggleVideoFull, toggleAudio, getAudioOnlyStream } = useMediaStream();
+  const { broadcastVideoState } = useTrystero();
   const { profile } = useUserStore();
   const reconnectAttemptedRef = useRef(false);
   const recordButtonRef = useRef<HTMLButtonElement>(null);
@@ -100,7 +102,7 @@ export function SessionPage() {
     }
   }, [isConnected, localStream, requestStream]);
 
-  const { isRecording, countdown, startRecording, stopRecording } = useRecording();
+  const { isRecording, countdown, startRecording, stopRecording, onVideoEnabled, onVideoDisabled } = useRecording();
   const { sendMultipleToAllPeers } = useFileTransfer();
 
   // Initialize edit points tracking
@@ -234,15 +236,43 @@ export function SessionPage() {
     setMode('session');
   }, [setMode]);
 
-  const handleToggleVideo = () => {
-    const enabled = toggleVideo();
-    setVideoEnabled(enabled);
-  };
+  const handleToggleVideo = useCallback(async () => {
+    if (isRecording) {
+      // During recording: use full toggle that releases camera and manages clips
+      const wasEnabled = videoEnabled;
 
-  const handleToggleAudio = () => {
+      if (wasEnabled) {
+        // Video ON -> OFF: Stop video clip, start audio-only clip
+        const enabled = await toggleVideoFull({
+          onBeforeVideoOff: async () => {
+            await onVideoDisabled(getAudioOnlyStream);
+          }
+        });
+        setVideoEnabled(enabled);
+        broadcastVideoState(enabled, audioEnabled);
+      } else {
+        // Video OFF -> ON: Stop audio-only clip, start video clip
+        const enabled = await toggleVideoFull({
+          onAfterVideoOn: async () => {
+            await onVideoEnabled();
+          }
+        });
+        setVideoEnabled(enabled);
+        broadcastVideoState(enabled, audioEnabled);
+      }
+    } else {
+      // Not recording: simple mute toggle (legacy behavior)
+      const enabled = toggleVideo();
+      setVideoEnabled(enabled);
+      broadcastVideoState(enabled, audioEnabled);
+    }
+  }, [isRecording, videoEnabled, audioEnabled, toggleVideo, toggleVideoFull, onVideoEnabled, onVideoDisabled, getAudioOnlyStream, broadcastVideoState]);
+
+  const handleToggleAudio = useCallback(() => {
     const enabled = toggleAudio();
     setAudioEnabled(enabled);
-  };
+    broadcastVideoState(videoEnabled, enabled);
+  }, [toggleAudio, videoEnabled, broadcastVideoState]);
 
   // If not connected and we have a session ID, auto-reconnect is in progress
   if (!isConnected && !isConnecting && sessionId) {

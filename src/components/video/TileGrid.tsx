@@ -2,11 +2,13 @@ import { useSessionStore } from '../../store/sessionStore';
 import { usePeerStore } from '../../store/peerStore';
 import { useFocus } from '../../hooks/useFocus';
 import { UserTile } from './UserTile';
+import { useMediaStream } from '../../hooks/useMediaStream';
 
 export function TileGrid() {
   const { localStream, localScreenStream, isHost } = useSessionStore();
   const { peers } = usePeerStore();
   const { focusedPeerId, changeFocus } = useFocus();
+  const { isVideoEnabled, isAudioEnabled } = useMediaStream();
 
   const totalParticipants = peers.length + 1;
 
@@ -26,6 +28,8 @@ export function TileGrid() {
           isFocused={focusedPeerId === null}
           onClick={() => changeFocus(null)}
           muted
+          videoEnabled={isVideoEnabled()}
+          audioEnabled={isAudioEnabled()}
         />
       </div>
 
@@ -39,6 +43,8 @@ export function TileGrid() {
             isHost={peer.isHost}
             isFocused={focusedPeerId === peer.id}
             onClick={() => changeFocus(peer.id)}
+            videoEnabled={peer.videoEnabled}
+            audioEnabled={peer.audioEnabled}
           />
         </div>
       ))}

@@ -4,6 +4,8 @@ export interface Peer {
   screenStream: MediaStream | null;
   name: string;
   isHost: boolean;
+  videoEnabled: boolean;  // Whether peer's video is currently on
+  audioEnabled: boolean;  // Whether peer's audio is currently on
 }
 
 export interface SessionInfo {

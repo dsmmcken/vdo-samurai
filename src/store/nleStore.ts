@@ -4,13 +4,16 @@ export interface NLEClip {
   id: string;
   peerId: string | null; // null = local user
   peerName: string;
-  startTime: number; // relative to recording start (ms)
+  startTime: number; // relative to recording start (ms) - for legacy clips from edit points
   endTime: number;
   order: number; // position in timeline
   trimStart: number; // trim from beginning (ms)
   trimEnd: number; // trim from end (ms)
   color: string; // Tailwind color name
-  sourceType: 'camera' | 'screen'; // Type of recording source
+  sourceType: 'camera' | 'screen' | 'audio-only'; // Type of recording source
+  globalStartTime?: number; // Global start time from clip-based recording
+  globalEndTime?: number;   // Global end time from clip-based recording
+  recordingId?: string;     // Reference to the recording blob
 }
 
 export type NLEMode = 'session' | 'editing';

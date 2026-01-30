@@ -16,4 +16,42 @@ export interface ScreenShareStatusMessage {
   peerId: string;
 }
 
-export type P2PMessage = FocusChangeMessage | PeerInfoMessage | ScreenShareStatusMessage;
+// Clock synchronization messages (NTP-style)
+export interface ClockSyncRequestMessage {
+  type: 'clock-sync-request';
+  clientSendTime: number;
+}
+
+export interface ClockSyncResponseMessage {
+  type: 'clock-sync-response';
+  clientSendTime: number;
+  serverReceiveTime: number;
+  serverSendTime: number;
+}
+
+// Video state message for when peer toggles video on/off
+export interface VideoStateMessage {
+  type: 'video-state';
+  videoEnabled: boolean;
+  globalTimestamp: number;
+}
+
+// Peer clip info broadcast when clips are started/stopped
+export interface PeerClipMessage {
+  type: 'peer-clip';
+  clipId: string;
+  peerId: string;
+  sourceType: 'camera' | 'screen' | 'audio-only';
+  globalStartTime: number;
+  globalEndTime: number | null;
+  action: 'started' | 'stopped';
+}
+
+export type P2PMessage =
+  | FocusChangeMessage
+  | PeerInfoMessage
+  | ScreenShareStatusMessage
+  | ClockSyncRequestMessage
+  | ClockSyncResponseMessage
+  | VideoStateMessage
+  | PeerClipMessage;

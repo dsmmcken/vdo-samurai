@@ -71,6 +71,12 @@ interface FocusChangeData {
   timestamp: number;
 }
 
+interface VideoStateData {
+  type: string;
+  videoEnabled: boolean;
+  audioEnabled: boolean;
+}
+
 interface TrysteroContextValue {
   room: Room | null;
   selfId: string;
@@ -82,6 +88,7 @@ interface TrysteroContextValue {
   removeLocalStream: (stream: MediaStream, isScreen?: boolean) => void;
   setActiveScreenShare: (peerId: string | null) => void;
   broadcastFocusChange: (peerId: string | null) => void;
+  broadcastVideoState: (videoEnabled: boolean, audioEnabled: boolean) => void;
 }
 
 const TrysteroContext = createContext<TrysteroContextValue | null>(null);
@@ -125,11 +132,13 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendScreenShareStatus: ((data: ScreenShareStatusData, peerId?: string) => void) | null;
     sendActiveScreenShare: ((data: ActiveScreenShareData, peerId?: string) => void) | null;
     sendFocusChange: ((data: FocusChangeData, peerId?: string) => void) | null;
+    sendVideoState: ((data: VideoStateData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
     sendActiveScreenShare: null,
-    sendFocusChange: null
+    sendFocusChange: null,
+    sendVideoState: null
   });
 
   // Setup peer handlers when room changes
@@ -151,12 +160,15 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendActiveScreenShare, onActiveScreenShare] = newRoom.makeAction<any>('ss-active');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendFocusChange, onFocusChange] = newRoom.makeAction<any>('focus-change');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendVideoState, onVideoState] = newRoom.makeAction<any>('video-state');
 
       sendersRef.current = {
         sendPeerInfo,
         sendScreenShareStatus,
         sendActiveScreenShare,
-        sendFocusChange
+        sendFocusChange,
+        sendVideoState
       };
 
       // Handle peer join
@@ -168,7 +180,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           stream: null,
           screenStream: null,
           name: `User-${peerId.slice(0, 4)}`,
-          isHost: false
+          isHost: false,
+          videoEnabled: true,  // Assume video is on until we hear otherwise
+          audioEnabled: true   // Assume audio is on until we hear otherwise
         });
 
         // Send our info to the new peer
@@ -265,6 +279,18 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           const focusData = data as FocusChangeData;
           console.log('[TrysteroProvider] Focus changed to:', focusData.peerId);
           setFocusedPeerId(focusData.peerId);
+        }
+      });
+
+      // Handle video state messages (video/audio on/off)
+      onVideoState((data: unknown, peerId: string) => {
+        if (typeof data === 'object' && data !== null) {
+          const videoState = data as VideoStateData;
+          console.log('[TrysteroProvider] Video state from', peerId, ':', videoState);
+          updatePeer(peerId, {
+            videoEnabled: videoState.videoEnabled,
+            audioEnabled: videoState.audioEnabled
+          });
         }
       });
 
@@ -367,7 +393,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendPeerInfo: null,
       sendScreenShareStatus: null,
       sendActiveScreenShare: null,
-      sendFocusChange: null
+      sendFocusChange: null,
+      sendVideoState: null
     };
   }, [clearPeers]);
 
@@ -485,6 +512,22 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     [setFocusedPeerId]
   );
 
+  // Broadcast video/audio state changes
+  const broadcastVideoState = useCallback(
+    (videoEnabled: boolean, audioEnabled: boolean) => {
+      if (sendersRef.current.sendVideoState) {
+        const data: VideoStateData = {
+          type: 'video-state',
+          videoEnabled,
+          audioEnabled
+        };
+        sendersRef.current.sendVideoState(data);
+        console.log('[TrysteroProvider] Broadcasting video state:', data);
+      }
+    },
+    []
+  );
+
   // Update name/isHost when they change (for sending to new peers)
   const updateUserInfo = useCallback((name: string, isHost: boolean) => {
     stateRef.current.name = name;
@@ -506,7 +549,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         addLocalStream,
         removeLocalStream,
         setActiveScreenShare,
-        broadcastFocusChange
+        broadcastFocusChange,
+        broadcastVideoState
       }}
     >
       <TrysteroProviderInner updateUserInfo={updateUserInfo}>{children}</TrysteroProviderInner>
