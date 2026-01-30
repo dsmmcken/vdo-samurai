@@ -58,6 +58,13 @@ export interface SessionInfoRequestMessage {
   type: 'session-info-request';
 }
 
+// Tile order message for syncing drag-and-drop reordering
+export interface TileOrderMessage {
+  type: 'tile-order';
+  order: string[]; // Participant IDs in order ('self' for local user from sender's perspective)
+  timestamp: number; // For conflict resolution (newer wins)
+}
+
 export type P2PMessage =
   | FocusChangeMessage
   | PeerInfoMessage
@@ -67,4 +74,5 @@ export type P2PMessage =
   | VideoStateMessage
   | PeerClipMessage
   | SessionInfoMessage
-  | SessionInfoRequestMessage;
+  | SessionInfoRequestMessage
+  | TileOrderMessage;

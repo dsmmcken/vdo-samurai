@@ -11,6 +11,8 @@ interface SessionState {
   focusedPeerId: string | null;
   focusTimestamp: number; // Timestamp of last focus change for conflict resolution
   activeScreenSharePeerId: string | null; // Only one screen share streams at a time
+  tileOrder: string[]; // Ordered participant IDs ('self' for local user)
+  tileOrderTimestamp: number; // Timestamp of last tile order change for conflict resolution
   isConnecting: boolean;
   isConnected: boolean;
   error: string | null;
@@ -24,6 +26,7 @@ interface SessionState {
   setLocalScreenStream: (stream: MediaStream | null) => void;
   setFocusedPeerId: (peerId: string | null, timestamp?: number) => void;
   setActiveScreenSharePeerId: (peerId: string | null) => void;
+  setTileOrder: (order: string[], timestamp?: number) => void;
   setIsConnecting: (connecting: boolean) => void;
   setIsConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
@@ -41,6 +44,8 @@ const initialState = {
   focusedPeerId: null,
   focusTimestamp: 0,
   activeScreenSharePeerId: null,
+  tileOrder: [] as string[],
+  tileOrderTimestamp: 0,
   isConnecting: false,
   isConnected: false,
   error: null
@@ -54,16 +59,27 @@ export const useSessionStore = create<SessionState>((set) => ({
   setIsHost: (isHost) => set({ isHost }),
   setUserName: (userName) => set({ userName }),
   setLocalStream: (localStream) => {
-    console.log('[sessionStore] setLocalStream called:', !!localStream, localStream?.getVideoTracks());
+    console.log(
+      '[sessionStore] setLocalStream called:',
+      !!localStream,
+      localStream?.getVideoTracks()
+    );
     set({ localStream });
   },
   setLocalRecordingStream: (localRecordingStream) => {
-    console.log('[sessionStore] setLocalRecordingStream called:', !!localRecordingStream, localRecordingStream?.getVideoTracks());
+    console.log(
+      '[sessionStore] setLocalRecordingStream called:',
+      !!localRecordingStream,
+      localRecordingStream?.getVideoTracks()
+    );
     set({ localRecordingStream });
   },
   setLocalScreenStream: (localScreenStream) => set({ localScreenStream }),
-  setFocusedPeerId: (focusedPeerId, timestamp) => set({ focusedPeerId, focusTimestamp: timestamp ?? Date.now() }),
+  setFocusedPeerId: (focusedPeerId, timestamp) =>
+    set({ focusedPeerId, focusTimestamp: timestamp ?? Date.now() }),
   setActiveScreenSharePeerId: (activeScreenSharePeerId) => set({ activeScreenSharePeerId }),
+  setTileOrder: (tileOrder, timestamp) =>
+    set({ tileOrder, tileOrderTimestamp: timestamp ?? Date.now() }),
   setIsConnecting: (isConnecting) => set({ isConnecting }),
   setIsConnected: (isConnected) => set({ isConnected }),
   setError: (error) => set({ error }),

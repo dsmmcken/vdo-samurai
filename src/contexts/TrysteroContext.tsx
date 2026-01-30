@@ -90,6 +90,11 @@ interface SessionInfoRequestData {
   type: string;
 }
 
+interface TileOrderData {
+  order: string[];
+  timestamp: number;
+}
+
 interface TrysteroContextValue {
   room: Room | null;
   selfId: string;
@@ -103,6 +108,7 @@ interface TrysteroContextValue {
   broadcastFocusChange: (peerId: string | null) => void;
   broadcastVideoState: (videoEnabled: boolean, audioEnabled: boolean) => void;
   broadcastSessionInfo: (internalSessionId: string) => void;
+  broadcastTileOrder: (order: string[]) => void;
 }
 
 const TrysteroContext = createContext<TrysteroContextValue | null>(null);
@@ -129,20 +135,21 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
   // Store refs - use direct store access for stable references
   const { addPeer, updatePeer, removePeer, clearPeers } = usePeerStore();
-  const { setActiveScreenSharePeerId, setFocusedPeerId } = useSessionStore();
+  const { setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder } = useSessionStore();
 
   // Store functions in refs to prevent useCallback dependency changes
   // This is critical to prevent repeated stream additions that interfere with WebRTC negotiation
   const storeFunctionsRef = useRef({
     setActiveScreenSharePeerId,
-    setFocusedPeerId
+    setFocusedPeerId,
+    setTileOrder
   });
   // Keep refs updated (but don't trigger re-renders)
-  storeFunctionsRef.current = { setActiveScreenSharePeerId, setFocusedPeerId };
+  storeFunctionsRef.current = { setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder };
 
   // State that doesn't need to trigger re-renders
   const stateRef = useRef<{
-    localCameraStream: MediaStream | null;  // Camera stream for re-adding to new peers
+    localCameraStream: MediaStream | null; // Camera stream for re-adding to new peers
     localScreenStream: MediaStream | null;
     activeScreenSharePeerId: string | null;
     peersWithScreenShareAvailable: Set<string>;
@@ -150,6 +157,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     isHost: boolean;
     focusedPeerId: string | null;
     focusTimestamp: number;
+    tileOrder: string[];
+    tileOrderTimestamp: number;
   }>({
     localCameraStream: null,
     localScreenStream: null,
@@ -158,7 +167,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     name: 'Anonymous',
     isHost: false,
     focusedPeerId: null,
-    focusTimestamp: 0
+    focusTimestamp: 0,
+    tileOrder: [],
+    tileOrderTimestamp: 0
   });
 
   // Action senders
@@ -170,6 +181,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendVideoState: ((data: VideoStateData, peerId?: string) => void) | null;
     sendSessionInfo: ((data: SessionInfoData, peerId?: string) => void) | null;
     sendSessionInfoRequest: ((data: SessionInfoRequestData, peerId?: string) => void) | null;
+    sendTileOrder: ((data: TileOrderData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
@@ -177,7 +189,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendFocusChange: null,
     sendVideoState: null,
     sendSessionInfo: null,
-    sendSessionInfoRequest: null
+    sendSessionInfoRequest: null,
+    sendTileOrder: null
   });
 
   // Setup peer handlers when room changes
@@ -205,6 +218,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendSessionInfo, onSessionInfo] = newRoom.makeAction<any>('session-info');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendSessionInfoRequest, onSessionInfoRequest] = newRoom.makeAction<any>('sess-req');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendTileOrder, onTileOrder] = newRoom.makeAction<any>('tile-order');
 
       sendersRef.current = {
         sendPeerInfo,
@@ -213,7 +228,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendFocusChange,
         sendVideoState,
         sendSessionInfo,
-        sendSessionInfoRequest
+        sendSessionInfoRequest,
+        sendTileOrder
       };
 
       // Handle peer join
@@ -226,8 +242,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           screenStream: null,
           name: `User-${peerId.slice(0, 4)}`,
           isHost: false,
-          videoEnabled: true,  // Assume video is on until we hear otherwise
-          audioEnabled: true,  // Assume audio is on until we hear otherwise
+          videoEnabled: true, // Assume video is on until we hear otherwise
+          audioEnabled: true, // Assume audio is on until we hear otherwise
           isScreenSharing: false
         });
 
@@ -296,6 +312,18 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           sendFocusChange(focusMsg, peerId);
         } else {
           console.log('[TrysteroProvider] No focus state to send to new peer:', peerId);
+        }
+
+        // Send current tile order to the new peer (so they sync to existing order)
+        if (stateRef.current.tileOrderTimestamp > 0 && stateRef.current.tileOrder.length > 0) {
+          // Translate 'self' to actual selfId for the message
+          const broadcastOrder = stateRef.current.tileOrder.map((id) => (id === 'self' ? selfId : id));
+          const tileOrderMsg: TileOrderData = {
+            order: broadcastOrder,
+            timestamp: stateRef.current.tileOrderTimestamp
+          };
+          console.log('[TrysteroProvider] Sending tile order to new peer:', peerId, tileOrderMsg);
+          sendTileOrder(tileOrderMsg, peerId);
         }
       });
 
@@ -370,15 +398,26 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           // Only apply if this focus change is newer than our current one
           // This handles race conditions when multiple users join/change focus simultaneously
           if (incomingTimestamp > stateRef.current.focusTimestamp) {
-            console.log('[TrysteroProvider] Focus changed to:', focusData.peerId, 'timestamp:', incomingTimestamp);
+            console.log(
+              '[TrysteroProvider] Focus changed to:',
+              focusData.peerId,
+              'timestamp:',
+              incomingTimestamp
+            );
             // If the focus is on our selfId, convert to null (which means "local user" in our store)
             const localFocusedPeerId = focusData.peerId === selfId ? null : focusData.peerId;
             stateRef.current.focusedPeerId = focusData.peerId;
             stateRef.current.focusTimestamp = incomingTimestamp;
             setFocusedPeerId(localFocusedPeerId, incomingTimestamp);
           } else {
-            console.log('[TrysteroProvider] Ignoring stale focus change:', focusData.peerId,
-              'incoming:', incomingTimestamp, 'current:', stateRef.current.focusTimestamp);
+            console.log(
+              '[TrysteroProvider] Ignoring stale focus change:',
+              focusData.peerId,
+              'incoming:',
+              incomingTimestamp,
+              'current:',
+              stateRef.current.focusTimestamp
+            );
           }
         }
       });
@@ -405,7 +444,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
           if (currentInternalSessionId !== sessionInfo.internalSessionId) {
             // Different session - reset all stores and adopt the new session ID
-            console.log('[TrysteroProvider] Adopting new internal session ID:', sessionInfo.internalSessionId);
+            console.log(
+              '[TrysteroProvider] Adopting new internal session ID:',
+              sessionInfo.internalSessionId
+            );
             useRecordingStore.getState().reset();
             useNLEStore.getState().reset();
             useCompositeStore.getState().reset();
@@ -426,6 +468,41 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
               internalSessionId: currentInternalSessionId
             };
             sendSessionInfo(sessionInfoMsg, peerId);
+          }
+        }
+      });
+
+      // Handle tile order messages with timestamp-based conflict resolution
+      onTileOrder((data: unknown) => {
+        if (typeof data === 'object' && data !== null) {
+          const tileOrderData = data as TileOrderData;
+          const incomingTimestamp = tileOrderData.timestamp || 0;
+
+          // Only apply if this tile order change is newer than our current one
+          if (incomingTimestamp > stateRef.current.tileOrderTimestamp) {
+            // Translate peer IDs: replace our own selfId with 'self' for local representation
+            const localOrder = tileOrderData.order.map((id) => (id === selfId ? 'self' : id));
+
+            console.log(
+              '[TrysteroProvider] Tile order changed:',
+              tileOrderData.order,
+              '-> local:',
+              localOrder,
+              'timestamp:',
+              incomingTimestamp
+            );
+            stateRef.current.tileOrder = localOrder;
+            stateRef.current.tileOrderTimestamp = incomingTimestamp;
+            storeFunctionsRef.current.setTileOrder(localOrder, incomingTimestamp);
+          } else {
+            console.log(
+              '[TrysteroProvider] Ignoring stale tile order:',
+              tileOrderData.order,
+              'incoming:',
+              incomingTimestamp,
+              'current:',
+              stateRef.current.tileOrderTimestamp
+            );
           }
         }
       });
@@ -488,6 +565,24 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
       const newRoom = joinRoom({ appId: APP_ID, rtcConfig: RTC_CONFIG, password }, newSessionId);
 
+      // Initialize focus and tile order state with timestamps so we can sync to new peers.
+      // Use timestamp = 1 as a "default but valid" value - it passes the > 0 check for sync,
+      // but any real user action (which uses Date.now()) will have a higher timestamp and override it.
+      const initialTimestamp = 1;
+
+      // Only initialize if not already set (prevents overwriting on reconnect)
+      if (stateRef.current.focusTimestamp === 0) {
+        stateRef.current.focusedPeerId = null;
+        stateRef.current.focusTimestamp = initialTimestamp;
+        setFocusedPeerId(null, initialTimestamp);
+      }
+
+      if (stateRef.current.tileOrderTimestamp === 0) {
+        stateRef.current.tileOrder = ['self'];
+        stateRef.current.tileOrderTimestamp = initialTimestamp;
+        setTileOrder(['self'], initialTimestamp);
+      }
+
       // Log MQTT status after a short delay to allow connections
       setTimeout(() => {
         logRelayStatus();
@@ -526,7 +621,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       name: 'Anonymous',
       isHost: false,
       focusedPeerId: null,
-      focusTimestamp: 0
+      focusTimestamp: 0,
+      tileOrder: [],
+      tileOrderTimestamp: 0
     };
     sendersRef.current = {
       sendPeerInfo: null,
@@ -535,7 +632,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendFocusChange: null,
       sendVideoState: null,
       sendSessionInfo: null,
-      sendSessionInfoRequest: null
+      sendSessionInfoRequest: null,
+      sendTileOrder: null
     };
   }, [clearPeers]);
 
@@ -661,35 +759,47 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   );
 
   // Broadcast video/audio state changes
-  const broadcastVideoState = useCallback(
-    (videoEnabled: boolean, audioEnabled: boolean) => {
-      if (sendersRef.current.sendVideoState) {
-        const data: VideoStateData = {
-          type: 'video-state',
-          videoEnabled,
-          audioEnabled
-        };
-        sendersRef.current.sendVideoState(data);
-        console.log('[TrysteroProvider] Broadcasting video state:', data);
-      }
-    },
-    []
-  );
+  const broadcastVideoState = useCallback((videoEnabled: boolean, audioEnabled: boolean) => {
+    if (sendersRef.current.sendVideoState) {
+      const data: VideoStateData = {
+        type: 'video-state',
+        videoEnabled,
+        audioEnabled
+      };
+      sendersRef.current.sendVideoState(data);
+      console.log('[TrysteroProvider] Broadcasting video state:', data);
+    }
+  }, []);
 
   // Broadcast internal session ID to all peers
-  const broadcastSessionInfo = useCallback(
-    (internalSessionId: string) => {
-      if (sendersRef.current.sendSessionInfo) {
-        const data: SessionInfoData = {
-          type: 'session-info',
-          internalSessionId
-        };
-        sendersRef.current.sendSessionInfo(data);
-        console.log('[TrysteroProvider] Broadcasting session info:', data);
-      }
-    },
-    []
-  );
+  const broadcastSessionInfo = useCallback((internalSessionId: string) => {
+    if (sendersRef.current.sendSessionInfo) {
+      const data: SessionInfoData = {
+        type: 'session-info',
+        internalSessionId
+      };
+      sendersRef.current.sendSessionInfo(data);
+      console.log('[TrysteroProvider] Broadcasting session info:', data);
+    }
+  }, []);
+
+  // Broadcast tile order to all peers
+  const broadcastTileOrder = useCallback((order: string[]) => {
+    const timestamp = Date.now();
+
+    // Update local state ref for syncing to new peers
+    stateRef.current.tileOrder = order;
+    stateRef.current.tileOrderTimestamp = timestamp;
+
+    storeFunctionsRef.current.setTileOrder(order, timestamp);
+    if (sendersRef.current.sendTileOrder) {
+      // Translate 'self' to actual selfId for broadcast so other peers understand who we are
+      const broadcastOrder = order.map((id) => (id === 'self' ? selfId : id));
+      const data: TileOrderData = { order: broadcastOrder, timestamp };
+      sendersRef.current.sendTileOrder(data);
+      console.log('[TrysteroProvider] Broadcasting tile order:', order, '-> broadcast:', broadcastOrder);
+    }
+  }, []);
 
   // Update name/isHost when they change (for sending to new peers)
   const updateUserInfo = useCallback((name: string, isHost: boolean) => {
@@ -714,7 +824,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         setActiveScreenShare,
         broadcastFocusChange,
         broadcastVideoState,
-        broadcastSessionInfo
+        broadcastSessionInfo,
+        broadcastTileOrder
       }}
     >
       <TrysteroProviderInner updateUserInfo={updateUserInfo}>{children}</TrysteroProviderInner>
