@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
 import { useNLEStore, type NLEClip } from '../store/nleStore';
@@ -39,7 +39,17 @@ function getLastSession(): LastSession | null {
 
 export function SessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  // Combine sessionId with password from URL query params to form full room code
+  const fullRoomCode = useMemo(() => {
+    const password = searchParams.get('p');
+    if (password && sessionId) {
+      return `${sessionId}?p=${password}`;
+    }
+    return sessionId || '';
+  }, [sessionId, searchParams]);
   const { isConnected, isConnecting, isHost, localStream } = useSessionStore();
   const { localBlob, localScreenBlob, editPoints, startTime, endTime } = useRecordingStore();
   const { mode, setMode, initializeClips, reset: resetNLE } = useNLEStore();
@@ -63,24 +73,25 @@ export function SessionPage() {
   // Auto-reconnect on page refresh
   useEffect(() => {
     if (reconnectAttemptedRef.current) return;
-    if (isConnected || isConnecting || !sessionId || !profile?.displayName) return;
+    if (isConnected || isConnecting || !fullRoomCode || !profile?.displayName) return;
 
     reconnectAttemptedRef.current = true;
 
     const reconnect = async () => {
       try {
         const lastSession = getLastSession();
-        const wasHost = lastSession?.roomCode === sessionId && lastSession?.wasHost;
+        // Check if this session matches the last session (compare full room codes)
+        const wasHost = lastSession?.roomCode === fullRoomCode && lastSession?.wasHost;
 
         // Request media access first
         await requestStream();
 
         if (wasHost) {
           // Rejoin as host
-          await createSession(profile.displayName, sessionId);
+          await createSession(profile.displayName, fullRoomCode);
         } else {
           // Join as participant
-          await joinSession(sessionId, profile.displayName);
+          await joinSession(fullRoomCode, profile.displayName);
         }
       } catch (err) {
         console.error('[SessionPage] Failed to reconnect:', err);
@@ -89,7 +100,7 @@ export function SessionPage() {
     };
 
     reconnect();
-  }, [sessionId, isConnected, isConnecting, profile, requestStream, createSession, joinSession, navigate]);
+  }, [fullRoomCode, isConnected, isConnecting, profile, requestStream, createSession, joinSession, navigate]);
 
   // Ensure local stream is available when connected
   useEffect(() => {
