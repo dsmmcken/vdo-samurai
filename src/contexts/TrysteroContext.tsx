@@ -127,12 +127,22 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     console.log('[TrysteroProvider] selfId exposed on window:', selfId);
   }, []);
 
-  // Store refs
+  // Store refs - use direct store access for stable references
   const { addPeer, updatePeer, removePeer, clearPeers } = usePeerStore();
   const { setActiveScreenSharePeerId, setFocusedPeerId } = useSessionStore();
 
+  // Store functions in refs to prevent useCallback dependency changes
+  // This is critical to prevent repeated stream additions that interfere with WebRTC negotiation
+  const storeFunctionsRef = useRef({
+    setActiveScreenSharePeerId,
+    setFocusedPeerId
+  });
+  // Keep refs updated (but don't trigger re-renders)
+  storeFunctionsRef.current = { setActiveScreenSharePeerId, setFocusedPeerId };
+
   // State that doesn't need to trigger re-renders
   const stateRef = useRef<{
+    localCameraStream: MediaStream | null;  // Camera stream for re-adding to new peers
     localScreenStream: MediaStream | null;
     activeScreenSharePeerId: string | null;
     peersWithScreenShareAvailable: Set<string>;
@@ -141,6 +151,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     focusedPeerId: string | null;
     focusTimestamp: number;
   }>({
+    localCameraStream: null,
     localScreenStream: null,
     activeScreenSharePeerId: null,
     peersWithScreenShareAvailable: new Set(),
@@ -247,6 +258,19 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           sendScreenShareStatus(statusMsg, peerId);
         }
 
+        // Re-add camera stream for the new peer
+        // Trystero may not automatically renegotiate for streams added before peers connect
+        if (stateRef.current.localCameraStream && newRoom) {
+          console.log('[TrysteroProvider] Re-adding camera stream for new peer:', peerId);
+          newRoom.addStream(stateRef.current.localCameraStream, peerId, { type: 'camera' });
+        }
+
+        // Re-add screen stream for the new peer
+        if (stateRef.current.localScreenStream && newRoom) {
+          console.log('[TrysteroProvider] Re-adding screen stream for new peer:', peerId);
+          newRoom.addStream(stateRef.current.localScreenStream, peerId, { type: 'screen' });
+        }
+
         // Send our internal session ID to the new peer (if we have one)
         const currentInternalSessionId = useRecordingStore.getState().internalSessionId;
         if (currentInternalSessionId) {
@@ -258,11 +282,12 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
 
         // Send current focus state to the new peer (so they sync to existing focus)
-        // Only send if our selfId < peerId to avoid race condition where both peers
-        // send focus to each other simultaneously. This ensures exactly one peer sends.
-        if (selfId < peerId) {
+        // Always send if we have a focus state set (timestamp > 0).
+        // The receiving peer will use timestamp comparison to determine which focus wins.
+        // This ensures that peers who join later sync to the established focus state.
+        if (stateRef.current.focusTimestamp > 0) {
           const focusPeerId = stateRef.current.focusedPeerId ?? selfId;
-          const focusTimestamp = stateRef.current.focusTimestamp || Date.now();
+          const focusTimestamp = stateRef.current.focusTimestamp;
           const focusMsg: FocusChangeData = {
             peerId: focusPeerId,
             timestamp: focusTimestamp
@@ -270,7 +295,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           console.log('[TrysteroProvider] Sending focus state to new peer:', peerId, focusMsg);
           sendFocusChange(focusMsg, peerId);
         } else {
-          console.log('[TrysteroProvider] Skipping focus sync to peer (waiting to receive):', peerId);
+          console.log('[TrysteroProvider] No focus state to send to new peer:', peerId);
         }
       });
 
@@ -494,6 +519,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     setSessionId(null);
     clearPeers();
     stateRef.current = {
+      localCameraStream: null,
       localScreenStream: null,
       activeScreenSharePeerId: null,
       peersWithScreenShareAvailable: new Set(),
@@ -514,11 +540,12 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   }, [clearPeers]);
 
   // Set active screen share (defined first as it's used by addLocalStream and removeLocalStream)
+  // Note: This only controls which screen share is displayed in MainDisplay, not which streams are transmitted.
+  // All screen streams are always transmitted so peers can see them when focused.
   const setActiveScreenShare = useCallback(
     (peerId: string | null) => {
       if (!roomRef.current) return;
 
-      const previousActive = stateRef.current.activeScreenSharePeerId;
       stateRef.current.activeScreenSharePeerId = peerId;
 
       // Broadcast to all peers
@@ -530,23 +557,16 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendersRef.current.sendActiveScreenShare(msg);
       }
 
-      // Handle local stream state
-      if (stateRef.current.localScreenStream) {
-        if (peerId === selfId && previousActive !== selfId) {
-          roomRef.current.addStream(stateRef.current.localScreenStream, undefined, {
-            type: 'screen'
-          });
-        } else if (peerId !== selfId && previousActive === selfId) {
-          roomRef.current.removeStream(stateRef.current.localScreenStream);
-        }
-      }
-
-      setActiveScreenSharePeerId(peerId);
+      storeFunctionsRef.current.setActiveScreenSharePeerId(peerId);
     },
-    [setActiveScreenSharePeerId]
+    [] // No dependencies - uses refs for stable identity
   );
 
   // Add local stream
+  // Use ref for setActiveScreenShare to ensure stable function identity
+  const setActiveScreenShareRef = useRef(setActiveScreenShare);
+  setActiveScreenShareRef.current = setActiveScreenShare;
+
   const addLocalStream = useCallback(
     (stream: MediaStream, metadata?: { type: string }) => {
       if (!roomRef.current) {
@@ -554,16 +574,21 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // For camera streams, always add
+      // For camera streams, store reference and add to room
       if (!metadata || metadata.type !== 'screen') {
         console.log('[TrysteroProvider] Adding camera stream');
+        stateRef.current.localCameraStream = stream;
         roomRef.current.addStream(stream, undefined, metadata);
         return;
       }
 
-      // For screen share, store locally but only stream if we're active
-      console.log('[TrysteroProvider] Setting local screen stream');
+      // For screen share, store locally and always stream to peers
+      // (peers need the stream to display when focused, regardless of who is "active")
+      console.log('[TrysteroProvider] Adding screen share stream');
       stateRef.current.localScreenStream = stream;
+
+      // Always send the screen stream to peers so they can display it when focusing on us
+      roomRef.current.addStream(stream, undefined, { type: 'screen' });
 
       // Notify peers that we have screen share available
       if (sendersRef.current.sendScreenShareStatus) {
@@ -577,10 +602,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
       // If no one is actively sharing, we become active automatically
       if (!stateRef.current.activeScreenSharePeerId) {
-        setActiveScreenShare(selfId);
+        setActiveScreenShareRef.current(selfId);
       }
     },
-    [setActiveScreenShare]
+    [] // No dependencies - uses refs for stable identity
   );
 
   // Remove local stream
@@ -606,13 +631,13 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
         // If we were active, clear active screen share
         if (stateRef.current.activeScreenSharePeerId === selfId) {
-          setActiveScreenShare(null);
+          setActiveScreenShareRef.current(null);
         }
       }
 
       roomRef.current.removeStream(stream);
     },
-    [setActiveScreenShare]
+    [] // No dependencies - uses refs for stable identity
   );
 
   // Broadcast focus change
@@ -626,13 +651,13 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       stateRef.current.focusedPeerId = broadcastPeerId;
       stateRef.current.focusTimestamp = timestamp;
 
-      setFocusedPeerId(peerId, timestamp);
+      storeFunctionsRef.current.setFocusedPeerId(peerId, timestamp);
       if (sendersRef.current.sendFocusChange) {
         const data: FocusChangeData = { peerId: broadcastPeerId, timestamp };
         sendersRef.current.sendFocusChange(data);
       }
     },
-    [setFocusedPeerId]
+    [] // No dependencies - uses refs for stable identity
   );
 
   // Broadcast video/audio state changes

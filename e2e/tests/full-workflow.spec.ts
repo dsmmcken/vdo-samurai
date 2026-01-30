@@ -137,8 +137,8 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     await host.page.waitForSelector('[role="dialog"][aria-modal="true"]', { timeout: 5000 });
     console.log('[E2E] Host screen source picker appeared');
 
-    // Click the Share button (first source is pre-selected)
-    await host.page.click('button:has-text("Share")');
+    // Click the Share button inside the dialog (first source is pre-selected)
+    await host.page.click('[role="dialog"] button.bg-blue-600');
 
     // Wait for host's local screen share to be set
     await waitForLocalScreenShare(host.page, 10000);
@@ -151,8 +151,8 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     await participant.page.waitForSelector('[role="dialog"][aria-modal="true"]', { timeout: 5000 });
     console.log('[E2E] Participant screen source picker appeared');
 
-    // Click the Share button
-    await participant.page.click('button:has-text("Share")');
+    // Click the Share button inside the dialog
+    await participant.page.click('[role="dialog"] button.bg-blue-600');
 
     // Wait for participant's local screen share to be set
     await waitForLocalScreenShare(participant.page, 10000);

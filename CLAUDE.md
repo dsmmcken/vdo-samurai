@@ -17,6 +17,10 @@ npm run lint         # Run ESLint
 npm run format       # Format code with Prettier
 npm run format:check # Check formatting
 npm run tsc         # TypeScript type check
+npm run test:e2e         # Run E2E tests (visible browser)
+npm run test:e2e:headless # Run E2E tests in headless mode
+npm run test:e2e:ui      # Run with Playwright UI
+npm run test:e2e:debug   # Run in debug mode
 ```
 
 ## Architecture
@@ -58,3 +62,41 @@ Strict mode enabled. Types in `src/types/`:
 - `index.ts` - Peer, Session interfaces
 - `messages.ts` - P2P message types
 - `electron.d.ts` - Electron IPC types
+
+## E2E Testing
+
+End-to-end tests use Playwright with Electron. Tests run against the built app (requires `npm run build` first).
+
+### Structure (`e2e/`)
+- `playwright.config.ts` - Config: 3min timeout, single worker, artifacts on failure
+- `fixtures/electron-app.ts` - App launcher with media mocking
+- `helpers/selectors.ts` - Centralized UI selectors
+- `helpers/wait-helpers.ts` - Common wait utilities
+- `helpers/video-verify.ts` - Video validation helpers
+- `tests/*.spec.ts` - Test files
+
+### Media Mocking
+Tests inject canvas-based mock streams for camera/screen share:
+- Host streams: Blue (camera) / Purple (screen)
+- Participant streams: Pink (camera) / Red (screen)
+- Streams display user name, type label, and frame counter
+- Electron's `screenCapture.getSources` is also mocked
+
+### Writing Tests
+```typescript
+import { test, expect } from '@playwright/test';
+import { launchApp, closeApp, AppInstance } from '../fixtures/electron-app';
+import { selectors } from '../helpers/selectors';
+
+test('example', async () => {
+  const app = await launchApp('test-instance');
+  try {
+    await app.page.click(selectors.home.createRoomButton);
+    // ...
+  } finally {
+    await closeApp(app);
+  }
+});
+```
+
+Use `selectors.ts` for UI elements. Each `launchApp()` creates an isolated Electron instance with separate userData.
