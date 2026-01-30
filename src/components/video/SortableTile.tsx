@@ -29,7 +29,7 @@ export function SortableTile({ id, participant, isFocused, onFocusClick }: Sorta
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 100 : 'auto' as const,
+    zIndex: isDragging ? 100 : ('auto' as const),
     opacity: isDragging ? 0.8 : 1,
     cursor: isDragging ? 'grabbing' : 'grab',
     scale: isDragging ? 1.05 : 1

@@ -72,10 +72,7 @@ export function useTileOrder(): UseTileOrderReturn {
       }
 
       // Only update if actually changed
-      if (
-        newOrder.length !== tileOrder.length ||
-        newOrder.some((id, i) => tileOrder[i] !== id)
-      ) {
+      if (newOrder.length !== tileOrder.length || newOrder.some((id, i) => tileOrder[i] !== id)) {
         // Update local state (don't broadcast - peer joins/leaves are local adjustments)
         setTileOrder(newOrder);
       }

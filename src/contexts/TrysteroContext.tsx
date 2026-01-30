@@ -317,7 +317,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         // Send current tile order to the new peer (so they sync to existing order)
         if (stateRef.current.tileOrderTimestamp > 0 && stateRef.current.tileOrder.length > 0) {
           // Translate 'self' to actual selfId for the message
-          const broadcastOrder = stateRef.current.tileOrder.map((id) => (id === 'self' ? selfId : id));
+          const broadcastOrder = stateRef.current.tileOrder.map((id) =>
+            id === 'self' ? selfId : id
+          );
           const tileOrderMsg: TileOrderData = {
             order: broadcastOrder,
             timestamp: stateRef.current.tileOrderTimestamp
@@ -797,7 +799,12 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const broadcastOrder = order.map((id) => (id === 'self' ? selfId : id));
       const data: TileOrderData = { order: broadcastOrder, timestamp };
       sendersRef.current.sendTileOrder(data);
-      console.log('[TrysteroProvider] Broadcasting tile order:', order, '-> broadcast:', broadcastOrder);
+      console.log(
+        '[TrysteroProvider] Broadcasting tile order:',
+        order,
+        '-> broadcast:',
+        broadcastOrder
+      );
     }
   }, []);
 
