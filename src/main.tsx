@@ -4,24 +4,20 @@ import './index.css';
 import App from './App';
 import { TrysteroProvider } from './contexts/TrysteroContext';
 
-// Expose stores for E2E testing (only when media is mocked, indicating test mode)
-if ((window as Record<string, unknown>).__MEDIA_MOCKED__) {
-  import('./store/sessionStore').then((m) => {
-    (window as Record<string, unknown>).useSessionStore = m.useSessionStore;
-  });
-  import('./store/recordingStore').then((m) => {
-    (window as Record<string, unknown>).useRecordingStore = m.useRecordingStore;
-  });
-  import('./store/peerStore').then((m) => {
-    (window as Record<string, unknown>).usePeerStore = m.usePeerStore;
-  });
-  import('./store/transferStore').then((m) => {
-    (window as Record<string, unknown>).useTransferStore = m.useTransferStore;
-  });
-  import('./store/userStore').then((m) => {
-    (window as Record<string, unknown>).useUserStore = m.useUserStore;
-  });
-}
+// Expose stores globally for E2E testing and dual-instance testing
+// Using static imports to ensure they're available immediately
+import { useSessionStore } from './store/sessionStore';
+import { useRecordingStore } from './store/recordingStore';
+import { usePeerStore } from './store/peerStore';
+import { useTransferStore } from './store/transferStore';
+import { useUserStore } from './store/userStore';
+
+// Expose on window for testing scripts to access
+(window as Record<string, unknown>).useSessionStore = useSessionStore;
+(window as Record<string, unknown>).useRecordingStore = useRecordingStore;
+(window as Record<string, unknown>).usePeerStore = usePeerStore;
+(window as Record<string, unknown>).useTransferStore = useTransferStore;
+(window as Record<string, unknown>).useUserStore = useUserStore;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

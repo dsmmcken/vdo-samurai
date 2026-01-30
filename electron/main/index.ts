@@ -1,12 +1,18 @@
 import { app, BrowserWindow, shell, Menu, ipcMain } from 'electron';
 import { join } from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
+import { getMediaMockScript } from './media-mock';
 
 let mainWindow: BrowserWindow | null = null;
 
 const isMac = process.platform === 'darwin';
 // Check for headless mode (for E2E testing)
 const isHeadless = process.env.HEADLESS === 'true' || process.env.E2E_HEADLESS === 'true';
+// Check for simulated media mode (for dual-instance testing)
+const simulateMedia = process.env.SIMULATE_MEDIA === 'true';
+const instanceId = process.env.INSTANCE_ID;
+
+console.log('[main] Environment: SIMULATE_MEDIA=', simulateMedia, 'INSTANCE_ID=', instanceId);
 
 function createWindow(): void {
   // On macOS, use hiddenInset for native traffic lights
@@ -52,12 +58,71 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
+  // Inject media mocks and profile seeding if SIMULATE_MEDIA is enabled
+  if (simulateMedia) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('[main] Injecting media mock and profile seed (instanceId:', instanceId, ')');
+
+      // Inject the media mock script
+      mainWindow?.webContents.executeJavaScript(getMediaMockScript());
+
+      // Seed the user profile if instanceId is set
+      if (instanceId) {
+        const profiles: Record<string, { displayName: string; fullName: string }> = {
+          host: { displayName: 'Host', fullName: 'Host User' },
+          participant: { displayName: 'Participant', fullName: 'Participant User' },
+        };
+        const profile = profiles[instanceId];
+        const isHostInstance = instanceId === 'host';
+
+        if (profile) {
+          // Seed localStorage AND update Zustand store to trigger re-render
+          const seedScript = `
+            (function() {
+              const profile = ${JSON.stringify(profile)};
+              const isHost = ${isHostInstance};
+
+              // Seed user profile in localStorage
+              const userStorageKey = 'vdo-samurai-user';
+              const userState = { state: { profile }, version: 0 };
+              localStorage.setItem(userStorageKey, JSON.stringify(userState));
+              console.log('[SEED] Seeded user profile');
+
+              // Seed last session info so SessionPage knows to create vs join
+              const sessionStorageKey = 'vdo-samurai-last-session';
+              const lastSession = { roomCode: 'debug?p=debug', wasHost: isHost };
+              localStorage.setItem(sessionStorageKey, JSON.stringify(lastSession));
+              console.log('[SEED] Seeded last session (wasHost:', isHost, ')');
+
+              // Update Zustand store to trigger re-render (stores are now exposed immediately)
+              if (window.useUserStore && window.useUserStore.setState) {
+                window.useUserStore.setState({ profile });
+                console.log('[SEED] Updated Zustand store with profile:', profile.displayName);
+              } else {
+                console.error('[SEED] useUserStore not available!');
+              }
+            })();
+          `;
+          mainWindow?.webContents.executeJavaScript(seedScript);
+        }
+      }
+    });
+  }
+
   // Load the app
+  // For dual-instance testing, auto-join the debug room
+  const debugRoom = simulateMedia && instanceId ? '#/session/debug?p=debug' : '';
+
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL(`http://localhost:5173/${debugRoom}`);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    // For production, need to use loadURL with file:// to include hash
+    if (debugRoom) {
+      mainWindow.loadURL(`file://${join(__dirname, '../renderer/index.html')}${debugRoom}`);
+    } else {
+      mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    }
   }
 
   mainWindow.on('closed', () => {
