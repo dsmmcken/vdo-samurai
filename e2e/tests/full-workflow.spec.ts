@@ -164,8 +164,9 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     console.log('[E2E] Verifying screen share badges...');
 
     // Host should see their own screen share badge (on their tile)
+    // Note: Local user tile always shows "You" as the name, not the actual user name
     await host.page.waitForSelector(
-      '[role="button"][aria-label*="Host User"][aria-label*="sharing screen"]',
+      '[role="button"][aria-label*="You"][aria-label*="sharing screen"]',
       { timeout: 10000 }
     );
     console.log('[E2E] Host sees their own screen share badge');
@@ -175,8 +176,9 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     console.log('[E2E] Host sees participant screen share badge');
 
     // Participant should see their own screen share badge
+    // Note: Local user tile always shows "You" as the name, not the actual user name
     await participant.page.waitForSelector(
-      '[role="button"][aria-label*="Participant"][aria-label*="sharing screen"]',
+      '[role="button"][aria-label*="You"][aria-label*="sharing screen"]',
       { timeout: 10000 }
     );
     console.log('[E2E] Participant sees their own screen share badge');
