@@ -298,4 +298,121 @@ test.describe('VDO Samurai E2E - Focus Synchronization', () => {
 
     console.log('[E2E] All focus sync tests passed!');
   });
+
+  test('new peer joining syncs to existing focus state', async () => {
+    // ==========================================
+    // STEP 1: Launch host instance
+    // ==========================================
+    console.log('[E2E] Launching host instance...');
+    host = await launchApp('host');
+
+    // ==========================================
+    // STEP 2: Complete profile setup for host
+    // ==========================================
+    console.log('[E2E] Setting up host profile...');
+    await host.page.waitForSelector('h1:has-text("Welcome to VDO Samurai")', { timeout: 15000 });
+    await host.page.fill('#display-name', 'Host User');
+    await host.page.fill('#full-name', 'Host Full Name');
+    await host.page.click('button:has-text("Continue")');
+
+    await host.page.waitForSelector(selectors.home.title, { timeout: 10000 });
+
+    // ==========================================
+    // STEP 3: Host creates session
+    // ==========================================
+    console.log('[E2E] Host creating session...');
+    await host.page.click(selectors.home.createRoomButton);
+
+    await host.page.waitForSelector(selectors.session.recordButton, { timeout: 30000 });
+
+    const hostUrl = host.page.url();
+    const sessionIdMatch = hostUrl.match(/\/session\/([^/]+)/);
+    expect(sessionIdMatch).toBeTruthy();
+    const sessionId = sessionIdMatch![1];
+    console.log('[E2E] Session created:', sessionId);
+
+    // ==========================================
+    // STEP 4: Host clicks on their own tile to set focus
+    // ==========================================
+    console.log('[E2E] Host clicking on their own (You) tile to set focus...');
+    await host.page.click('[role="button"][aria-label*="You"]');
+    await sleep(1000);
+
+    // Verify host has focus set
+    const hostFocusBefore = await getFocusedPeerId(host.page);
+    console.log('[E2E] Host focus before participant joins:', hostFocusBefore);
+    expect(hostFocusBefore).toBe(null); // null means self
+
+    // Get host's selfId for verification later
+    const hostSelfId = await host.page.evaluate(() => {
+      const win = window as unknown as { __trysteroSelfId?: string };
+      return win.__trysteroSelfId ?? 'not-set';
+    });
+    console.log('[E2E] Host selfId:', hostSelfId);
+
+    // ==========================================
+    // STEP 5: Launch and setup participant
+    // ==========================================
+    console.log('[E2E] Launching participant instance...');
+    participant = await launchApp('participant');
+
+    console.log('[E2E] Setting up participant profile...');
+    await participant.page.waitForSelector('h1:has-text("Welcome to VDO Samurai")', { timeout: 15000 });
+    await participant.page.fill('#display-name', 'Participant');
+    await participant.page.fill('#full-name', 'Participant Full Name');
+    await participant.page.click('button:has-text("Continue")');
+
+    await participant.page.waitForSelector(selectors.home.title, { timeout: 10000 });
+
+    // ==========================================
+    // STEP 6: Participant joins session
+    // ==========================================
+    console.log('[E2E] Participant joining session...');
+    await participant.page.fill(selectors.home.roomCodeInput, sessionId);
+    await participant.page.click(selectors.home.joinRoomButton);
+
+    await participant.page.waitForSelector(selectors.session.participantList, { timeout: 30000 });
+
+    // ==========================================
+    // STEP 7: Wait for P2P connection
+    // ==========================================
+    console.log('[E2E] Waiting for P2P connection...');
+    const maxWaitTime = 90000;
+    const pollInterval = 5000;
+    const startTime = Date.now();
+
+    let connected = false;
+    while (Date.now() - startTime < maxWaitTime && !connected) {
+      await sleep(pollInterval);
+      const hostTileCount = await host.page.locator('[role="listitem"]').count();
+      const participantTileCount = await participant.page.locator('[role="listitem"]').count();
+      console.log(`[E2E] Host tiles: ${hostTileCount}, Participant tiles: ${participantTileCount}`);
+      if (hostTileCount >= 2 && participantTileCount >= 2) {
+        connected = true;
+      }
+    }
+
+    if (!connected) {
+      throw new Error('P2P connection timeout');
+    }
+    console.log('[E2E] P2P connection established');
+
+    // ==========================================
+    // STEP 8: Verify participant synced to host's focus
+    // ==========================================
+    // Give time for focus sync message to propagate
+    await sleep(3000);
+
+    const participantFocus = await getFocusedPeerId(participant.page);
+    console.log('[E2E] Participant focus after joining:', participantFocus);
+
+    // The participant should have synced to the host's focus (which was on host themselves)
+    // On participant's side, this means focusedPeerId should be the host's peer ID
+    expect(participantFocus).toBe(hostSelfId);
+
+    // Verify the UI also shows the correct focus
+    await waitForTileFocused(participant.page, 'Host', 5000);
+
+    console.log('[E2E] Focus sync on join verified!');
+  });
 });

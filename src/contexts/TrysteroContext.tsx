@@ -138,12 +138,16 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     peersWithScreenShareAvailable: Set<string>;
     name: string;
     isHost: boolean;
+    focusedPeerId: string | null;
+    focusTimestamp: number;
   }>({
     localScreenStream: null,
     activeScreenSharePeerId: null,
     peersWithScreenShareAvailable: new Set(),
     name: 'Anonymous',
-    isHost: false
+    isHost: false,
+    focusedPeerId: null,
+    focusTimestamp: 0
   });
 
   // Action senders
@@ -252,6 +256,22 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           };
           sendSessionInfo(sessionInfoMsg, peerId);
         }
+
+        // Send current focus state to the new peer (so they sync to existing focus)
+        // Only send if our selfId < peerId to avoid race condition where both peers
+        // send focus to each other simultaneously. This ensures exactly one peer sends.
+        if (selfId < peerId) {
+          const focusPeerId = stateRef.current.focusedPeerId ?? selfId;
+          const focusTimestamp = stateRef.current.focusTimestamp || Date.now();
+          const focusMsg: FocusChangeData = {
+            peerId: focusPeerId,
+            timestamp: focusTimestamp
+          };
+          console.log('[TrysteroProvider] Sending focus state to new peer:', peerId, focusMsg);
+          sendFocusChange(focusMsg, peerId);
+        } else {
+          console.log('[TrysteroProvider] Skipping focus sync to peer (waiting to receive):', peerId);
+        }
       });
 
       // Handle peer leave
@@ -316,14 +336,25 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      // Handle focus change messages
+      // Handle focus change messages with timestamp-based conflict resolution
       onFocusChange((data: unknown) => {
         if (typeof data === 'object' && data !== null) {
           const focusData = data as FocusChangeData;
-          console.log('[TrysteroProvider] Focus changed to:', focusData.peerId);
-          // If the focus is on our selfId, convert to null (which means "local user" in our store)
-          const localFocusedPeerId = focusData.peerId === selfId ? null : focusData.peerId;
-          setFocusedPeerId(localFocusedPeerId);
+          const incomingTimestamp = focusData.timestamp || 0;
+
+          // Only apply if this focus change is newer than our current one
+          // This handles race conditions when multiple users join/change focus simultaneously
+          if (incomingTimestamp > stateRef.current.focusTimestamp) {
+            console.log('[TrysteroProvider] Focus changed to:', focusData.peerId, 'timestamp:', incomingTimestamp);
+            // If the focus is on our selfId, convert to null (which means "local user" in our store)
+            const localFocusedPeerId = focusData.peerId === selfId ? null : focusData.peerId;
+            stateRef.current.focusedPeerId = focusData.peerId;
+            stateRef.current.focusTimestamp = incomingTimestamp;
+            setFocusedPeerId(localFocusedPeerId, incomingTimestamp);
+          } else {
+            console.log('[TrysteroProvider] Ignoring stale focus change:', focusData.peerId,
+              'incoming:', incomingTimestamp, 'current:', stateRef.current.focusTimestamp);
+          }
         }
       });
 
@@ -467,7 +498,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       activeScreenSharePeerId: null,
       peersWithScreenShareAvailable: new Set(),
       name: 'Anonymous',
-      isHost: false
+      isHost: false,
+      focusedPeerId: null,
+      focusTimestamp: 0
     };
     sendersRef.current = {
       sendPeerInfo: null,
@@ -585,11 +618,17 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   // Broadcast focus change
   const broadcastFocusChange = useCallback(
     (peerId: string | null) => {
-      setFocusedPeerId(peerId);
+      const timestamp = Date.now();
+      // When broadcasting, convert null (self) to actual selfId so other peers know who to focus on
+      const broadcastPeerId = peerId === null ? selfId : peerId;
+
+      // Update local state ref for syncing to new peers
+      stateRef.current.focusedPeerId = broadcastPeerId;
+      stateRef.current.focusTimestamp = timestamp;
+
+      setFocusedPeerId(peerId, timestamp);
       if (sendersRef.current.sendFocusChange) {
-        // When broadcasting, convert null (self) to actual selfId so other peers know who to focus on
-        const broadcastPeerId = peerId === null ? selfId : peerId;
-        const data: FocusChangeData = { peerId: broadcastPeerId, timestamp: Date.now() };
+        const data: FocusChangeData = { peerId: broadcastPeerId, timestamp };
         sendersRef.current.sendFocusChange(data);
       }
     },

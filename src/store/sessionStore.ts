@@ -9,6 +9,7 @@ interface SessionState {
   localRecordingStream: MediaStream | null; // High-quality stream for local recording
   localScreenStream: MediaStream | null;
   focusedPeerId: string | null;
+  focusTimestamp: number; // Timestamp of last focus change for conflict resolution
   activeScreenSharePeerId: string | null; // Only one screen share streams at a time
   isConnecting: boolean;
   isConnected: boolean;
@@ -21,7 +22,7 @@ interface SessionState {
   setLocalStream: (stream: MediaStream | null) => void;
   setLocalRecordingStream: (stream: MediaStream | null) => void;
   setLocalScreenStream: (stream: MediaStream | null) => void;
-  setFocusedPeerId: (peerId: string | null) => void;
+  setFocusedPeerId: (peerId: string | null, timestamp?: number) => void;
   setActiveScreenSharePeerId: (peerId: string | null) => void;
   setIsConnecting: (connecting: boolean) => void;
   setIsConnected: (connected: boolean) => void;
@@ -38,6 +39,7 @@ const initialState = {
   localRecordingStream: null,
   localScreenStream: null,
   focusedPeerId: null,
+  focusTimestamp: 0,
   activeScreenSharePeerId: null,
   isConnecting: false,
   isConnected: false,
@@ -60,7 +62,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ localRecordingStream });
   },
   setLocalScreenStream: (localScreenStream) => set({ localScreenStream }),
-  setFocusedPeerId: (focusedPeerId) => set({ focusedPeerId }),
+  setFocusedPeerId: (focusedPeerId, timestamp) => set({ focusedPeerId, focusTimestamp: timestamp ?? Date.now() }),
   setActiveScreenSharePeerId: (activeScreenSharePeerId) => set({ activeScreenSharePeerId }),
   setIsConnecting: (isConnecting) => set({ isConnecting }),
   setIsConnected: (isConnected) => set({ isConnected }),
