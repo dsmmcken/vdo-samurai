@@ -63,14 +63,14 @@ function createWindow(): void {
     mainWindow.webContents.on('did-finish-load', () => {
       console.log('[main] Injecting media mock and profile seed (instanceId:', instanceId, ')');
 
-      // Inject the media mock script
-      mainWindow?.webContents.executeJavaScript(getMediaMockScript());
+      // Inject the media mock script (pass instanceId for host/participant video selection)
+      mainWindow?.webContents.executeJavaScript(getMediaMockScript(instanceId));
 
       // Seed the user profile if instanceId is set
       if (instanceId) {
         const profiles: Record<string, { displayName: string; fullName: string }> = {
           host: { displayName: 'Host', fullName: 'Host User' },
-          participant: { displayName: 'Participant', fullName: 'Participant User' },
+          participant: { displayName: 'Participant', fullName: 'Participant User' }
         };
         const profile = profiles[instanceId];
         const isHostInstance = instanceId === 'host';

@@ -1,4 +1,7 @@
-import { ipcMain, desktopCapturer } from 'electron';
+import { ipcMain, desktopCapturer, app } from 'electron';
+import { join } from 'path';
+import { readFile as fsReadFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import {
   compositeVideos,
   cancelCurrentProcess,
@@ -21,6 +24,34 @@ import {
 } from './storage';
 
 export function registerIpcHandlers(): void {
+  // Mock video file handler (for E2E tests and dev:dual mode)
+  ipcMain.handle('mock:getVideoFile', async (_event, videoType: string) => {
+    // Validate videoType to prevent path traversal
+    const validTypes = ['host-camera', 'host-screen', 'participant-camera', 'participant-screen'];
+    if (!validTypes.includes(videoType)) {
+      throw new Error(`Invalid video type: ${videoType}`);
+    }
+
+    // In development, load from e2e/test-assets/videos
+    // In production, load from app resources
+    let videoDir: string;
+    if (app.isPackaged) {
+      videoDir = join(process.resourcesPath, 'test-videos');
+    } else {
+      // Development: relative to electron main directory
+      videoDir = join(__dirname, '../../e2e/test-assets/videos');
+    }
+
+    const filePath = join(videoDir, `${videoType}.mp4`);
+
+    if (!existsSync(filePath)) {
+      throw new Error(`Mock video not found: ${filePath}\nRun: npm run generate:test-videos`);
+    }
+
+    const buffer = await fsReadFile(filePath);
+    return buffer;
+  });
+
   // Screen capture handlers
   ipcMain.handle('screen-capture:getSources', async () => {
     try {
@@ -46,12 +77,9 @@ export function registerIpcHandlers(): void {
     }
   });
   // FFmpeg handlers
-  ipcMain.handle(
-    'ffmpeg:composite',
-    async (_event, options: CompositeOptions) => {
-      return compositeVideos(options);
-    }
-  );
+  ipcMain.handle('ffmpeg:composite', async (_event, options: CompositeOptions) => {
+    return compositeVideos(options);
+  });
 
   ipcMain.handle('ffmpeg:cancel', () => {
     return cancelCurrentProcess();
@@ -113,12 +141,9 @@ export function registerIpcHandlers(): void {
     return listRecordings();
   });
 
-  ipcMain.handle(
-    'storage:saveTempFile',
-    async (_event, filename: string, buffer: ArrayBuffer) => {
-      return saveTempFile(filename, buffer);
-    }
-  );
+  ipcMain.handle('storage:saveTempFile', async (_event, filename: string, buffer: ArrayBuffer) => {
+    return saveTempFile(filename, buffer);
+  });
 
   ipcMain.handle('storage:getTempPath', async (_event, filename: string) => {
     return getTempPath(filename);
@@ -132,12 +157,9 @@ export function registerIpcHandlers(): void {
     return showSaveDialog(defaultName);
   });
 
-  ipcMain.handle(
-    'storage:saveFile',
-    async (_event, filePath: string, buffer: ArrayBuffer) => {
-      return saveFile(filePath, buffer);
-    }
-  );
+  ipcMain.handle('storage:saveFile', async (_event, filePath: string, buffer: ArrayBuffer) => {
+    return saveFile(filePath, buffer);
+  });
 
   // App handlers
   ipcMain.handle('app:getVersion', () => {

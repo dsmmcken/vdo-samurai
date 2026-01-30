@@ -8,152 +8,88 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ELECTRON_MAIN = path.join(__dirname, '../../out/main/index.js');
 
 /**
- * Script injected into renderer to mock getUserMedia/getDisplayMedia
- * with canvas-generated streams that show user names and distinct colors
+ * Generate the media mock script for a given instance
+ * Uses pre-generated video files for better performance
  */
-const MEDIA_MOCK_SCRIPT = `
-(function() {
-  // Get current user info from the app's store
-  function getUserInfo() {
+function getMediaMockScript(instanceId: string): string {
+  // Determine if this is the host instance based on instanceId
+  // Convention: 'host' or instanceIds starting with 'host' are hosts
+  const isHost = instanceId === 'host' || instanceId.startsWith('host');
+
+  return `
+(async function() {
+  const isHost = ${isHost};
+
+  // Video type mapping based on role
+  const cameraVideoType = isHost ? 'host-camera' : 'participant-camera';
+  const screenVideoType = isHost ? 'host-screen' : 'participant-screen';
+
+  console.log('[MOCK] Initializing video-based media mock (isHost:', isHost, ', instanceId: "${instanceId}")');
+
+  // Cache for loaded videos
+  const videoCache = {};
+
+  /**
+   * Load a video file via IPC and create a looping video element
+   */
+  async function loadVideo(videoType) {
+    if (videoCache[videoType]) {
+      return videoCache[videoType];
+    }
+
+    console.log('[MOCK] Loading video:', videoType);
+
     try {
-      const userStore = window.useUserStore;
-      const sessionStore = window.useSessionStore;
+      // Load video file via Electron IPC
+      const buffer = await window.electronAPI.mock.getVideoFile(videoType);
+      const blob = new Blob([buffer], { type: 'video/mp4' });
+      const blobUrl = URL.createObjectURL(blob);
 
-      const profile = userStore?.getState?.()?.profile;
-      const isHost = sessionStore?.getState?.()?.isHost ?? false;
+      // Create video element
+      const video = document.createElement('video');
+      video.src = blobUrl;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.style.display = 'none';
+      document.body.appendChild(video);
 
-      const displayName = profile?.displayName || 'Unknown User';
+      // Wait for video to be ready
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = () => reject(new Error('Failed to load video: ' + videoType));
+      });
 
-      return { displayName, isHost };
-    } catch (e) {
-      return { displayName: 'Unknown', isHost: false };
+      // Start playback
+      await video.play();
+
+      // Capture stream from video
+      const stream = video.captureStream();
+
+      console.log('[MOCK] Video loaded:', videoType, video.videoWidth + 'x' + video.videoHeight);
+
+      const cached = { video, blobUrl, stream };
+      videoCache[videoType] = cached;
+      return cached;
+    } catch (err) {
+      console.error('[MOCK] Failed to load video:', videoType, err);
+      throw err;
     }
   }
 
-  // Create canvas with animated test pattern showing user name and stream type
-  // streamType: 'camera' | 'screen'
-  // Note: isHost is read dynamically on each frame to handle late session establishment
-  function createCanvasStream(userName, width, height, fps, streamType) {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-
-    const isScreen = streamType === 'screen';
-    const typeLabel = isScreen ? 'SCREEN SHARE' : 'CAMERA';
-
-    let frame = 0;
-    const intervalId = setInterval(() => {
-      // Read isHost dynamically on each frame (session may be established after stream creation)
-      const sessionStore = window.useSessionStore;
-      const isHost = sessionStore?.getState?.()?.isHost ?? false;
-
-      // Color scheme: Host=Blue/Purple, Participant=Pink/Magenta
-      // Camera and Screen have different shades
-      let bgColor;
-      if (isHost) {
-        bgColor = isScreen ? '#6c5ce7' : '#4a90e2';  // Purple for screen, Blue for camera
-      } else {
-        bgColor = isScreen ? '#d63031' : '#e94e77';  // Red for screen, Pink for camera
-      }
-
-      // Background color
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, width, height);
-
-      if (isScreen) {
-        // Grid pattern for screen share (40px squares)
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1;
-        const gridSize = 40;
-        for (let x = 0; x <= width; x += gridSize) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, height);
-          ctx.stroke();
-        }
-        for (let y = 0; y <= height; y += gridSize) {
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(width, y);
-          ctx.stroke();
-        }
-      } else {
-        // Animated diagonal stripes for camera
-        const stripeWidth = 60;
-        const offset = (frame * 3) % (stripeWidth * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.save();
-        ctx.beginPath();
-        for (let x = -height + offset; x < width + height; x += stripeWidth * 2) {
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x + height, height);
-          ctx.lineTo(x + height + stripeWidth, height);
-          ctx.lineTo(x + stripeWidth, 0);
-          ctx.closePath();
-        }
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // Semi-transparent overlay for text readability
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.fillRect(width/2 - 180, height/2 - 70, 360, 140);
-
-      // User name (large, prominent, at top)
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 36px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(userName, width / 2, height / 2 - 30);
-
-      // Stream type label (medium, below name)
-      ctx.fillStyle = isScreen ? '#ffeaa7' : '#74b9ff';  // Yellow for screen, Light blue for camera
-      ctx.font = 'bold 24px sans-serif';
-      ctx.fillText(typeLabel, width / 2, height / 2 + 10);
-
-      // Frame counter and timestamp (smaller)
-      ctx.font = '12px monospace';
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillText('Frame: ' + frame + ' | ' + new Date().toISOString().slice(11, 19), width / 2, height / 2 + 45);
-
-      frame++;
-    }, 1000 / fps);
-
-    // Store interval ID for cleanup
-    canvas._intervalId = intervalId;
-
-    return canvas.captureStream(fps);
-  }
-
-  // Create silent audio track (with optional tone for debugging)
-  function createAudioTrack(frequency = 0) {
+  /**
+   * Pre-load videos for faster first use
+   */
+  async function preloadVideos() {
     try {
-      const audioContext = new AudioContext();
-      const dest = audioContext.createMediaStreamDestination();
-
-      if (frequency > 0) {
-        const oscillator = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        oscillator.frequency.value = frequency;
-        gain.gain.value = 0.1; // Low volume
-        oscillator.connect(gain);
-        gain.connect(dest);
-        oscillator.start();
-      } else {
-        // Silent audio
-        const oscillator = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        gain.gain.value = 0;
-        oscillator.connect(gain);
-        gain.connect(dest);
-        oscillator.start();
-      }
-
-      return dest.stream.getAudioTracks()[0];
-    } catch (e) {
-      console.error('[MOCK] Failed to create audio track:', e);
-      return null;
+      await Promise.all([
+        loadVideo(cameraVideoType),
+        loadVideo(screenVideoType)
+      ]);
+      console.log('[MOCK] Videos preloaded successfully');
+    } catch (err) {
+      console.error('[MOCK] Failed to preload videos:', err);
+      // Continue anyway - will fail on first getUserMedia call
     }
   }
 
@@ -161,97 +97,83 @@ const MEDIA_MOCK_SCRIPT = `
   const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
   const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices);
 
-  // Mock getUserMedia (camera or Electron screen share)
+  /**
+   * Mock getUserMedia (camera or Electron screen share)
+   */
   navigator.mediaDevices.getUserMedia = async function(constraints) {
     console.log('[MOCK] getUserMedia called:', JSON.stringify(constraints));
 
     const stream = new MediaStream();
 
     if (constraints.video) {
-      // Get user info from the app's store
-      const { displayName } = getUserInfo();
-
       // Check if this is an Electron screen share request (uses chromeMediaSource: 'desktop')
       const videoConstraints = typeof constraints.video === 'object' ? constraints.video : {};
       const isElectronScreenShare = videoConstraints.mandatory?.chromeMediaSource === 'desktop';
 
-      if (isElectronScreenShare) {
-        // Electron screen share - create screen stream
-        console.log('[MOCK] Creating SCREEN stream for:', displayName, '(Electron desktop capture)');
+      const videoType = isElectronScreenShare ? screenVideoType : cameraVideoType;
 
-        const width = videoConstraints.mandatory?.maxWidth || 1920;
-        const height = videoConstraints.mandatory?.maxHeight || 1080;
-        const fps = videoConstraints.mandatory?.maxFrameRate || 30;
+      try {
+        const cached = await loadVideo(videoType);
 
-        const videoStream = createCanvasStream(displayName, width, height, fps, 'screen');
-        videoStream.getVideoTracks().forEach(track => {
-          Object.defineProperty(track, 'label', { value: 'Mock Screen - ' + displayName, writable: false });
-          stream.addTrack(track);
+        // Clone tracks so each consumer gets independent track state
+        cached.stream.getVideoTracks().forEach(track => {
+          const clonedTrack = track.clone();
+          const label = isElectronScreenShare ? 'Mock Screen' : 'Mock Camera';
+          Object.defineProperty(clonedTrack, 'label', { value: label, writable: false });
+          stream.addTrack(clonedTrack);
         });
-      } else {
-        // Regular camera request
-        console.log('[MOCK] Creating CAMERA stream for:', displayName);
 
-        const width = videoConstraints.width?.ideal || videoConstraints.width?.max || 1280;
-        const height = videoConstraints.height?.ideal || videoConstraints.height?.max || 720;
-        const fps = videoConstraints.frameRate?.ideal || videoConstraints.frameRate?.max || 30;
-
-        const videoStream = createCanvasStream(displayName, width, height, fps, 'camera');
-        videoStream.getVideoTracks().forEach(track => {
-          Object.defineProperty(track, 'label', { value: 'Mock Camera - ' + displayName, writable: false });
-          stream.addTrack(track);
-        });
+        console.log('[MOCK] Created', isElectronScreenShare ? 'SCREEN' : 'CAMERA', 'stream from video');
+      } catch (err) {
+        console.error('[MOCK] Failed to create video stream:', err);
+        throw err;
       }
     }
 
     if (constraints.audio) {
-      const audioTrack = createAudioTrack(440); // A4 note for camera
-      if (audioTrack) {
-        Object.defineProperty(audioTrack, 'label', { value: 'Mock Microphone', writable: false });
-        stream.addTrack(audioTrack);
-      }
+      // No audio - mocks are silent
+      console.log('[MOCK] Audio requested but mocks are silent');
     }
 
     console.log('[MOCK] getUserMedia returning stream with', stream.getTracks().length, 'tracks');
     return stream;
   };
 
-  // Mock getDisplayMedia (screen share)
+  /**
+   * Mock getDisplayMedia (screen share)
+   */
   navigator.mediaDevices.getDisplayMedia = async function(constraints) {
     console.log('[MOCK] getDisplayMedia called:', JSON.stringify(constraints));
 
     const stream = new MediaStream();
-    const { displayName, isHost } = getUserInfo();
 
-    // Screen share with user name - isHost read dynamically for color
-    const videoStream = createCanvasStream(displayName, 1920, 1080, 30, 'screen');
-    videoStream.getVideoTracks().forEach(track => {
-      Object.defineProperty(track, 'label', { value: 'Mock Screen - ' + displayName, writable: false });
-      stream.addTrack(track);
-    });
+    try {
+      const cached = await loadVideo(screenVideoType);
 
-    // Add audio if requested
-    if (constraints?.audio) {
-      const audioTrack = createAudioTrack(880); // A5 note for screen
-      if (audioTrack) {
-        Object.defineProperty(audioTrack, 'label', { value: 'Mock System Audio', writable: false });
-        stream.addTrack(audioTrack);
-      }
+      // Clone tracks for independent lifecycle
+      cached.stream.getVideoTracks().forEach(track => {
+        const clonedTrack = track.clone();
+        Object.defineProperty(clonedTrack, 'label', { value: 'Mock Screen', writable: false });
+        stream.addTrack(clonedTrack);
+      });
+
+      console.log('[MOCK] Created SCREEN stream from video');
+    } catch (err) {
+      console.error('[MOCK] Failed to create screen stream:', err);
+      throw err;
     }
+
+    // No audio - mocks are silent
 
     console.log('[MOCK] getDisplayMedia returning stream with', stream.getTracks().length, 'tracks');
     return stream;
   };
 
   // Mock Electron IPC for screen capture sources
-  // This is needed because in Electron, screen share uses a source picker
   if (window.electronAPI && window.electronAPI.screenCapture) {
-    const originalGetSources = window.electronAPI.screenCapture.getSources;
     window.electronAPI.screenCapture.getSources = async function() {
       console.log('[MOCK] electronAPI.screenCapture.getSources called');
-      const { displayName } = getUserInfo();
 
-      // Return mock screen sources
       return {
         success: true,
         sources: [
@@ -275,9 +197,14 @@ const MEDIA_MOCK_SCRIPT = `
 
   // Mark as mocked for debugging
   window.__MEDIA_MOCKED__ = true;
-  console.log('[MOCK] Media APIs mocked successfully');
+
+  // Preload videos in background
+  preloadVideos();
+
+  console.log('[MOCK] Media APIs mocked successfully (video-based)');
 })();
 `;
+}
 
 export interface AppInstance {
   app: ElectronApplication;
@@ -303,22 +230,19 @@ export async function launchApp(instanceId: string): Promise<AppInstance> {
   const headless = process.env.HEADLESS === 'true' || process.env.CI === 'true';
 
   const app = await electron.launch({
-    args: [
-      ELECTRON_MAIN,
-      `--user-data-dir=${userDataDir}`,
-    ],
+    args: [ELECTRON_MAIN, `--user-data-dir=${userDataDir}`],
     env: {
       ...process.env,
       NODE_ENV: 'production',
       // Pass headless flag to main process to hide window
-      ...(headless && { HEADLESS: 'true' }),
-    },
+      ...(headless && { HEADLESS: 'true' })
+    }
   });
 
   const page = await app.firstWindow();
 
   // Inject media mocks - this runs on page navigation
-  await page.addInitScript(MEDIA_MOCK_SCRIPT);
+  await page.addInitScript(getMediaMockScript(instanceId));
 
   // Force a page reload so the init script runs before React initializes
   // This ensures __MEDIA_MOCKED__ is set before main.tsx checks it
@@ -331,7 +255,7 @@ export async function launchApp(instanceId: string): Promise<AppInstance> {
     app,
     page,
     instanceId,
-    userDataDir,
+    userDataDir
   };
 }
 

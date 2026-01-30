@@ -20,6 +20,9 @@ out
 e2e/test-results/
 playwright-report/
 
+# Generated mock videos (too large for git)
+e2e/test-assets/videos/*.mp4
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

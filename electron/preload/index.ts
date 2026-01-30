@@ -66,8 +66,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancel: (): Promise<boolean> => ipcRenderer.invoke('ffmpeg:cancel'),
 
     onProgress: (callback: (progress: number) => void): (() => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, progress: number) =>
-        callback(progress);
+      const handler = (_event: Electron.IpcRendererEvent, progress: number) => callback(progress);
       ipcRenderer.on('ffmpeg:progress-update', handler);
       return () => ipcRenderer.removeListener('ffmpeg:progress-update', handler);
     },
@@ -98,8 +97,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       recordingId: string,
       chunk: Uint8Array | ArrayBuffer,
       index: number
-    ): Promise<StorageResult> =>
-      ipcRenderer.invoke('storage:saveChunk', recordingId, chunk, index),
+    ): Promise<StorageResult> => ipcRenderer.invoke('storage:saveChunk', recordingId, chunk, index),
 
     getChunks: (recordingId: string): Promise<ChunksResult> =>
       ipcRenderer.invoke('storage:getChunks', recordingId),
@@ -110,8 +108,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteRecording: (recordingId: string): Promise<StorageResult> =>
       ipcRenderer.invoke('storage:deleteRecording', recordingId),
 
-    listRecordings: (): Promise<RecordingsResult> =>
-      ipcRenderer.invoke('storage:listRecordings'),
+    listRecordings: (): Promise<RecordingsResult> => ipcRenderer.invoke('storage:listRecordings'),
 
     saveTempFile: (filename: string, buffer: ArrayBuffer): Promise<string> =>
       ipcRenderer.invoke('storage:saveTempFile', filename, buffer),
@@ -131,8 +128,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Screen capture
   screenCapture: {
-    getSources: (): Promise<ScreenSourcesResult> =>
-      ipcRenderer.invoke('screen-capture:getSources')
+    getSources: (): Promise<ScreenSourcesResult> => ipcRenderer.invoke('screen-capture:getSources')
+  },
+
+  // Mock media (for testing)
+  mock: {
+    getVideoFile: (videoType: string): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke('mock:getVideoFile', videoType)
   },
 
   // Window controls (for frameless windows on Linux)
