@@ -4,6 +4,8 @@ import { selectors } from '../helpers/selectors';
 import {
   waitForRecordingComplete,
   waitForReceivedRecordings,
+  waitForLocalScreenShare,
+  waitForPeerScreenShareBadge,
   sleep,
 } from '../helpers/wait-helpers';
 import { verifyFileExists, getFileSize, getVideoInfo, deleteFile } from '../helpers/video-verify';
@@ -122,6 +124,68 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     }
 
     console.log('[E2E] P2P connection established');
+
+    // ==========================================
+    // STEP 5.5: Both peers start screen share
+    // ==========================================
+    console.log('[E2E] Starting screen share on both peers...');
+
+    // Host starts screen share
+    await host.page.click(selectors.session.screenShareButton);
+
+    // Wait for screen source picker modal to appear
+    await host.page.waitForSelector('[role="dialog"][aria-modal="true"]', { timeout: 5000 });
+    console.log('[E2E] Host screen source picker appeared');
+
+    // Click the Share button (first source is pre-selected)
+    await host.page.click('button:has-text("Share")');
+
+    // Wait for host's local screen share to be set
+    await waitForLocalScreenShare(host.page, 10000);
+    console.log('[E2E] Host screen share started');
+
+    // Participant starts screen share
+    await participant.page.click(selectors.session.screenShareButton);
+
+    // Wait for screen source picker modal to appear
+    await participant.page.waitForSelector('[role="dialog"][aria-modal="true"]', { timeout: 5000 });
+    console.log('[E2E] Participant screen source picker appeared');
+
+    // Click the Share button
+    await participant.page.click('button:has-text("Share")');
+
+    // Wait for participant's local screen share to be set
+    await waitForLocalScreenShare(participant.page, 10000);
+    console.log('[E2E] Participant screen share started');
+
+    // ==========================================
+    // STEP 5.6: Verify screen share badges
+    // ==========================================
+    console.log('[E2E] Verifying screen share badges...');
+
+    // Host should see their own screen share badge (on their tile)
+    await host.page.waitForSelector(
+      '[role="button"][aria-label*="Host User"][aria-label*="sharing screen"]',
+      { timeout: 10000 }
+    );
+    console.log('[E2E] Host sees their own screen share badge');
+
+    // Host should see participant's screen share badge (after P2P propagation)
+    await waitForPeerScreenShareBadge(host.page, 'Participant', 30000);
+    console.log('[E2E] Host sees participant screen share badge');
+
+    // Participant should see their own screen share badge
+    await participant.page.waitForSelector(
+      '[role="button"][aria-label*="Participant"][aria-label*="sharing screen"]',
+      { timeout: 10000 }
+    );
+    console.log('[E2E] Participant sees their own screen share badge');
+
+    // Participant should see host's screen share badge
+    await waitForPeerScreenShareBadge(participant.page, 'Host User', 30000);
+    console.log('[E2E] Participant sees host screen share badge');
+
+    console.log('[E2E] Screen share badges verified');
 
     // ==========================================
     // STEP 6: Start recording (host only)
