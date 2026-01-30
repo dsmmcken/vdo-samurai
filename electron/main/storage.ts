@@ -63,9 +63,7 @@ export async function getChunks(
     const recordingDir = join(getRecordingsDir(), recordingId);
 
     const files = await fs.readdir(recordingDir);
-    const chunkFiles = files
-      .filter((f) => f.startsWith('chunk_') && f.endsWith('.webm'))
-      .sort();
+    const chunkFiles = files.filter((f) => f.startsWith('chunk_') && f.endsWith('.webm')).sort();
 
     const chunks: ArrayBuffer[] = [];
     for (const file of chunkFiles) {
@@ -90,9 +88,7 @@ export async function finalizeRecording(
     console.log(`[Storage] Finalizing recording at: ${recordingDir}`);
 
     const files = await fs.readdir(recordingDir);
-    const chunkFiles = files
-      .filter((f) => f.startsWith('chunk_') && f.endsWith('.webm'))
-      .sort();
+    const chunkFiles = files.filter((f) => f.startsWith('chunk_') && f.endsWith('.webm')).sort();
 
     console.log(`[Storage] Found ${chunkFiles.length} chunks`);
 
@@ -164,10 +160,7 @@ export async function listRecordings(): Promise<{
 }
 
 // Temporary file storage for FFmpeg operations
-export async function saveTempFile(
-  filename: string,
-  buffer: ArrayBuffer
-): Promise<string> {
+export async function saveTempFile(filename: string, buffer: ArrayBuffer): Promise<string> {
   const tempDir = join(getTempDir(), randomUUID());
   await ensureDir(tempDir);
 

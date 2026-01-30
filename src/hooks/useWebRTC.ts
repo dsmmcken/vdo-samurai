@@ -28,7 +28,12 @@ export function useWebRTC() {
   } = useSessionStore();
 
   const { clearPeers } = usePeerStore();
-  const { joinSession: trysteroJoin, leaveSession: trysteroLeave, isConnected: trysteroConnected, broadcastSessionInfo } = useTrystero();
+  const {
+    joinSession: trysteroJoin,
+    leaveSession: trysteroLeave,
+    isConnected: trysteroConnected,
+    broadcastSessionInfo
+  } = useTrystero();
   const { internalSessionId, setInternalSessionId } = useRecordingStore();
   const resetRecording = useRecordingStore((state) => state.reset);
   const resetNLE = useNLEStore((state) => state.reset);
@@ -93,7 +98,21 @@ export function useWebRTC() {
         setIsConnecting(false);
       }
     },
-    [trysteroJoin, setSessionId, setSessionPassword, setIsHost, setUserName, setIsConnecting, setIsConnected, setError, resetRecording, resetNLE, resetComposite, resetTransfer, setInternalSessionId]
+    [
+      trysteroJoin,
+      setSessionId,
+      setSessionPassword,
+      setIsHost,
+      setUserName,
+      setIsConnecting,
+      setIsConnected,
+      setError,
+      resetRecording,
+      resetNLE,
+      resetComposite,
+      resetTransfer,
+      setInternalSessionId
+    ]
   );
 
   const joinSession = useCallback(
@@ -139,7 +158,16 @@ export function useWebRTC() {
         setIsConnecting(false);
       }
     },
-    [trysteroJoin, setSessionId, setSessionPassword, setIsHost, setUserName, setIsConnecting, setIsConnected, setError]
+    [
+      trysteroJoin,
+      setSessionId,
+      setSessionPassword,
+      setIsHost,
+      setUserName,
+      setIsConnecting,
+      setIsConnected,
+      setError
+    ]
   );
 
   const leaveSession = useCallback(() => {
@@ -195,13 +223,23 @@ export function useWebRTC() {
     }, 3000); // Wait 3 seconds for peers to respond
 
     return () => clearTimeout(timeout);
-  }, [trysteroConnected, internalSessionId, resetRecording, resetNLE, resetComposite, resetTransfer, setInternalSessionId, broadcastSessionInfo]);
+  }, [
+    trysteroConnected,
+    internalSessionId,
+    resetRecording,
+    resetNLE,
+    resetComposite,
+    resetTransfer,
+    setInternalSessionId,
+    broadcastSessionInfo
+  ]);
 
   // NOTE: No cleanup on unmount - session persists until explicit leaveSession call
   // This prevents React StrictMode double-mount from breaking the connection
 
   // Get the full shareable code (roomId + password)
-  const shareableCode = sessionId && sessionPassword ? formatRoomCode(sessionId, sessionPassword) : null;
+  const shareableCode =
+    sessionId && sessionPassword ? formatRoomCode(sessionId, sessionPassword) : null;
 
   return {
     sessionId,

@@ -86,7 +86,9 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
         let cmd = ffmpeg(inputFiles[0]).videoCodec(formatConfig.videoCodec);
 
         if (hasAudio) {
-          cmd = cmd.audioCodec(formatConfig.audioCodec).audioBitrate(COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE);
+          cmd = cmd
+            .audioCodec(formatConfig.audioCodec)
+            .audioBitrate(COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE);
         } else {
           // No audio - add silent audio track for compatibility
           cmd = cmd
@@ -174,8 +176,10 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
           .videoCodec(formatConfig.videoCodec)
           .audioCodec(formatConfig.audioCodec)
           .outputOptions([
-            '-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
-            '-b:a', COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
+            '-b:v',
+            COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
+            '-b:a',
+            COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
             ...outputOpts
           ])
           .on('start', (cmd) => {
@@ -225,9 +229,7 @@ function buildFilterComplex(
   const count = inputFiles.length;
 
   // Find which inputs have audio
-  const audioIndices = fileInfos
-    .map((info, i) => (info.hasAudio ? i : -1))
-    .filter((i) => i >= 0);
+  const audioIndices = fileInfos.map((info, i) => (info.hasAudio ? i : -1)).filter((i) => i >= 0);
 
   const hasAnyAudio = audioIndices.length > 0;
   console.log('[FFmpeg] Audio indices:', audioIndices, 'hasAnyAudio:', hasAnyAudio);
@@ -246,7 +248,10 @@ function buildFilterComplex(
     }
     // Mix available audio streams
     const audioInputs = audioIndices.map((i) => `[${i}:a]`).join('');
-    return { filter: `${audioInputs}amix=inputs=${audioIndices.length}:duration=longest[aout]`, needsShortest: false };
+    return {
+      filter: `${audioInputs}amix=inputs=${audioIndices.length}:duration=longest[aout]`,
+      needsShortest: false
+    };
   };
 
   const audioResult = buildAudioFilter();
@@ -263,8 +268,7 @@ function buildFilterComplex(
 
   if (layout === 'focus' && count >= 2) {
     // Focus layout: one main video with thumbnails on the side
-    let filter =
-      `[0:v]scale=1440:1080:force_original_aspect_ratio=decrease,pad=1440:1080:(ow-iw)/2:(oh-ih)/2:color=${COMPOSITE_CONFIG.GRID_BACKGROUND}[main];`;
+    let filter = `[0:v]scale=1440:1080:force_original_aspect_ratio=decrease,pad=1440:1080:(ow-iw)/2:(oh-ih)/2:color=${COMPOSITE_CONFIG.GRID_BACKGROUND}[main];`;
 
     // Scale other inputs as thumbnails
     const thumbHeight = Math.floor(1080 / Math.max(count - 1, 1));
@@ -348,8 +352,10 @@ export async function trimVideo(
       .videoCodec(formatConfig.videoCodec)
       .audioCodec(formatConfig.audioCodec)
       .outputOptions([
-        '-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
-        '-b:a', COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
+        '-b:v',
+        COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
+        '-b:a',
+        COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
         '-y'
       ])
       .on('start', (cmd) => {
@@ -399,8 +405,10 @@ export async function concatenateVideos(
         .videoCodec(formatConfig.videoCodec)
         .audioCodec(formatConfig.audioCodec)
         .outputOptions([
-          '-b:v', COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
-          '-b:a', COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
+          '-b:v',
+          COMPOSITE_CONFIG.OUTPUT_VIDEO_BITRATE,
+          '-b:a',
+          COMPOSITE_CONFIG.OUTPUT_AUDIO_BITRATE,
           '-y'
         ])
         .on('start', (cmd) => {

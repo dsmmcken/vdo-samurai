@@ -90,7 +90,10 @@ export function useScreenShare() {
           try {
             const screenId = await screenRecorder.start(stream);
             setScreenRecordingId(screenId);
-            console.log('[useScreenShare] Started screen recording during active session:', screenId);
+            console.log(
+              '[useScreenShare] Started screen recording during active session:',
+              screenId
+            );
           } catch (err) {
             console.error('[useScreenShare] Failed to start screen recording:', err);
           }
@@ -106,7 +109,10 @@ export function useScreenShare() {
               try {
                 const screenBlob = await recorder.stop();
                 setLocalScreenBlob(screenBlob);
-                console.log('[useScreenShare] Stopped screen recording on stream end, blob size:', screenBlob.size);
+                console.log(
+                  '[useScreenShare] Stopped screen recording on stream end, blob size:',
+                  screenBlob.size
+                );
               } catch (err) {
                 console.error('[useScreenShare] Failed to stop screen recording:', err);
               }

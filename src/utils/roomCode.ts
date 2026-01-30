@@ -63,7 +63,7 @@ const verbs = [
   'executing',
   'avenging',
   'liberating',
-  'unifying',
+  'unifying'
 ];
 
 const adjectives = [
@@ -130,7 +130,7 @@ const adjectives = [
   'ashen',
   'silvered',
   'bloodied',
-  'unbroken',
+  'unbroken'
 ];
 
 const nouns = [
@@ -197,7 +197,7 @@ const nouns = [
   'gate',
   'path',
   'blade',
-  'shadow',
+  'shadow'
 ];
 
 function randomIndex(length: number): number {

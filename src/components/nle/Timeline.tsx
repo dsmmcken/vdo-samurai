@@ -22,7 +22,7 @@ export function Timeline({ onPlayheadDragStart, onPlayheadDragEnd }: TimelinePro
     trimClip,
     setZoom,
     setZoomToFit,
-    calculateTotalDuration,
+    calculateTotalDuration
   } = useNLEStore();
 
   const [hasInitializedZoom, setHasInitializedZoom] = useState(false);

@@ -38,9 +38,7 @@ export function CreateSession() {
   return (
     <div className="bg-[--color-dark-lighter] rounded-xl p-6">
       <h2 className="text-xl font-bold mb-4">Create New Room</h2>
-      <p className="text-gray-400 text-sm mb-4">
-        Start a new session and invite others to join
-      </p>
+      <p className="text-gray-400 text-sm mb-4">Start a new session and invite others to join</p>
 
       {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
 

@@ -11,7 +11,7 @@ interface RecordingCompletePopoverProps {
 export function RecordingCompletePopover({
   anchorRef,
   onBeginTransfer,
-  onDiscard,
+  onDiscard
 }: RecordingCompletePopoverProps) {
   const { activePopover, closePopover } = usePopoverStore();
   const popoverRef = useRef<HTMLDivElement>(null);

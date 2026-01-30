@@ -15,8 +15,17 @@ interface NLEEditorProps {
 }
 
 export function NLEEditor({ onClose }: NLEEditorProps) {
-  const { clips, selectedClipId, deleteClip, splitClip, playheadPosition, setPlayheadPosition, isPlaying, setIsPlaying, totalDuration } =
-    useNLEStore();
+  const {
+    clips,
+    selectedClipId,
+    deleteClip,
+    splitClip,
+    playheadPosition,
+    setPlayheadPosition,
+    isPlaying,
+    setIsPlaying,
+    totalDuration
+  } = useNLEStore();
   const { transfers, receivedRecordings } = useTransferStore();
   const { localBlob, localScreenBlob, startTime, endTime, editPoints } = useRecordingStore();
 
@@ -125,7 +134,15 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClipId, deleteClip, onClose, handleSplitClip, togglePlayback, skipBackward, skipForward]);
+  }, [
+    selectedClipId,
+    deleteClip,
+    onClose,
+    handleSplitClip,
+    togglePlayback,
+    skipBackward,
+    skipForward
+  ]);
 
   const handleExport = useCallback(async () => {
     if (!localBlob) {
@@ -148,7 +165,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
       id: 'local',
       name: 'My Recording',
       blob: localBlob,
-      type: 'camera',
+      type: 'camera'
     });
 
     // Add local screen recording if available
@@ -157,7 +174,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
         id: 'local-screen',
         name: 'My Screen',
         blob: localScreenBlob,
-        type: 'screen',
+        type: 'screen'
       });
     }
 
@@ -167,14 +184,14 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
         id: recording.type === 'screen' ? `${recording.peerId}-screen` : recording.peerId,
         name: recording.type === 'screen' ? `${recording.peerName}'s Screen` : recording.peerName,
         blob: recording.blob,
-        type: recording.type,
+        type: recording.type
       });
     }
 
     try {
       await composite(sources, editPoints, exportStartTime, exportEndTime, {
         format: outputFormat,
-        layout: 'focus',
+        layout: 'focus'
       });
     } catch (err) {
       console.error('Export failed:', err);
@@ -187,7 +204,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     receivedRecordings,
     editPoints,
     outputFormat,
-    composite,
+    composite
   ]);
 
   const handleCancelExport = useCallback(() => {

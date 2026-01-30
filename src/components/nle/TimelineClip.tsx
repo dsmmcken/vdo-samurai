@@ -24,7 +24,7 @@ export function TimelineClip({
   onTrimStart,
   onTrimEnd,
   onDragStart,
-  onDragEnd,
+  onDragEnd
 }: TimelineClipProps) {
   const clipRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -93,7 +93,16 @@ export function TimelineClip({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isTrimming, isDragging, dragStartX, pixelsPerMs, onTrimStart, onTrimEnd, onDragEnd, clip.order]);
+  }, [
+    isTrimming,
+    isDragging,
+    dragStartX,
+    pixelsPerMs,
+    onTrimStart,
+    onTrimEnd,
+    onDragEnd,
+    clip.order
+  ]);
 
   return (
     <div
@@ -103,7 +112,7 @@ export function TimelineClip({
       } ${isDragging ? 'opacity-70 cursor-grabbing' : ''}`}
       style={{
         width: `${Math.max(width, 20)}px`,
-        backgroundColor: color,
+        backgroundColor: color
       }}
       onMouseDown={handleMouseDown}
     >

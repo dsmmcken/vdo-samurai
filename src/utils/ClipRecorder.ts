@@ -48,7 +48,9 @@ export class ClipRecorder {
    * Start an audio-only clip (used when video is toggled off)
    * @returns clipId and globalStartTime
    */
-  async startAudioOnlyClip(audioStream: MediaStream): Promise<{ clipId: string; globalStartTime: number }> {
+  async startAudioOnlyClip(
+    audioStream: MediaStream
+  ): Promise<{ clipId: string; globalStartTime: number }> {
     return this.startClip(audioStream, 'audio-only');
   }
 
@@ -114,7 +116,9 @@ export class ClipRecorder {
     this.activeClips.set(clipId, clip);
     mediaRecorder.start(CHUNK_INTERVAL);
 
-    console.log(`[ClipRecorder] Started ${sourceType} clip: ${clipId} at global time ${globalStartTime}ms`);
+    console.log(
+      `[ClipRecorder] Started ${sourceType} clip: ${clipId} at global time ${globalStartTime}ms`
+    );
 
     return { clipId, globalStartTime };
   }
@@ -235,11 +239,7 @@ export class ClipRecorder {
   private getMimeTypeForSourceType(sourceType: 'camera' | 'audio-only'): string {
     if (sourceType === 'audio-only') {
       // Try audio-only formats first
-      const audioTypes = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/ogg;codecs=opus'
-      ];
+      const audioTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
       for (const type of audioTypes) {
         if (MediaRecorder.isTypeSupported(type)) {
           return type;

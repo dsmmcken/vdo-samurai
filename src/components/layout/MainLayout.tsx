@@ -22,11 +22,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       ) : (
         <>
           <SkipLink />
-          <main
-            id="main-content"
-            className="min-h-0 overflow-hidden"
-            role="main"
-          >
+          <main id="main-content" className="min-h-0 overflow-hidden" role="main">
             <ErrorBoundary>{children}</ErrorBoundary>
           </main>
         </>

@@ -2,8 +2,15 @@ import { useScreenShare } from '../../hooks/useScreenShare';
 import { ScreenSourcePicker } from './ScreenSourcePicker';
 
 export function ScreenShareButton() {
-  const { isSharing, showPicker, startSharing, startSharingWithSource, stopSharing, cancelPicker, error } =
-    useScreenShare();
+  const {
+    isSharing,
+    showPicker,
+    startSharing,
+    startSharingWithSource,
+    stopSharing,
+    cancelPicker,
+    error
+  } = useScreenShare();
 
   const handleClick = async () => {
     if (isSharing) {

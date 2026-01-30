@@ -137,7 +137,10 @@ export class FFmpegService {
     for (let i = 0; i < inputFiles.length; i++) {
       const file = inputFiles[i];
       const buffer = await file.blob.arrayBuffer();
-      const tempPath = await window.electronAPI.storage.saveTempFile(`concat_${i}.${format}`, buffer);
+      const tempPath = await window.electronAPI.storage.saveTempFile(
+        `concat_${i}.${format}`,
+        buffer
+      );
       tempPaths.push(tempPath);
     }
 

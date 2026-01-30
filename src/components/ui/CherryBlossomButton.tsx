@@ -16,8 +16,7 @@ interface Petal {
   fadeState: 'active' | 'fading';
 }
 
-interface CherryBlossomButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface CherryBlossomButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
   containerClassName?: string;
 }
@@ -47,7 +46,7 @@ function createPetal(canvasWidth: number): Petal {
     swayFrequency: 0.02 + Math.random() * 0.02,
     color: generatePetalColor(),
     opacity: 0.7 + Math.random() * 0.3,
-    fadeState: 'active',
+    fadeState: 'active'
   };
 }
 
@@ -82,14 +81,7 @@ function drawPetal(ctx: CanvasRenderingContext2D, petal: Petal): void {
   ctx.quadraticCurveTo(0, length * 0.35, -width * 0.25, length * 0.45);
 
   // Left curve back to tip
-  ctx.bezierCurveTo(
-    -width * 0.6,
-    length * 0.2,
-    -width * 0.5,
-    -length * 0.3,
-    0,
-    -length * 0.5
-  );
+  ctx.bezierCurveTo(-width * 0.6, length * 0.2, -width * 0.5, -length * 0.3, 0, -length * 0.5);
 
   ctx.fill();
 
@@ -128,7 +120,9 @@ function updatePetal(
   }
 
   // Remove if off-screen or fully faded
-  return petal.y < canvasHeight + 20 && petal.x > -20 && petal.x < canvasWidth + 20 && petal.opacity > 0;
+  return (
+    petal.y < canvasHeight + 20 && petal.x > -20 && petal.x < canvasWidth + 20 && petal.opacity > 0
+  );
 }
 
 export function CherryBlossomButton({
@@ -188,9 +182,7 @@ export function CherryBlossomButton({
     if (!canvas || !ctx) return;
 
     const animate = (timestamp: number) => {
-      const deltaTime = lastTimeRef.current
-        ? timestamp - lastTimeRef.current
-        : 16.67;
+      const deltaTime = lastTimeRef.current ? timestamp - lastTimeRef.current : 16.67;
       lastTimeRef.current = timestamp;
 
       const { width, height } = dimensionsRef.current;

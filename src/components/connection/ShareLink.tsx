@@ -22,11 +22,7 @@ export function ShareLink({ sessionId }: ShareLinkProps) {
       onClick={copyToClipboard}
       className={`
         flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer
-        ${
-          copied
-            ? 'bg-green-500 text-white'
-            : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-        }
+        ${copied ? 'bg-green-500 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-300'}
       `}
     >
       {copied ? (

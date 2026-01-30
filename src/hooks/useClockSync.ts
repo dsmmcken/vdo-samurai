@@ -14,9 +14,7 @@ function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /**
@@ -41,8 +39,12 @@ export function useClockSync() {
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
 
   const initializedRef = useRef(false);
-  const sendSyncRequestRef = useRef<((data: ClockSyncRequestMessage, peerId?: string) => void) | null>(null);
-  const sendSyncResponseRef = useRef<((data: ClockSyncResponseMessage, peerId?: string) => void) | null>(null);
+  const sendSyncRequestRef = useRef<
+    ((data: ClockSyncRequestMessage, peerId?: string) => void) | null
+  >(null);
+  const sendSyncResponseRef = useRef<
+    ((data: ClockSyncResponseMessage, peerId?: string) => void) | null
+  >(null);
   const pendingSyncResolveRef = useRef<((offset: number) => void) | null>(null);
 
   // Initialize clock sync actions
@@ -91,8 +93,11 @@ export function useClockSync() {
       // T2 = server receive time
       // T3 = server send time
       // T4 = client receive time
-      const offset = ((response.serverReceiveTime - response.clientSendTime) +
-                     (response.serverSendTime - clientReceiveTime)) / 2;
+      const offset =
+        (response.serverReceiveTime -
+          response.clientSendTime +
+          (response.serverSendTime - clientReceiveTime)) /
+        2;
 
       if (pendingSyncResolveRef.current) {
         pendingSyncResolveRef.current(offset);
@@ -161,7 +166,9 @@ export function useClockSync() {
     for (let i = 0; i < SYNC_SAMPLE_COUNT; i++) {
       const offset = await sendSingleSyncRequest();
       offsets.push(offset);
-      console.log(`[useClockSync] Sample ${i + 1}/${SYNC_SAMPLE_COUNT}: offset = ${offset.toFixed(2)}ms`);
+      console.log(
+        `[useClockSync] Sample ${i + 1}/${SYNC_SAMPLE_COUNT}: offset = ${offset.toFixed(2)}ms`
+      );
 
       if (i < SYNC_SAMPLE_COUNT - 1) {
         await sleep(SYNC_SAMPLE_DELAY);

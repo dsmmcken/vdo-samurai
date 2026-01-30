@@ -16,7 +16,7 @@ const COLORS = [
   'purple',
   'fuchsia',
   'pink',
-  'rose',
+  'rose'
 ] as const;
 
 export type ColorName = (typeof COLORS)[number];
@@ -70,7 +70,7 @@ export function getClipColorClasses(
   return {
     bg: `bg-${color}-${bgShade}`,
     border: `border-${color}-${borderShade}`,
-    text: `text-${color}-${bgShade}`,
+    text: `text-${color}-${bgShade}`
   };
 }
 
@@ -95,7 +95,7 @@ const COLOR_VALUES: Record<ColorName, string> = {
   purple: '#a855f7',
   fuchsia: '#d946ef',
   pink: '#ec4899',
-  rose: '#f43f5e',
+  rose: '#f43f5e'
 };
 
 export function getColorValue(displayName: string): string {

@@ -18,7 +18,9 @@ export async function saveRecordingChunk(
   if (isElectron()) {
     const buffer = await chunk.arrayBuffer();
     const uint8Array = new Uint8Array(buffer);
-    console.log(`[RecordingStorage] Saving chunk ${index} for ${recordingId} (${uint8Array.length} bytes)`);
+    console.log(
+      `[RecordingStorage] Saving chunk ${index} for ${recordingId} (${uint8Array.length} bytes)`
+    );
     const result = await window.electronAPI.storage.saveChunk(recordingId, uint8Array, index);
     if (!result.success) {
       console.error(`[RecordingStorage] Failed to save chunk:`, result.error);

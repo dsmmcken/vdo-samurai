@@ -13,17 +13,17 @@ interface RecordingState {
   isPaused: boolean;
   countdown: number | null;
   sessionId: string | null;
-  internalSessionId: string | null;  // Unique ID for tracking recording sessions across peers
+  internalSessionId: string | null; // Unique ID for tracking recording sessions across peers
 
   // Global clock
-  globalClockStart: number | null;  // Host's Date.now() when recording started
-  globalClockEnd: number | null;    // Host's Date.now() when recording stopped
-  clockOffset: number;              // This peer's offset from host (ms)
+  globalClockStart: number | null; // Host's Date.now() when recording started
+  globalClockEnd: number | null; // Host's Date.now() when recording stopped
+  clockOffset: number; // This peer's offset from host (ms)
 
   // Clip management
-  localClips: RecordingClip[];      // Clips recorded by this peer
-  activeClipId: string | null;      // Currently recording clip ID
-  peerClips: RecordingClip[];       // Clips from other peers
+  localClips: RecordingClip[]; // Clips recorded by this peer
+  activeClipId: string | null; // Currently recording clip ID
+  peerClips: RecordingClip[]; // Clips from other peers
 
   // Legacy (kept for backwards compatibility)
   startTime: number | null;
@@ -123,9 +123,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   stopClip: (clipId, globalEndTime) => {
     set((state) => ({
       localClips: state.localClips.map((c) =>
-        c.id === clipId
-          ? { ...c, globalEndTime, status: 'stopped' as const }
-          : c
+        c.id === clipId ? { ...c, globalEndTime, status: 'stopped' as const } : c
       ),
       activeClipId: state.activeClipId === clipId ? null : state.activeClipId
     }));
@@ -135,9 +133,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   finalizeClip: (clipId, blob) => {
     set((state) => ({
       localClips: state.localClips.map((c) =>
-        c.id === clipId
-          ? { ...c, blob, status: 'finalized' as const }
-          : c
+        c.id === clipId ? { ...c, blob, status: 'finalized' as const } : c
       )
     }));
   },
@@ -152,9 +148,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   // Update an existing peer clip
   updatePeerClip: (clipId, updates) => {
     set((state) => ({
-      peerClips: state.peerClips.map((c) =>
-        c.id === clipId ? { ...c, ...updates } : c
-      )
+      peerClips: state.peerClips.map((c) => (c.id === clipId ? { ...c, ...updates } : c))
     }));
   },
 

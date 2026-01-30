@@ -54,7 +54,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
     if (displayName.trim() && fullName.trim()) {
       updateProfile({
         displayName: displayName.trim(),
-        fullName: fullName.trim(),
+        fullName: fullName.trim()
       });
       setIsEditing(false);
     }
@@ -82,17 +82,15 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
       ref={popoverRef}
       className={`absolute right-2 top-full mt-1 w-72 border rounded-xl shadow-lg z-50 backdrop-blur-xl ${
         isExiting ? 'popover-exit' : 'popover-enter'
-      } ${
-        isSessionPage
-          ? 'bg-black/80 border-gray-700'
-          : 'border-white/30 bg-white/70'
-      }`}
+      } ${isSessionPage ? 'bg-black/80 border-gray-700' : 'border-white/30 bg-white/70'}`}
     >
       <div className="p-4">
         {isEditing ? (
           <div className="space-y-3">
             <div>
-              <label className={`block text-xs font-medium mb-1 ${isSessionPage ? 'text-gray-400' : 'text-gray-700'}`}>
+              <label
+                className={`block text-xs font-medium mb-1 ${isSessionPage ? 'text-gray-400' : 'text-gray-700'}`}
+              >
                 Display Name
               </label>
               <input
@@ -108,7 +106,9 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
               />
             </div>
             <div>
-              <label className={`block text-xs font-medium mb-1 ${isSessionPage ? 'text-gray-400' : 'text-gray-700'}`}>
+              <label
+                className={`block text-xs font-medium mb-1 ${isSessionPage ? 'text-gray-400' : 'text-gray-700'}`}
+              >
                 Full Name
               </label>
               <input
@@ -150,12 +150,24 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
         ) : (
           <div className="space-y-3">
             <div>
-              <div className={`text-xs font-medium mb-0.5 ${isSessionPage ? 'text-gray-400' : 'text-gray-600'}`}>Display Name</div>
-              <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>{profile.displayName}</div>
+              <div
+                className={`text-xs font-medium mb-0.5 ${isSessionPage ? 'text-gray-400' : 'text-gray-600'}`}
+              >
+                Display Name
+              </div>
+              <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>
+                {profile.displayName}
+              </div>
             </div>
             <div>
-              <div className={`text-xs font-medium mb-0.5 ${isSessionPage ? 'text-gray-400' : 'text-gray-600'}`}>Full Name</div>
-              <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>{profile.fullName}</div>
+              <div
+                className={`text-xs font-medium mb-0.5 ${isSessionPage ? 'text-gray-400' : 'text-gray-600'}`}
+              >
+                Full Name
+              </div>
+              <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>
+                {profile.fullName}
+              </div>
             </div>
             <button
               onClick={() => setIsEditing(true)}
@@ -166,7 +178,12 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
               }`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                />
               </svg>
               Edit Profile
             </button>

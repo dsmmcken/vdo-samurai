@@ -125,9 +125,7 @@ export function HomePage() {
       style={{ backgroundImage: `url(${BG_IMAGE_URL})` }}
     >
       <div className="flex flex-col items-center p-8 border border-white/30 rounded-xl bg-white/20 backdrop-blur-xl shadow-lg w-full max-w-sm">
-        <h1 className="text-3xl font-bold text-black mb-8">
-          VDO Samurai
-        </h1>
+        <h1 className="text-3xl font-bold text-black mb-8">VDO Samurai</h1>
 
         <form onSubmit={handleJoin} className="w-full">
           <label htmlFor="room-code" className="block text-sm font-medium text-gray-700 mb-2">

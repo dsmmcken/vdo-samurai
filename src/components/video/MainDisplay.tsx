@@ -11,7 +11,14 @@ export function MainDisplay({ children }: MainDisplayProps) {
   const { focusedPeerId, localStream, localScreenStream } = useSessionStore();
   const { peers } = usePeerStore();
 
-  console.log('[MainDisplay] localStream:', !!localStream, 'localScreenStream:', !!localScreenStream, 'focusedPeerId:', focusedPeerId);
+  console.log(
+    '[MainDisplay] localStream:',
+    !!localStream,
+    'localScreenStream:',
+    !!localScreenStream,
+    'focusedPeerId:',
+    focusedPeerId
+  );
 
   const focusedPeer = peers.find((p) => p.id === focusedPeerId);
 
@@ -39,20 +46,18 @@ export function MainDisplay({ children }: MainDisplayProps) {
     >
       {displayStream ? (
         <>
-          <VideoElement
-            stream={displayStream}
-            muted={!focusedPeer}
-            className="w-full h-full"
-          />
+          <VideoElement stream={displayStream} muted={!focusedPeer} className="w-full h-full" />
           {/* Controls anchored to video */}
           <div
-            style={{
-              position: 'absolute',
-              positionAnchor: '--video-anchor',
-              bottom: 'anchor(bottom)',
-              left: 'anchor(center)',
-              transform: 'translate(-50%, -0.5rem)',
-            } as React.CSSProperties}
+            style={
+              {
+                position: 'absolute',
+                positionAnchor: '--video-anchor',
+                bottom: 'anchor(bottom)',
+                left: 'anchor(center)',
+                transform: 'translate(-50%, -0.5rem)'
+              } as React.CSSProperties
+            }
           >
             {children}
           </div>

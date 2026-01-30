@@ -11,9 +11,9 @@ interface UserTileProps {
   isHost?: boolean;
   onClick: () => void;
   muted?: boolean;
-  videoEnabled?: boolean;  // Whether video is currently on
-  audioEnabled?: boolean;  // Whether audio is currently on
-  isScreenSharing?: boolean;  // Whether user has screen sharing enabled (for remote peers)
+  videoEnabled?: boolean; // Whether video is currently on
+  audioEnabled?: boolean; // Whether audio is currently on
+  isScreenSharing?: boolean; // Whether user has screen sharing enabled (for remote peers)
 }
 
 export function UserTile({
@@ -35,9 +35,9 @@ export function UserTile({
   const { level } = useAudioLevel(stream);
 
   // Check if stream has active video track
-  const hasActiveVideo = displayStream?.getVideoTracks().some(
-    (track) => track.readyState === 'live' && track.enabled
-  ) ?? false;
+  const hasActiveVideo =
+    displayStream?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled) ??
+    false;
 
   // Show video if: we have a stream, videoEnabled is true, and there's an active video track
   const showVideo = displayStream && videoEnabled && hasActiveVideo;
@@ -66,7 +66,11 @@ export function UserTile({
         `}
       >
         {showVideo ? (
-          <VideoElement stream={displayStream} muted={muted} className="w-full h-full object-cover" />
+          <VideoElement
+            stream={displayStream}
+            muted={muted}
+            className="w-full h-full object-cover"
+          />
         ) : (
           // Blank frame when video is off - show avatar with status icons
           <div className="w-full h-full flex flex-col items-center justify-center bg-gray-800">

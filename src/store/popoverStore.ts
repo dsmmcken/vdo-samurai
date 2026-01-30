@@ -16,5 +16,5 @@ export const usePopoverStore = create<PopoverState>((set, get) => ({
   togglePopover: (id) => {
     const current = get().activePopover;
     set({ activePopover: current === id ? null : id });
-  },
+  }
 }));

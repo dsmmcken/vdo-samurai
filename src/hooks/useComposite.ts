@@ -105,7 +105,12 @@ export function useComposite() {
         const outputName = `output.${format}`;
 
         // Run composite with layout support
-        const result = await ffmpeg.compositeWithLayout(inputFiles, outputName, format, layoutOption);
+        const result = await ffmpeg.compositeWithLayout(
+          inputFiles,
+          outputName,
+          format,
+          layoutOption
+        );
 
         setStatus('complete');
         setProgress(1, 'Composite complete!');

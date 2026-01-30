@@ -3,14 +3,15 @@ import { useSessionStore } from '../store/sessionStore';
 import { MAIN_CONSTRAINTS, HIGH_QUALITY_CONSTRAINTS } from '../types';
 
 interface VideoToggleCallbacks {
-  onBeforeVideoOff?: () => Promise<void>;  // Stop current clip
-  onAfterVideoOn?: () => Promise<void>;    // Start new clip
+  onBeforeVideoOff?: () => Promise<void>; // Stop current clip
+  onAfterVideoOn?: () => Promise<void>; // Start new clip
 }
 
 export function useMediaStream() {
   const [isRequesting, setIsRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { localStream, localRecordingStream, setLocalStream, setLocalRecordingStream } = useSessionStore();
+  const { localStream, localRecordingStream, setLocalStream, setLocalRecordingStream } =
+    useSessionStore();
 
   // Store the original device ID so we can re-request the same camera
   const cameraDeviceIdRef = useRef<string | null>(null);
@@ -24,12 +25,20 @@ export function useMediaStream() {
 
     try {
       // First, get the high-quality recording stream to identify the camera device
-      console.log('[useMediaStream] Requesting HQ recording stream with constraints:', HIGH_QUALITY_CONSTRAINTS);
+      console.log(
+        '[useMediaStream] Requesting HQ recording stream with constraints:',
+        HIGH_QUALITY_CONSTRAINTS
+      );
       const hqStream = await navigator.mediaDevices.getUserMedia({
         video: HIGH_QUALITY_CONSTRAINTS.video,
         audio: HIGH_QUALITY_CONSTRAINTS.audio
       });
-      console.log('[useMediaStream] Got HQ stream:', hqStream, 'video tracks:', hqStream.getVideoTracks());
+      console.log(
+        '[useMediaStream] Got HQ stream:',
+        hqStream,
+        'video tracks:',
+        hqStream.getVideoTracks()
+      );
 
       // Get the device ID from the HQ stream to ensure we use the same camera
       const videoTrack = hqStream.getVideoTracks()[0];
@@ -54,7 +63,12 @@ export function useMediaStream() {
         lqStream.addTrack(audioTrack.clone());
       }
 
-      console.log('[useMediaStream] Got LQ stream:', lqStream, 'video tracks:', lqStream.getVideoTracks());
+      console.log(
+        '[useMediaStream] Got LQ stream:',
+        lqStream,
+        'video tracks:',
+        lqStream.getVideoTracks()
+      );
 
       setLocalRecordingStream(hqStream);
       setLocalStream(lqStream);
@@ -108,83 +122,87 @@ export function useMediaStream() {
    * @param callbacks - Optional callbacks for clip management
    * @returns Whether video is now enabled
    */
-  const toggleVideoFull = useCallback(async (
-    callbacks?: VideoToggleCallbacks
-  ): Promise<boolean> => {
-    const wasEnabled = localStream?.getVideoTracks()[0]?.readyState === 'live';
+  const toggleVideoFull = useCallback(
+    async (callbacks?: VideoToggleCallbacks): Promise<boolean> => {
+      const wasEnabled = localStream?.getVideoTracks()[0]?.readyState === 'live';
 
-    if (wasEnabled) {
-      // Video ON → OFF: Release camera
-      console.log('[useMediaStream] toggleVideoFull: releasing camera');
+      if (wasEnabled) {
+        // Video ON → OFF: Release camera
+        console.log('[useMediaStream] toggleVideoFull: releasing camera');
 
-      // Call callback before stopping tracks
-      await callbacks?.onBeforeVideoOff?.();
+        // Call callback before stopping tracks
+        await callbacks?.onBeforeVideoOff?.();
 
-      // Stop video tracks on both streams (releases camera hardware)
-      localStream?.getVideoTracks().forEach((t) => {
-        console.log('[useMediaStream] Stopping LQ video track:', t.id);
-        t.stop();
-      });
-      localRecordingStream?.getVideoTracks().forEach((t) => {
-        console.log('[useMediaStream] Stopping HQ video track:', t.id);
-        t.stop();
-      });
+        // Stop video tracks on both streams (releases camera hardware)
+        localStream?.getVideoTracks().forEach((t) => {
+          console.log('[useMediaStream] Stopping LQ video track:', t.id);
+          t.stop();
+        });
+        localRecordingStream?.getVideoTracks().forEach((t) => {
+          console.log('[useMediaStream] Stopping HQ video track:', t.id);
+          t.stop();
+        });
 
-      return false;
-    } else {
-      // Video OFF → ON: Reacquire camera
-      console.log('[useMediaStream] toggleVideoFull: reacquiring camera');
-
-      try {
-        // Request new video tracks using the same device ID if available
-        const constraints = {
-          video: cameraDeviceIdRef.current
-            ? { ...HIGH_QUALITY_CONSTRAINTS.video, deviceId: { exact: cameraDeviceIdRef.current } }
-            : HIGH_QUALITY_CONSTRAINTS.video,
-          audio: false // Keep existing audio tracks
-        };
-
-        const newHqStream = await navigator.mediaDevices.getUserMedia(constraints);
-        const newHqVideoTrack = newHqStream.getVideoTracks()[0];
-
-        // Add the new video track to the recording stream
-        if (localRecordingStream && newHqVideoTrack) {
-          // Remove any existing (stopped) video tracks
-          localRecordingStream.getVideoTracks().forEach((t) => {
-            localRecordingStream.removeTrack(t);
-          });
-          localRecordingStream.addTrack(newHqVideoTrack);
-        }
-
-        // Create LQ video track for streaming
-        const lqConstraints = {
-          video: cameraDeviceIdRef.current
-            ? { ...MAIN_CONSTRAINTS.video, deviceId: { exact: cameraDeviceIdRef.current } }
-            : MAIN_CONSTRAINTS.video,
-          audio: false
-        };
-
-        const newLqStream = await navigator.mediaDevices.getUserMedia(lqConstraints);
-        const newLqVideoTrack = newLqStream.getVideoTracks()[0];
-
-        // Add to local stream
-        if (localStream && newLqVideoTrack) {
-          localStream.getVideoTracks().forEach((t) => {
-            localStream.removeTrack(t);
-          });
-          localStream.addTrack(newLqVideoTrack);
-        }
-
-        // Call callback after acquiring new tracks
-        await callbacks?.onAfterVideoOn?.();
-
-        return true;
-      } catch (err) {
-        console.error('[useMediaStream] Failed to reacquire camera:', err);
         return false;
+      } else {
+        // Video OFF → ON: Reacquire camera
+        console.log('[useMediaStream] toggleVideoFull: reacquiring camera');
+
+        try {
+          // Request new video tracks using the same device ID if available
+          const constraints = {
+            video: cameraDeviceIdRef.current
+              ? {
+                  ...HIGH_QUALITY_CONSTRAINTS.video,
+                  deviceId: { exact: cameraDeviceIdRef.current }
+                }
+              : HIGH_QUALITY_CONSTRAINTS.video,
+            audio: false // Keep existing audio tracks
+          };
+
+          const newHqStream = await navigator.mediaDevices.getUserMedia(constraints);
+          const newHqVideoTrack = newHqStream.getVideoTracks()[0];
+
+          // Add the new video track to the recording stream
+          if (localRecordingStream && newHqVideoTrack) {
+            // Remove any existing (stopped) video tracks
+            localRecordingStream.getVideoTracks().forEach((t) => {
+              localRecordingStream.removeTrack(t);
+            });
+            localRecordingStream.addTrack(newHqVideoTrack);
+          }
+
+          // Create LQ video track for streaming
+          const lqConstraints = {
+            video: cameraDeviceIdRef.current
+              ? { ...MAIN_CONSTRAINTS.video, deviceId: { exact: cameraDeviceIdRef.current } }
+              : MAIN_CONSTRAINTS.video,
+            audio: false
+          };
+
+          const newLqStream = await navigator.mediaDevices.getUserMedia(lqConstraints);
+          const newLqVideoTrack = newLqStream.getVideoTracks()[0];
+
+          // Add to local stream
+          if (localStream && newLqVideoTrack) {
+            localStream.getVideoTracks().forEach((t) => {
+              localStream.removeTrack(t);
+            });
+            localStream.addTrack(newLqVideoTrack);
+          }
+
+          // Call callback after acquiring new tracks
+          await callbacks?.onAfterVideoOn?.();
+
+          return true;
+        } catch (err) {
+          console.error('[useMediaStream] Failed to reacquire camera:', err);
+          return false;
+        }
       }
-    }
-  }, [localStream, localRecordingStream]);
+    },
+    [localStream, localRecordingStream]
+  );
 
   /**
    * Get an audio-only stream from the current recording stream.

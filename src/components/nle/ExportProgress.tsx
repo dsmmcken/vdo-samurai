@@ -15,7 +15,7 @@ export function ExportProgress({
   status,
   error,
   onCancel,
-  onRetry,
+  onRetry
 }: ExportProgressProps) {
   const progressPercent = Math.round(progress * 100);
   const [copied, setCopied] = useState(false);
@@ -29,8 +29,7 @@ export function ExportProgress({
   };
 
   // Truncate error message to ~150 chars for display
-  const truncatedError =
-    error && error.length > 150 ? error.slice(0, 150) + '...' : error;
+  const truncatedError = error && error.length > 150 ? error.slice(0, 150) + '...' : error;
 
   if (status === 'error') {
     return (
@@ -58,12 +57,7 @@ export function ExportProgress({
               onClick={handleCopyError}
               className="mt-2 inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors"
             >
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"

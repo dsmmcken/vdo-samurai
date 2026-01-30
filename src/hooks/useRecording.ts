@@ -150,90 +150,97 @@ export function useRecording() {
   /**
    * Broadcast clip info to peers
    */
-  const broadcastClipInfo = useCallback((
-    clipId: string,
-    sourceType: 'camera' | 'screen' | 'audio-only',
-    globalStartTime: number,
-    globalEndTime: number | null,
-    action: 'started' | 'stopped'
-  ) => {
-    const msg: PeerClipMessage = {
-      type: 'peer-clip',
-      clipId,
-      peerId: selfId,
-      sourceType,
-      globalStartTime,
-      globalEndTime,
-      action
-    };
-    sendPeerClipMessageRef.current?.(msg);
-  }, []);
+  const broadcastClipInfo = useCallback(
+    (
+      clipId: string,
+      sourceType: 'camera' | 'screen' | 'audio-only',
+      globalStartTime: number,
+      globalEndTime: number | null,
+      action: 'started' | 'stopped'
+    ) => {
+      const msg: PeerClipMessage = {
+        type: 'peer-clip',
+        clipId,
+        peerId: selfId,
+        sourceType,
+        globalStartTime,
+        globalEndTime,
+        action
+      };
+      sendPeerClipMessageRef.current?.(msg);
+    },
+    []
+  );
 
   /**
    * Handle start recording (called when receiving start message)
    */
-  const handleStartRecording = useCallback(async (hostGlobalClockStart: number) => {
-    setCountdown(null);
-    setGlobalClockStart(hostGlobalClockStart);
-    setStartTime(Date.now());
+  const handleStartRecording = useCallback(
+    async (hostGlobalClockStart: number) => {
+      setCountdown(null);
+      setGlobalClockStart(hostGlobalClockStart);
+      setStartTime(Date.now());
 
-    const clipRecorder = getClipRecorder();
+      const clipRecorder = getClipRecorder();
 
-    // Set clock reference for the recorder
-    clipRecorder.setClockReference(hostGlobalClockStart, clockOffset);
+      // Set clock reference for the recorder
+      clipRecorder.setClockReference(hostGlobalClockStart, clockOffset);
 
-    // Start camera recording using high-quality stream
-    if (localRecordingStream) {
-      try {
-        const { clipId, globalStartTime } = await clipRecorder.startVideoClip(localRecordingStream);
+      // Start camera recording using high-quality stream
+      if (localRecordingStream) {
+        try {
+          const { clipId, globalStartTime } =
+            await clipRecorder.startVideoClip(localRecordingStream);
 
-        // Register clip in store
-        startClip({
-          recordingId: clipId,
-          peerId: selfId,
-          sourceType: 'camera',
-          globalStartTime,
-          globalEndTime: null,
-          status: 'recording'
-        });
+          // Register clip in store
+          startClip({
+            recordingId: clipId,
+            peerId: selfId,
+            sourceType: 'camera',
+            globalStartTime,
+            globalEndTime: null,
+            status: 'recording'
+          });
 
-        // Broadcast to peers
-        broadcastClipInfo(clipId, 'camera', globalStartTime, null, 'started');
+          // Broadcast to peers
+          broadcastClipInfo(clipId, 'camera', globalStartTime, null, 'started');
 
-        setRecordingId(clipId);
-        setIsRecording(true);
-        console.log('[useRecording] Started video clip:', clipId);
-      } catch (err) {
-        console.error('[useRecording] Failed to start camera recording:', err);
+          setRecordingId(clipId);
+          setIsRecording(true);
+          console.log('[useRecording] Started video clip:', clipId);
+        } catch (err) {
+          console.error('[useRecording] Failed to start camera recording:', err);
+        }
       }
-    }
 
-    // Start screen recording if screen share is active
-    if (localScreenStream) {
-      const screenRecorder = getScreenRecorder();
-      try {
-        const screenId = await screenRecorder.start(localScreenStream);
-        setScreenRecordingId(screenId);
-        console.log('[useRecording] Started screen recording:', screenId);
-      } catch (err) {
-        console.error('[useRecording] Failed to start screen recording:', err);
+      // Start screen recording if screen share is active
+      if (localScreenStream) {
+        const screenRecorder = getScreenRecorder();
+        try {
+          const screenId = await screenRecorder.start(localScreenStream);
+          setScreenRecordingId(screenId);
+          console.log('[useRecording] Started screen recording:', screenId);
+        } catch (err) {
+          console.error('[useRecording] Failed to start screen recording:', err);
+        }
       }
-    }
-  }, [
-    clockOffset,
-    localRecordingStream,
-    localScreenStream,
-    getClipRecorder,
-    getScreenRecorder,
-    setCountdown,
-    setGlobalClockStart,
-    setStartTime,
-    setIsRecording,
-    setRecordingId,
-    setScreenRecordingId,
-    startClip,
-    broadcastClipInfo
-  ]);
+    },
+    [
+      clockOffset,
+      localRecordingStream,
+      localScreenStream,
+      getClipRecorder,
+      getScreenRecorder,
+      setCountdown,
+      setGlobalClockStart,
+      setStartTime,
+      setIsRecording,
+      setRecordingId,
+      setScreenRecordingId,
+      startClip,
+      broadcastClipInfo
+    ]
+  );
 
   /**
    * Handle stop recording (called when receiving stop message)
@@ -372,7 +379,13 @@ export function useRecording() {
 
         stopClip(storeClipId, globalEndTime);
         finalizeClip(storeClipId, blob);
-        broadcastClipInfo(audioClipId, 'audio-only', clip?.globalStartTime || 0, globalEndTime, 'stopped');
+        broadcastClipInfo(
+          audioClipId,
+          'audio-only',
+          clip?.globalStartTime || 0,
+          globalEndTime,
+          'stopped'
+        );
 
         activeAudioClipIdRef.current = null;
         console.log('[useRecording] Stopped audio-only clip:', audioClipId);
@@ -414,61 +427,62 @@ export function useRecording() {
    * Called when video is toggled OFF during recording.
    * Stops current video clip and starts an audio-only clip.
    */
-  const onVideoDisabled = useCallback(async (getAudioOnlyStream: () => MediaStream | null) => {
-    if (!isRecording) return;
+  const onVideoDisabled = useCallback(
+    async (getAudioOnlyStream: () => MediaStream | null) => {
+      if (!isRecording) return;
 
-    const clipRecorder = getClipRecorder();
+      const clipRecorder = getClipRecorder();
 
-    // Stop current video clip
-    const videoClipId = clipRecorder.getActiveVideoClipId();
-    if (videoClipId) {
-      try {
-        const { globalEndTime, blob } = await clipRecorder.stopClip(videoClipId);
-        // Find by recordingId (videoClipId is the recorder's ID)
-        const clip = localClips.find((c) => c.recordingId === videoClipId);
-        const storeClipId = clip?.id || videoClipId;
+      // Stop current video clip
+      const videoClipId = clipRecorder.getActiveVideoClipId();
+      if (videoClipId) {
+        try {
+          const { globalEndTime, blob } = await clipRecorder.stopClip(videoClipId);
+          // Find by recordingId (videoClipId is the recorder's ID)
+          const clip = localClips.find((c) => c.recordingId === videoClipId);
+          const storeClipId = clip?.id || videoClipId;
 
-        stopClip(storeClipId, globalEndTime);
-        finalizeClip(storeClipId, blob);
-        broadcastClipInfo(videoClipId, 'camera', clip?.globalStartTime || 0, globalEndTime, 'stopped');
+          stopClip(storeClipId, globalEndTime);
+          finalizeClip(storeClipId, blob);
+          broadcastClipInfo(
+            videoClipId,
+            'camera',
+            clip?.globalStartTime || 0,
+            globalEndTime,
+            'stopped'
+          );
 
-        console.log('[useRecording] Stopped video clip:', videoClipId);
-      } catch (err) {
-        console.error('[useRecording] Failed to stop video clip:', err);
+          console.log('[useRecording] Stopped video clip:', videoClipId);
+        } catch (err) {
+          console.error('[useRecording] Failed to stop video clip:', err);
+        }
       }
-    }
 
-    // Start audio-only clip to fill the gap
-    const audioStream = getAudioOnlyStream();
-    if (audioStream) {
-      try {
-        const { clipId, globalStartTime } = await clipRecorder.startAudioOnlyClip(audioStream);
+      // Start audio-only clip to fill the gap
+      const audioStream = getAudioOnlyStream();
+      if (audioStream) {
+        try {
+          const { clipId, globalStartTime } = await clipRecorder.startAudioOnlyClip(audioStream);
 
-        startClip({
-          recordingId: clipId,
-          peerId: selfId,
-          sourceType: 'audio-only',
-          globalStartTime,
-          globalEndTime: null,
-          status: 'recording'
-        });
+          startClip({
+            recordingId: clipId,
+            peerId: selfId,
+            sourceType: 'audio-only',
+            globalStartTime,
+            globalEndTime: null,
+            status: 'recording'
+          });
 
-        broadcastClipInfo(clipId, 'audio-only', globalStartTime, null, 'started');
-        activeAudioClipIdRef.current = clipId;
-        console.log('[useRecording] Started audio-only clip:', clipId);
-      } catch (err) {
-        console.error('[useRecording] Failed to start audio-only clip:', err);
+          broadcastClipInfo(clipId, 'audio-only', globalStartTime, null, 'started');
+          activeAudioClipIdRef.current = clipId;
+          console.log('[useRecording] Started audio-only clip:', clipId);
+        } catch (err) {
+          console.error('[useRecording] Failed to start audio-only clip:', err);
+        }
       }
-    }
-  }, [
-    isRecording,
-    localClips,
-    getClipRecorder,
-    startClip,
-    stopClip,
-    finalizeClip,
-    broadcastClipInfo
-  ]);
+    },
+    [isRecording, localClips, getClipRecorder, startClip, stopClip, finalizeClip, broadcastClipInfo]
+  );
 
   /**
    * Reset recording state

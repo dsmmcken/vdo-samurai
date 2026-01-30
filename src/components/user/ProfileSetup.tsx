@@ -20,7 +20,7 @@ export function ProfileSetup() {
     if (displayName.trim() && fullName.trim()) {
       setProfile({
         displayName: displayName.trim(),
-        fullName: fullName.trim(),
+        fullName: fullName.trim()
       });
     }
   };
@@ -35,12 +35,8 @@ export function ProfileSetup() {
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center p-8 border border-white/30 rounded-xl bg-white/20 backdrop-blur-xl shadow-lg">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-black mb-2">
-              Welcome to VDO Samurai
-            </h1>
-            <p className="text-gray-600">
-              Set up your profile to get started
-            </p>
+            <h1 className="text-2xl font-bold text-black mb-2">Welcome to VDO Samurai</h1>
+            <p className="text-gray-600">Set up your profile to get started</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6 w-full">
@@ -67,10 +63,7 @@ export function ProfileSetup() {
             </div>
 
             <div>
-              <label
-                htmlFor="full-name"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
+              <label htmlFor="full-name" className="block text-sm font-medium text-gray-700 mb-2">
                 Full Name
               </label>
               <input
@@ -82,9 +75,7 @@ export function ProfileSetup() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
                 required
               />
-              <p className="mt-1.5 text-xs text-gray-500">
-                Used for recordings and video exports
-              </p>
+              <p className="mt-1.5 text-xs text-gray-500">Used for recordings and video exports</p>
             </div>
 
             <button
@@ -95,7 +86,6 @@ export function ProfileSetup() {
               Continue
             </button>
           </form>
-
         </div>
       </div>
     </div>

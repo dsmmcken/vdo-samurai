@@ -23,39 +23,45 @@ export function PreviewPanel() {
 
   // Create and manage blob URLs - only create if not already exists
   // Now supports both screen and camera types
-  const getVideoUrl = useCallback((peerId: string | null, type: RecordingType): string | null => {
-    const cacheKey = `${peerId ?? 'local'}-${type}`;
+  const getVideoUrl = useCallback(
+    (peerId: string | null, type: RecordingType): string | null => {
+      const cacheKey = `${peerId ?? 'local'}-${type}`;
 
-    // Check if we already have a URL for this peer/type combo
-    if (urlsRef.current.has(cacheKey)) {
-      return urlsRef.current.get(cacheKey) || null;
-    }
+      // Check if we already have a URL for this peer/type combo
+      if (urlsRef.current.has(cacheKey)) {
+        return urlsRef.current.get(cacheKey) || null;
+      }
 
-    // Get the blob for this peer and type
-    let blob: Blob | null = null;
-    if (peerId === null) {
-      // Local user
-      blob = type === 'screen' ? localScreenBlob : localBlob;
-    } else {
-      // Remote peer - find by peerId and type
-      const recording = receivedRecordings.find((r) => r.peerId === peerId && r.type === type);
-      blob = recording?.blob || null;
-    }
+      // Get the blob for this peer and type
+      let blob: Blob | null = null;
+      if (peerId === null) {
+        // Local user
+        blob = type === 'screen' ? localScreenBlob : localBlob;
+      } else {
+        // Remote peer - find by peerId and type
+        const recording = receivedRecordings.find((r) => r.peerId === peerId && r.type === type);
+        blob = recording?.blob || null;
+      }
 
-    if (!blob) return null;
+      if (!blob) return null;
 
-    // Create and cache the URL
-    const url = URL.createObjectURL(blob);
-    urlsRef.current.set(cacheKey, url);
-    return url;
-  }, [localBlob, localScreenBlob, receivedRecordings]);
+      // Create and cache the URL
+      const url = URL.createObjectURL(blob);
+      urlsRef.current.set(cacheKey, url);
+      return url;
+    },
+    [localBlob, localScreenBlob, receivedRecordings]
+  );
 
   // Get both screen and camera URLs for a peer
-  const getSourcesForPeer = useCallback((peerId: string | null) => {
-    const screenUrl = getVideoUrl(peerId, 'screen');
-    const cameraUrl = getVideoUrl(peerId, 'camera');
-    return { screenUrl, cameraUrl };
-  }, [getVideoUrl]);
+  const getSourcesForPeer = useCallback(
+    (peerId: string | null) => {
+      const screenUrl = getVideoUrl(peerId, 'screen');
+      const cameraUrl = getVideoUrl(peerId, 'camera');
+      return { screenUrl, cameraUrl };
+    },
+    [getVideoUrl]
+  );
 
   // Cleanup URLs only on unmount
   useEffect(() => {
@@ -245,7 +251,15 @@ export function PreviewPanel() {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, playheadPosition, totalDuration, setPlayheadPosition, setIsPlaying, currentMainUrl, currentCameraUrl]);
+  }, [
+    isPlaying,
+    playheadPosition,
+    totalDuration,
+    setPlayheadPosition,
+    setIsPlaying,
+    currentMainUrl,
+    currentCameraUrl
+  ]);
 
   return (
     <div className="h-full flex flex-col bg-black rounded-lg overflow-hidden">

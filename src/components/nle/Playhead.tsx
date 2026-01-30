@@ -15,7 +15,7 @@ export function Playhead({
   maxPosition,
   onPositionChange,
   onDragStart,
-  onDragEnd,
+  onDragEnd
 }: PlayheadProps) {
   const playheadRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);

@@ -12,8 +12,8 @@ export interface NLEClip {
   color: string; // Tailwind color name
   sourceType: 'camera' | 'screen' | 'audio-only'; // Type of recording source
   globalStartTime?: number; // Global start time from clip-based recording
-  globalEndTime?: number;   // Global end time from clip-based recording
-  recordingId?: string;     // Reference to the recording blob
+  globalEndTime?: number; // Global end time from clip-based recording
+  recordingId?: string; // Reference to the recording blob
 }
 
 export type NLEMode = 'session' | 'editing';
@@ -53,7 +53,7 @@ const initialState = {
   selectedClipId: null as string | null,
   totalDuration: 0,
   isPlaying: false,
-  zoom: 100, // 100 pixels per second
+  zoom: 100 // 100 pixels per second
 };
 
 export const useNLEStore = create<NLEState>((set, get) => ({
@@ -92,7 +92,7 @@ export const useNLEStore = create<NLEState>((set, get) => ({
 
   updateClip: (clipId, updates) =>
     set((state) => ({
-      clips: state.clips.map((c) => (c.id === clipId ? { ...c, ...updates } : c)),
+      clips: state.clips.map((c) => (c.id === clipId ? { ...c, ...updates } : c))
     })),
 
   deleteClip: (clipId) =>
@@ -102,7 +102,7 @@ export const useNLEStore = create<NLEState>((set, get) => ({
       const reordered = newClips.map((c, i) => ({ ...c, order: i }));
       return {
         clips: reordered,
-        selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId,
+        selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId
       };
     }),
 
@@ -136,7 +136,7 @@ export const useNLEStore = create<NLEState>((set, get) => ({
         ...clip,
         id: `${clip.id}-a`,
         endTime: actualSplitTime,
-        trimEnd: 0,
+        trimEnd: 0
       };
 
       const clip2: NLEClip = {
@@ -144,7 +144,7 @@ export const useNLEStore = create<NLEState>((set, get) => ({
         id: `${clip.id}-b`,
         startTime: actualSplitTime,
         trimStart: 0,
-        order: clip.order + 1,
+        order: clip.order + 1
       };
 
       // Insert the new clips and remove the old one
@@ -159,7 +159,7 @@ export const useNLEStore = create<NLEState>((set, get) => ({
 
   trimClip: (clipId, trimStart, trimEnd) =>
     set((state) => ({
-      clips: state.clips.map((c) => (c.id === clipId ? { ...c, trimStart, trimEnd } : c)),
+      clips: state.clips.map((c) => (c.id === clipId ? { ...c, trimStart, trimEnd } : c))
     })),
 
   setPlayheadPosition: (position) => set({ playheadPosition: Math.max(0, position) }),
@@ -190,7 +190,7 @@ export const useNLEStore = create<NLEState>((set, get) => ({
     set({ totalDuration: total });
   },
 
-  reset: () => set(initialState),
+  reset: () => set(initialState)
 }));
 
 // Utility functions for working with clips

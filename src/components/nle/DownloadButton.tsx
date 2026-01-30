@@ -13,7 +13,7 @@ export function DownloadButton({
   outputUrl,
   outputFormat,
   onReset,
-  showPreview = true,
+  showPreview = true
 }: DownloadButtonProps) {
   const [customFilename, setCustomFilename] = useState('');
 

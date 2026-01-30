@@ -33,10 +33,10 @@ export const useUserStore = create<UserState>()(
       isProfileComplete: () => {
         const profile = get().profile;
         return !!(profile?.displayName?.trim() && profile?.fullName?.trim());
-      },
+      }
     }),
     {
-      name: 'vdo-samurai-user',
+      name: 'vdo-samurai-user'
     }
   )
 );

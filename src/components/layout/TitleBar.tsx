@@ -43,7 +43,8 @@ export function TitleBar() {
   const { sessionId, sessionPassword, isConnected } = useSessionStore();
 
   // Combine roomId and password for shareable link
-  const shareableCode = sessionId && sessionPassword ? formatRoomCode(sessionId, sessionPassword) : null;
+  const shareableCode =
+    sessionId && sessionPassword ? formatRoomCode(sessionId, sessionPassword) : null;
   const { isRecording, startTime } = useRecordingStore();
   const { activePopover, togglePopover } = usePopoverStore();
   const { isTransferring } = useTransferStore();
@@ -199,7 +200,11 @@ export function TitleBar() {
             aria-expanded={isUserPopoverOpen}
           >
             {initials ? (
-              <span className={`text-xs font-medium ${isHomePage ? 'text-black' : 'text-gray-300'}`}>{initials}</span>
+              <span
+                className={`text-xs font-medium ${isHomePage ? 'text-black' : 'text-gray-300'}`}
+              >
+                {initials}
+              </span>
             ) : (
               <svg
                 className={`w-3 h-3 ${isHomePage ? 'text-black' : 'text-gray-300'}`}
@@ -236,12 +241,31 @@ export function TitleBar() {
               aria-label={isMaximized ? 'Restore' : 'Maximize'}
             >
               {isMaximized ? (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 12 12">
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  viewBox="0 0 12 12"
+                >
                   <rect x="2.5" y="0.5" width="9" height="9" rx="1" />
-                  <rect x="0.5" y="2.5" width="9" height="9" rx="1" fill={isHomePage ? 'white' : '#0f0f23'} />
+                  <rect
+                    x="0.5"
+                    y="2.5"
+                    width="9"
+                    height="9"
+                    rx="1"
+                    fill={isHomePage ? 'white' : '#0f0f23'}
+                  />
                 </svg>
               ) : (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 12 12">
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  viewBox="0 0 12 12"
+                >
                   <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1" />
                 </svg>
               )}
@@ -251,7 +275,13 @@ export function TitleBar() {
               className={`w-7 h-7 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors cursor-pointer ${isHomePage ? 'text-gray-600' : 'text-gray-400'}`}
               aria-label="Close"
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 12 12">
+              <svg
+                className="w-3 h-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 12 12"
+              >
                 <path d="M1 1l10 10M11 1L1 11" />
               </svg>
             </button>

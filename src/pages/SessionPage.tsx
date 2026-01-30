@@ -56,7 +56,8 @@ export function SessionPage() {
   const { openPopover } = usePopoverStore();
   const { peers } = usePeerStore();
   const { createSession, joinSession } = useWebRTC();
-  const { requestStream, toggleVideo, toggleVideoFull, toggleAudio, getAudioOnlyStream } = useMediaStream();
+  const { requestStream, toggleVideo, toggleVideoFull, toggleAudio, getAudioOnlyStream } =
+    useMediaStream();
   const { broadcastVideoState } = useTrystero();
   const { profile } = useUserStore();
   const reconnectAttemptedRef = useRef(false);
@@ -100,11 +101,25 @@ export function SessionPage() {
     };
 
     reconnect();
-  }, [fullRoomCode, isConnected, isConnecting, profile, requestStream, createSession, joinSession, navigate]);
+  }, [
+    fullRoomCode,
+    isConnected,
+    isConnecting,
+    profile,
+    requestStream,
+    createSession,
+    joinSession,
+    navigate
+  ]);
 
   // Ensure local stream is available when connected
   useEffect(() => {
-    console.log('[SessionPage] Stream effect - isConnected:', isConnected, 'localStream:', !!localStream);
+    console.log(
+      '[SessionPage] Stream effect - isConnected:',
+      isConnected,
+      'localStream:',
+      !!localStream
+    );
     if (isConnected && !localStream) {
       console.log('[SessionPage] Requesting camera stream...');
       requestStream().catch((err) => {
@@ -113,7 +128,8 @@ export function SessionPage() {
     }
   }, [isConnected, localStream, requestStream]);
 
-  const { isRecording, countdown, startRecording, stopRecording, onVideoEnabled, onVideoDisabled } = useRecording();
+  const { isRecording, countdown, startRecording, stopRecording, onVideoEnabled, onVideoDisabled } =
+    useRecording();
   const { sendMultipleToAllPeers } = useFileTransfer();
 
   // Initialize edit points tracking
@@ -204,7 +220,7 @@ export function SessionPage() {
           trimStart: 0,
           trimEnd: 0,
           color: getColorForName(peerName),
-          sourceType: 'camera',
+          sourceType: 'camera'
         });
 
         clipOrder++;
@@ -223,7 +239,7 @@ export function SessionPage() {
         trimStart: 0,
         trimEnd: 0,
         color: getColorForName(profile?.displayName || 'You'),
-        sourceType: 'camera',
+        sourceType: 'camera'
       });
     }
 
@@ -277,7 +293,17 @@ export function SessionPage() {
       setVideoEnabled(enabled);
       broadcastVideoState(enabled, audioEnabled);
     }
-  }, [isRecording, videoEnabled, audioEnabled, toggleVideo, toggleVideoFull, onVideoEnabled, onVideoDisabled, getAudioOnlyStream, broadcastVideoState]);
+  }, [
+    isRecording,
+    videoEnabled,
+    audioEnabled,
+    toggleVideo,
+    toggleVideoFull,
+    onVideoEnabled,
+    onVideoDisabled,
+    getAudioOnlyStream,
+    broadcastVideoState
+  ]);
 
   const handleToggleAudio = useCallback(() => {
     const enabled = toggleAudio();
@@ -381,124 +407,124 @@ export function SessionPage() {
             role="toolbar"
             aria-label="Session controls"
           >
-        {/* Video toggle */}
-        <button
-          onClick={handleToggleVideo}
-          className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
-            videoEnabled
-              ? 'bg-black/50 hover:bg-black/70 text-white'
-              : 'bg-red-500/70 hover:bg-red-500/90 text-white'
-          }`}
-          aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
-          aria-pressed={videoEnabled}
-          title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
-        >
-          {videoEnabled ? (
-            <svg
-              className="w-5 h-5 sm:w-6 sm:h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
+            {/* Video toggle */}
+            <button
+              onClick={handleToggleVideo}
+              className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
+                videoEnabled
+                  ? 'bg-black/50 hover:bg-black/70 text-white'
+                  : 'bg-red-500/70 hover:bg-red-500/90 text-white'
+              }`}
+              aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+              aria-pressed={videoEnabled}
+              title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-          ) : (
-            <svg
-              className="w-5 h-5 sm:w-6 sm:h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-              />
-            </svg>
-          )}
-        </button>
+              {videoEnabled ? (
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                  />
+                </svg>
+              )}
+            </button>
 
-        {/* Audio toggle */}
-        <button
-          onClick={handleToggleAudio}
-          className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
-            audioEnabled
-              ? 'bg-black/50 hover:bg-black/70 text-white'
-              : 'bg-red-500/70 hover:bg-red-500/90 text-white'
-          }`}
-          aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
-          aria-pressed={audioEnabled}
-          title={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
-        >
-          {audioEnabled ? (
-            <svg
-              className="w-5 h-5 sm:w-6 sm:h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
+            {/* Audio toggle */}
+            <button
+              onClick={handleToggleAudio}
+              className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
+                audioEnabled
+                  ? 'bg-black/50 hover:bg-black/70 text-white'
+                  : 'bg-red-500/70 hover:bg-red-500/90 text-white'
+              }`}
+              aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+              aria-pressed={audioEnabled}
+              title={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-              />
-            </svg>
-          ) : (
-            <svg
-              className="w-5 h-5 sm:w-6 sm:h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
-              />
-            </svg>
-          )}
-        </button>
+              {audioEnabled ? (
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"
+                  />
+                </svg>
+              )}
+            </button>
 
-        {/* Screen share - hidden on small mobile screens */}
-        <div className="hidden sm:block">
-          <ScreenShareButton />
-        </div>
+            {/* Screen share - hidden on small mobile screens */}
+            <div className="hidden sm:block">
+              <ScreenShareButton />
+            </div>
 
-        {/* Record button (host only) - with popover anchor */}
-        <div className="relative">
-          <RecordButton
-            ref={recordButtonRef}
-            isRecording={isRecording}
-            isHost={isHost}
-            countdown={countdown}
-            onStart={startRecording}
-            onStop={stopRecording}
-          />
-          {/* Recording complete popover */}
-          <RecordingCompletePopover
-            anchorRef={recordButtonRef}
-            onBeginTransfer={handleBeginTransferAndEdit}
-            onDiscard={handleDiscardRecording}
-          />
-        </div>
+            {/* Record button (host only) - with popover anchor */}
+            <div className="relative">
+              <RecordButton
+                ref={recordButtonRef}
+                isRecording={isRecording}
+                isHost={isHost}
+                countdown={countdown}
+                onStart={startRecording}
+                onStop={stopRecording}
+              />
+              {/* Recording complete popover */}
+              <RecordingCompletePopover
+                anchorRef={recordButtonRef}
+                onBeginTransfer={handleBeginTransferAndEdit}
+                onDiscard={handleDiscardRecording}
+              />
+            </div>
           </div>
         </MainDisplay>
       </div>
