@@ -248,12 +248,18 @@ export function useRecording() {
     // Stop all active clips
     const stoppedClips = await clipRecorder.stopAllClips();
 
+    // Get fresh localClips from store to avoid stale closure
+    const currentLocalClips = useRecordingStore.getState().localClips;
+
     // Process stopped clips
     for (const { clipId, globalEndTime, blob } of stoppedClips) {
-      const clip = localClips.find((c) => c.id === clipId);
+      // Find clip by recordingId, not id (clipId is the recorder's ID, stored as recordingId)
+      const clip = currentLocalClips.find((c) => c.recordingId === clipId);
 
-      stopClip(clipId, globalEndTime);
-      finalizeClip(clipId, blob);
+      // Use the store's clip ID for updates, or fall back to recorder's clipId
+      const storeClipId = clip?.id || clipId;
+      stopClip(storeClipId, globalEndTime);
+      finalizeClip(storeClipId, blob);
 
       // Broadcast to peers
       broadcastClipInfo(
@@ -288,7 +294,6 @@ export function useRecording() {
 
     setIsRecording(false);
   }, [
-    localClips,
     getClipRecorder,
     getScreenRecorder,
     setEndTime,
@@ -361,10 +366,12 @@ export function useRecording() {
     if (audioClipId) {
       try {
         const { globalEndTime, blob } = await clipRecorder.stopClip(audioClipId);
-        const clip = localClips.find((c) => c.id === audioClipId);
+        // Find by recordingId (audioClipId is the recorder's ID)
+        const clip = localClips.find((c) => c.recordingId === audioClipId);
+        const storeClipId = clip?.id || audioClipId;
 
-        stopClip(audioClipId, globalEndTime);
-        finalizeClip(audioClipId, blob);
+        stopClip(storeClipId, globalEndTime);
+        finalizeClip(storeClipId, blob);
         broadcastClipInfo(audioClipId, 'audio-only', clip?.globalStartTime || 0, globalEndTime, 'stopped');
 
         activeAudioClipIdRef.current = null;
@@ -417,10 +424,12 @@ export function useRecording() {
     if (videoClipId) {
       try {
         const { globalEndTime, blob } = await clipRecorder.stopClip(videoClipId);
-        const clip = localClips.find((c) => c.id === videoClipId);
+        // Find by recordingId (videoClipId is the recorder's ID)
+        const clip = localClips.find((c) => c.recordingId === videoClipId);
+        const storeClipId = clip?.id || videoClipId;
 
-        stopClip(videoClipId, globalEndTime);
-        finalizeClip(videoClipId, blob);
+        stopClip(storeClipId, globalEndTime);
+        finalizeClip(storeClipId, blob);
         broadcastClipInfo(videoClipId, 'camera', clip?.globalStartTime || 0, globalEndTime, 'stopped');
 
         console.log('[useRecording] Stopped video clip:', videoClipId);

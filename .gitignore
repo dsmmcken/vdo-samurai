@@ -16,6 +16,10 @@ dist-ssr
 build
 out
 
+# E2E test outputs
+e2e/test-results/
+playwright-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

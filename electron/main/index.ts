@@ -5,6 +5,8 @@ import { registerIpcHandlers } from './ipc-handlers';
 let mainWindow: BrowserWindow | null = null;
 
 const isMac = process.platform === 'darwin';
+// Check for headless mode (for E2E testing)
+const isHeadless = process.env.HEADLESS === 'true' || process.env.E2E_HEADLESS === 'true';
 
 function createWindow(): void {
   // On macOS, use hiddenInset for native traffic lights
@@ -37,9 +39,11 @@ function createWindow(): void {
     Menu.setApplicationMenu(null);
   }
 
-  // Show window when ready to prevent visual flash
+  // Show window when ready to prevent visual flash (unless headless)
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    if (!isHeadless) {
+      mainWindow?.show();
+    }
   });
 
   // Handle external links
