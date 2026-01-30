@@ -13,6 +13,7 @@ interface RecordingState {
   isPaused: boolean;
   countdown: number | null;
   sessionId: string | null;
+  internalSessionId: string | null;  // Unique ID for tracking recording sessions across peers
 
   // Global clock
   globalClockStart: number | null;  // Host's Date.now() when recording started
@@ -40,6 +41,7 @@ interface RecordingState {
   setIsPaused: (paused: boolean) => void;
   setCountdown: (count: number | null) => void;
   setSessionId: (id: string | null) => void;
+  setInternalSessionId: (id: string | null) => void;
   setGlobalClockStart: (time: number | null) => void;
   setGlobalClockEnd: (time: number | null) => void;
   setClockOffset: (offset: number) => void;
@@ -73,6 +75,7 @@ const initialState = {
   isPaused: false,
   countdown: null,
   sessionId: null,
+  internalSessionId: null as string | null,
   globalClockStart: null,
   globalClockEnd: null,
   clockOffset: 0,
@@ -97,6 +100,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   setIsPaused: (isPaused) => set({ isPaused }),
   setCountdown: (countdown) => set({ countdown }),
   setSessionId: (sessionId) => set({ sessionId }),
+  setInternalSessionId: (internalSessionId) => set({ internalSessionId }),
   setGlobalClockStart: (globalClockStart) => set({ globalClockStart }),
   setGlobalClockEnd: (globalClockEnd) => set({ globalClockEnd }),
   setClockOffset: (clockOffset) => set({ clockOffset }),

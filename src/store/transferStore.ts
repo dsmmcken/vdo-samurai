@@ -36,6 +36,7 @@ interface TransferState {
   clearReceivedRecordings: () => void;
 
   isTransferring: () => boolean;
+  reset: () => void;
 }
 
 export const useTransferStore = create<TransferState>((set, get) => ({
@@ -71,5 +72,7 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   isTransferring: () => {
     const { transfers } = get();
     return transfers.some((t) => t.status === 'pending' || t.status === 'active');
-  }
+  },
+
+  reset: () => set({ transfers: [], receivedRecordings: [] })
 }));

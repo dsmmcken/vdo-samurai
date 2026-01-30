@@ -47,6 +47,17 @@ export interface PeerClipMessage {
   action: 'started' | 'stopped';
 }
 
+// Internal session ID for tracking recording sessions across peers
+export interface SessionInfoMessage {
+  type: 'session-info';
+  internalSessionId: string;
+}
+
+// Request for session info from existing peers (used on reconnection)
+export interface SessionInfoRequestMessage {
+  type: 'session-info-request';
+}
+
 export type P2PMessage =
   | FocusChangeMessage
   | PeerInfoMessage
@@ -54,4 +65,6 @@ export type P2PMessage =
   | ClockSyncRequestMessage
   | ClockSyncResponseMessage
   | VideoStateMessage
-  | PeerClipMessage;
+  | PeerClipMessage
+  | SessionInfoMessage
+  | SessionInfoRequestMessage;
