@@ -23,6 +23,9 @@ playwright-report/
 # Generated mock videos (too large for git)
 e2e/test-assets/videos/*.mp4
 
+# Claude Code settings
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
