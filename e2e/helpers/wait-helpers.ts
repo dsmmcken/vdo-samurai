@@ -173,3 +173,110 @@ export async function waitForReceivedRecordings(
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * Wait for local screen share stream to be set in sessionStore
+ */
+export async function waitForLocalScreenShare(page: Page, timeout = 30000): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const store = (
+        window as unknown as Record<string, { getState?: () => { localScreenStream?: MediaStream | null } }>
+      ).useSessionStore;
+      if (store?.getState) {
+        const state = store.getState();
+        return state?.localScreenStream !== null && state?.localScreenStream !== undefined;
+      }
+      return false;
+    },
+    undefined,
+    { timeout }
+  );
+}
+
+/**
+ * Wait for a peer's screen share badge to be visible
+ * The badge is inside a UserTile with aria-label containing the peer name
+ * and has "Screen" text with green background
+ */
+export async function waitForPeerScreenShareBadge(
+  page: Page,
+  peerName: string,
+  timeout = 30000
+): Promise<void> {
+  // The UserTile has role="button" and aria-label containing the peer name and "sharing screen"
+  // We wait for the aria-label to include "sharing screen"
+  await page.waitForSelector(
+    `[role="button"][aria-label*="${peerName}"][aria-label*="sharing screen"]`,
+    { timeout }
+  );
+}
+
+/**
+ * Get the name of the currently focused tile (from aria-pressed="true")
+ * Returns the name extracted from the tile's aria-label
+ */
+export async function getFocusedTileName(page: Page): Promise<string | null> {
+  const focusedTile = await page.locator('[role="button"][aria-pressed="true"]').first();
+  if (await focusedTile.count() === 0) return null;
+
+  const ariaLabel = await focusedTile.getAttribute('aria-label');
+  if (!ariaLabel) return null;
+
+  // Extract name - aria-label format is like "Host User (Host) sharing screen. Currently focused."
+  // or "Participant sharing screen. Click to focus."
+  // The name is at the beginning before any parentheses or status text
+  const match = ariaLabel.match(/^([^(.\n]+)/);
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * Wait for a specific tile to be focused (aria-pressed="true")
+ */
+export async function waitForTileFocused(
+  page: Page,
+  tileName: string,
+  timeout = 10000
+): Promise<void> {
+  await page.waitForSelector(
+    `[role="button"][aria-label*="${tileName}"][aria-pressed="true"]`,
+    { timeout }
+  );
+}
+
+/**
+ * Get the focusedPeerId from the sessionStore
+ */
+export async function getFocusedPeerId(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const store = (window as unknown as Record<string, { getState?: () => { focusedPeerId?: string | null } }>).useSessionStore;
+    if (store?.getState) {
+      return store.getState()?.focusedPeerId ?? null;
+    }
+    return null;
+  });
+}
+
+/**
+ * Wait for focusedPeerId to match expected value
+ */
+export async function waitForFocusedPeerId(
+  page: Page,
+  expectedPeerId: string | null,
+  timeout = 10000
+): Promise<void> {
+  await page.waitForFunction(
+    (expected) => {
+      const store = (window as unknown as Record<string, { getState?: () => { focusedPeerId?: string | null } }>).useSessionStore;
+      if (store?.getState) {
+        const actual = store.getState()?.focusedPeerId;
+        // Handle null comparison
+        if (expected === null) return actual === null || actual === undefined;
+        return actual === expected;
+      }
+      return false;
+    },
+    expectedPeerId,
+    { timeout }
+  );
+}
