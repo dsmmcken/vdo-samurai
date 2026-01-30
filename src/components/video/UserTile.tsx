@@ -13,6 +13,7 @@ interface UserTileProps {
   muted?: boolean;
   videoEnabled?: boolean;  // Whether video is currently on
   audioEnabled?: boolean;  // Whether audio is currently on
+  isScreenSharing?: boolean;  // Whether user has screen sharing enabled (for remote peers)
 }
 
 export function UserTile({
@@ -24,11 +25,13 @@ export function UserTile({
   onClick,
   muted = false,
   videoEnabled = true,
-  audioEnabled = true
+  audioEnabled = true,
+  isScreenSharing = false
 }: UserTileProps) {
   // Always show camera stream in tiles, never screen share
   const displayStream = stream;
-  const isSharing = screenStream !== null;
+  // Show badge if either we have the screen stream OR peer reported they're sharing
+  const isSharing = screenStream !== null || isScreenSharing;
   const { level } = useAudioLevel(stream);
 
   // Check if stream has active video track

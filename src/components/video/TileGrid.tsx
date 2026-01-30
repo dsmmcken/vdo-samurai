@@ -45,6 +45,7 @@ export function TileGrid() {
             onClick={() => changeFocus(peer.id)}
             videoEnabled={peer.videoEnabled}
             audioEnabled={peer.audioEnabled}
+            isScreenSharing={peer.isScreenSharing}
           />
         </div>
       ))}

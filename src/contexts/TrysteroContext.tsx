@@ -23,6 +23,10 @@ const RTC_CONFIG: RTCConfiguration = {
 
 import { usePeerStore } from '../store/peerStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useRecordingStore } from '../store/recordingStore';
+import { useNLEStore } from '../store/nleStore';
+import { useCompositeStore } from '../store/compositeStore';
+import { useTransferStore } from '../store/transferStore';
 
 // Debug: Log relay socket status
 const logRelayStatus = () => {
@@ -77,6 +81,15 @@ interface VideoStateData {
   audioEnabled: boolean;
 }
 
+interface SessionInfoData {
+  type: string;
+  internalSessionId: string;
+}
+
+interface SessionInfoRequestData {
+  type: string;
+}
+
 interface TrysteroContextValue {
   room: Room | null;
   selfId: string;
@@ -89,6 +102,7 @@ interface TrysteroContextValue {
   setActiveScreenShare: (peerId: string | null) => void;
   broadcastFocusChange: (peerId: string | null) => void;
   broadcastVideoState: (videoEnabled: boolean, audioEnabled: boolean) => void;
+  broadcastSessionInfo: (internalSessionId: string) => void;
 }
 
 const TrysteroContext = createContext<TrysteroContextValue | null>(null);
@@ -106,6 +120,12 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   const roomRef = useRef<Room | null>(null);
   const peerHandlersInitializedRef = useRef(false);
   const debugIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Expose selfId on window for E2E testing
+  useEffect(() => {
+    (window as unknown as { __trysteroSelfId: string }).__trysteroSelfId = selfId;
+    console.log('[TrysteroProvider] selfId exposed on window:', selfId);
+  }, []);
 
   // Store refs
   const { addPeer, updatePeer, removePeer, clearPeers } = usePeerStore();
@@ -133,12 +153,16 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendActiveScreenShare: ((data: ActiveScreenShareData, peerId?: string) => void) | null;
     sendFocusChange: ((data: FocusChangeData, peerId?: string) => void) | null;
     sendVideoState: ((data: VideoStateData, peerId?: string) => void) | null;
+    sendSessionInfo: ((data: SessionInfoData, peerId?: string) => void) | null;
+    sendSessionInfoRequest: ((data: SessionInfoRequestData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
     sendActiveScreenShare: null,
     sendFocusChange: null,
-    sendVideoState: null
+    sendVideoState: null,
+    sendSessionInfo: null,
+    sendSessionInfoRequest: null
   });
 
   // Setup peer handlers when room changes
@@ -162,13 +186,19 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendFocusChange, onFocusChange] = newRoom.makeAction<any>('focus-change');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendVideoState, onVideoState] = newRoom.makeAction<any>('video-state');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendSessionInfo, onSessionInfo] = newRoom.makeAction<any>('session-info');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendSessionInfoRequest, onSessionInfoRequest] = newRoom.makeAction<any>('sess-req');
 
       sendersRef.current = {
         sendPeerInfo,
         sendScreenShareStatus,
         sendActiveScreenShare,
         sendFocusChange,
-        sendVideoState
+        sendVideoState,
+        sendSessionInfo,
+        sendSessionInfoRequest
       };
 
       // Handle peer join
@@ -182,7 +212,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           name: `User-${peerId.slice(0, 4)}`,
           isHost: false,
           videoEnabled: true,  // Assume video is on until we hear otherwise
-          audioEnabled: true   // Assume audio is on until we hear otherwise
+          audioEnabled: true,  // Assume audio is on until we hear otherwise
+          isScreenSharing: false
         });
 
         // Send our info to the new peer
@@ -210,6 +241,16 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
             peerId: selfId
           };
           sendScreenShareStatus(statusMsg, peerId);
+        }
+
+        // Send our internal session ID to the new peer (if we have one)
+        const currentInternalSessionId = useRecordingStore.getState().internalSessionId;
+        if (currentInternalSessionId) {
+          const sessionInfoMsg: SessionInfoData = {
+            type: 'session-info',
+            internalSessionId: currentInternalSessionId
+          };
+          sendSessionInfo(sessionInfoMsg, peerId);
         }
       });
 
@@ -240,6 +281,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         if (typeof data === 'object' && data !== null) {
           const status = data as ScreenShareStatusData;
           console.log('[TrysteroProvider] Screen share status from', peerId, ':', status);
+          // Update peer's screen sharing flag for UI badge
+          updatePeer(peerId, { isScreenSharing: status.isSharing });
           if (status.isSharing) {
             stateRef.current.peersWithScreenShareAvailable.add(peerId);
           } else {
@@ -278,7 +321,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         if (typeof data === 'object' && data !== null) {
           const focusData = data as FocusChangeData;
           console.log('[TrysteroProvider] Focus changed to:', focusData.peerId);
-          setFocusedPeerId(focusData.peerId);
+          // If the focus is on our selfId, convert to null (which means "local user" in our store)
+          const localFocusedPeerId = focusData.peerId === selfId ? null : focusData.peerId;
+          setFocusedPeerId(localFocusedPeerId);
         }
       });
 
@@ -291,6 +336,41 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
             videoEnabled: videoState.videoEnabled,
             audioEnabled: videoState.audioEnabled
           });
+        }
+      });
+
+      // Handle session info messages - used to sync internal session ID across peers
+      onSessionInfo((data: unknown, peerId: string) => {
+        if (typeof data === 'object' && data !== null) {
+          const sessionInfo = data as SessionInfoData;
+          console.log('[TrysteroProvider] Received session info from', peerId, ':', sessionInfo);
+
+          const currentInternalSessionId = useRecordingStore.getState().internalSessionId;
+
+          if (currentInternalSessionId !== sessionInfo.internalSessionId) {
+            // Different session - reset all stores and adopt the new session ID
+            console.log('[TrysteroProvider] Adopting new internal session ID:', sessionInfo.internalSessionId);
+            useRecordingStore.getState().reset();
+            useNLEStore.getState().reset();
+            useCompositeStore.getState().reset();
+            useTransferStore.getState().reset();
+            useRecordingStore.getState().setInternalSessionId(sessionInfo.internalSessionId);
+          }
+        }
+      });
+
+      // Handle session info request - respond with our current session ID
+      onSessionInfoRequest((data: unknown, peerId: string) => {
+        if (typeof data === 'object' && data !== null) {
+          console.log('[TrysteroProvider] Received session info request from', peerId);
+          const currentInternalSessionId = useRecordingStore.getState().internalSessionId;
+          if (currentInternalSessionId) {
+            const sessionInfoMsg: SessionInfoData = {
+              type: 'session-info',
+              internalSessionId: currentInternalSessionId
+            };
+            sendSessionInfo(sessionInfoMsg, peerId);
+          }
         }
       });
 
@@ -394,7 +474,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendScreenShareStatus: null,
       sendActiveScreenShare: null,
       sendFocusChange: null,
-      sendVideoState: null
+      sendVideoState: null,
+      sendSessionInfo: null,
+      sendSessionInfoRequest: null
     };
   }, [clearPeers]);
 
@@ -505,7 +587,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     (peerId: string | null) => {
       setFocusedPeerId(peerId);
       if (sendersRef.current.sendFocusChange) {
-        const data: FocusChangeData = { peerId, timestamp: Date.now() };
+        // When broadcasting, convert null (self) to actual selfId so other peers know who to focus on
+        const broadcastPeerId = peerId === null ? selfId : peerId;
+        const data: FocusChangeData = { peerId: broadcastPeerId, timestamp: Date.now() };
         sendersRef.current.sendFocusChange(data);
       }
     },
@@ -523,6 +607,21 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         };
         sendersRef.current.sendVideoState(data);
         console.log('[TrysteroProvider] Broadcasting video state:', data);
+      }
+    },
+    []
+  );
+
+  // Broadcast internal session ID to all peers
+  const broadcastSessionInfo = useCallback(
+    (internalSessionId: string) => {
+      if (sendersRef.current.sendSessionInfo) {
+        const data: SessionInfoData = {
+          type: 'session-info',
+          internalSessionId
+        };
+        sendersRef.current.sendSessionInfo(data);
+        console.log('[TrysteroProvider] Broadcasting session info:', data);
       }
     },
     []
@@ -550,7 +649,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         removeLocalStream,
         setActiveScreenShare,
         broadcastFocusChange,
-        broadcastVideoState
+        broadcastVideoState,
+        broadcastSessionInfo
       }}
     >
       <TrysteroProviderInner updateUserInfo={updateUserInfo}>{children}</TrysteroProviderInner>

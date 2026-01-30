@@ -6,6 +6,7 @@ export interface Peer {
   isHost: boolean;
   videoEnabled: boolean;  // Whether peer's video is currently on
   audioEnabled: boolean;  // Whether peer's audio is currently on
+  isScreenSharing: boolean;  // Whether peer has screen sharing enabled (may not be active streamer)
 }
 
 export interface SessionInfo {
