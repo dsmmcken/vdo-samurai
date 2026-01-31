@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type PopoverId = 'user' | 'connection' | 'recordingComplete' | null;
+type PopoverId = 'user' | 'connection' | 'recordingComplete' | 'transfer' | null;
 
 interface PopoverState {
   activePopover: PopoverId;

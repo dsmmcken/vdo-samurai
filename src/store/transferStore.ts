@@ -25,6 +25,8 @@ export interface ReceivedRecording {
 interface TransferState {
   transfers: Transfer[];
   receivedRecordings: ReceivedRecording[];
+  indicatorDismissed: boolean;
+  hasHadTransfers: boolean;
 
   setTransfers: (transfers: Transfer[]) => void;
   addTransfer: (transfer: Transfer) => void;
@@ -36,14 +38,27 @@ interface TransferState {
   clearReceivedRecordings: () => void;
 
   isTransferring: () => boolean;
+  setIndicatorDismissed: (dismissed: boolean) => void;
   reset: () => void;
 }
 
 export const useTransferStore = create<TransferState>((set, get) => ({
   transfers: [],
   receivedRecordings: [],
+  indicatorDismissed: false,
+  hasHadTransfers: false,
 
-  setTransfers: (transfers) => set({ transfers }),
+  setTransfers: (transfers) => {
+    const hadTransfers = transfers.length > 0;
+    set((state) => ({
+      transfers,
+      // Once we've had transfers, remember it (reset dismissed when new transfers arrive)
+      hasHadTransfers: state.hasHadTransfers || hadTransfers,
+      indicatorDismissed: hadTransfers && state.indicatorDismissed && transfers.length <= state.transfers.length
+        ? state.indicatorDismissed
+        : hadTransfers ? false : state.indicatorDismissed,
+    }));
+  },
 
   addTransfer: (transfer) =>
     set((state) => ({
@@ -74,5 +89,13 @@ export const useTransferStore = create<TransferState>((set, get) => ({
     return transfers.some((t) => t.status === 'pending' || t.status === 'active');
   },
 
-  reset: () => set({ transfers: [], receivedRecordings: [] })
+  setIndicatorDismissed: (dismissed) => set({ indicatorDismissed: dismissed }),
+
+  reset: () => set({ transfers: [], receivedRecordings: [], indicatorDismissed: false, hasHadTransfers: false })
 }));
+
+// Expose store for E2E testing
+if (typeof window !== 'undefined') {
+  (window as unknown as { __transferStore__: typeof useTransferStore }).__transferStore__ =
+    useTransferStore;
+}

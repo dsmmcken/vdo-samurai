@@ -465,6 +465,23 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           const currentInternalSessionId = useRecordingStore.getState().internalSessionId;
 
           if (currentInternalSessionId !== sessionInfo.internalSessionId) {
+            // Check if export is in progress or in NLE editing mode - don't reset stores
+            const compositeStatus = useCompositeStore.getState().status;
+            const nleMode = useNLEStore.getState().mode;
+            const isExporting = compositeStatus === 'loading' || compositeStatus === 'processing';
+            const isEditing = nleMode === 'editing';
+
+            if (isExporting || isEditing) {
+              console.log(
+                '[TrysteroProvider] Ignoring session ID change during editing/export:',
+                'compositeStatus=',
+                compositeStatus,
+                'nleMode=',
+                nleMode
+              );
+              return;
+            }
+
             // Different session - reset all stores and adopt the new session ID
             console.log(
               '[TrysteroProvider] Adopting new internal session ID:',

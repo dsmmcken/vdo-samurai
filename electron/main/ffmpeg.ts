@@ -51,6 +51,27 @@ function sendProgressToRenderer(progress: number): void {
   });
 }
 
+// Helper to parse timemark (HH:MM:SS.ms) to seconds
+function parseTimemark(timemark: string): number {
+  const parts = timemark.split(':');
+  if (parts.length !== 3) return 0;
+  const [h, m, s] = parts.map(parseFloat);
+  return h * 3600 + m * 60 + s;
+}
+
+// Helper to calculate progress from timemark when percent is unavailable
+function calculateProgressFromTimemark(
+  timemark: string | undefined,
+  expectedDuration: number,
+  baseProgress: number = 0.1
+): number | null {
+  if (!timemark || expectedDuration <= 0) return null;
+  const currentSeconds = parseTimemark(timemark);
+  // Reserve 10% for probing phase, 90% for encoding
+  const encodingProgress = Math.min(currentSeconds / expectedDuration, 1.0);
+  return baseProgress + encodingProgress * (1.0 - baseProgress);
+}
+
 export async function getTempDir(): Promise<string> {
   const dir = join(tmpdir(), 'vdo-samurai', randomUUID());
   await fs.mkdir(dir, { recursive: true });
@@ -67,19 +88,24 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
     }
 
     if (inputFiles.length === 1) {
-      // Single file - probe first to check for audio
-      const hasAudio = await new Promise<boolean>((res) => {
+      // Single file - probe first to check for audio and get duration
+      sendProgressToRenderer(0.05); // Starting probe phase
+      const probeResult = await new Promise<{ hasAudio: boolean; duration: number }>((res) => {
         ffmpeg.ffprobe(inputFiles[0], (err, metadata) => {
           if (err) {
             console.error('[FFmpeg] Probe error:', err);
-            res(false);
+            res({ hasAudio: false, duration: 0 });
             return;
           }
-          res(metadata.streams.some((s) => s.codec_type === 'audio'));
+          const hasAudio = metadata.streams.some((s) => s.codec_type === 'audio');
+          const duration = metadata.format.duration || 0;
+          res({ hasAudio, duration });
         });
       });
+      sendProgressToRenderer(0.1); // Probe complete
 
-      console.log('[FFmpeg] Single file, hasAudio:', hasAudio);
+      const { hasAudio, duration: expectedDuration } = probeResult;
+      console.log('[FFmpeg] Single file, hasAudio:', hasAudio, 'duration:', expectedDuration);
 
       return new Promise((resolve) => {
         let stderrLog = '';
@@ -108,8 +134,18 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
             console.log('[FFmpeg]', line);
           })
           .on('progress', (progress) => {
-            if (progress.percent) {
+            // Use percent if available, otherwise calculate from timemark
+            if (progress.percent !== undefined && progress.percent > 0) {
               sendProgressToRenderer(progress.percent / 100);
+            } else {
+              const calculatedProgress = calculateProgressFromTimemark(
+                progress.timemark,
+                expectedDuration,
+                0.1 // 10% reserved for probe phase
+              );
+              if (calculatedProgress !== null) {
+                sendProgressToRenderer(calculatedProgress);
+              }
             }
           })
           .on('end', () => {
@@ -126,29 +162,36 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
       });
     } else {
       // Multiple files - create layout
-      // First, probe all files to check for audio streams
+      // First, probe all files to check for audio streams and get durations
+      sendProgressToRenderer(0.05); // Starting probe phase
       const fileInfos = await Promise.all(
         inputFiles.map(async (file) => {
           try {
-            return await new Promise<{ hasAudio: boolean; hasVideo: boolean }>((res, rej) => {
-              ffmpeg.ffprobe(file, (err, metadata) => {
-                if (err) {
-                  rej(err);
-                  return;
-                }
-                const hasAudio = metadata.streams.some((s) => s.codec_type === 'audio');
-                const hasVideo = metadata.streams.some((s) => s.codec_type === 'video');
-                res({ hasAudio, hasVideo });
-              });
-            });
+            return await new Promise<{ hasAudio: boolean; hasVideo: boolean; duration: number }>(
+              (res, rej) => {
+                ffmpeg.ffprobe(file, (err, metadata) => {
+                  if (err) {
+                    rej(err);
+                    return;
+                  }
+                  const hasAudio = metadata.streams.some((s) => s.codec_type === 'audio');
+                  const hasVideo = metadata.streams.some((s) => s.codec_type === 'video');
+                  const duration = metadata.format.duration || 0;
+                  res({ hasAudio, hasVideo, duration });
+                });
+              }
+            );
           } catch (e) {
             console.error(`[FFmpeg] Failed to probe ${file}:`, e);
-            return { hasAudio: false, hasVideo: true };
+            return { hasAudio: false, hasVideo: true, duration: 0 };
           }
         })
       );
+      sendProgressToRenderer(0.1); // Probe complete
 
-      console.log('[FFmpeg] File info:', fileInfos);
+      // Use the longest duration as expected output duration
+      const expectedDuration = Math.max(...fileInfos.map((f) => f.duration));
+      console.log('[FFmpeg] File info:', fileInfos, 'expectedDuration:', expectedDuration);
 
       const filterComplex = buildFilterComplex(inputFiles, layout, fileInfos);
 
@@ -190,8 +233,18 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
             console.log('[FFmpeg]', line);
           })
           .on('progress', (progress) => {
-            if (progress.percent) {
+            // Use percent if available, otherwise calculate from timemark
+            if (progress.percent !== undefined && progress.percent > 0) {
               sendProgressToRenderer(progress.percent / 100);
+            } else {
+              const calculatedProgress = calculateProgressFromTimemark(
+                progress.timemark,
+                expectedDuration,
+                0.1 // 10% reserved for probe phase
+              );
+              if (calculatedProgress !== null) {
+                sendProgressToRenderer(calculatedProgress);
+              }
             }
           })
           .on('end', () => {
@@ -219,6 +272,7 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
 interface FileInfo {
   hasAudio: boolean;
   hasVideo: boolean;
+  duration: number;
 }
 
 function buildFilterComplex(

@@ -149,3 +149,75 @@ body {
   background-size: 40px 40px;
   animation: stripe-animate 1s linear infinite;
 }
+
+/* Samurai Transfer Race Animations */
+
+/* Katana slash animation for title bar icon */
+@keyframes samurai-slash {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-15deg);
+  }
+  75% {
+    transform: rotate(15deg);
+  }
+}
+
+.samurai-slash {
+  animation: samurai-slash 1.5s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* Running samurai animation */
+@keyframes samurai-run {
+  0%, 100% {
+    transform: translateY(0) scaleX(1);
+  }
+  25% {
+    transform: translateY(-2px) scaleX(0.95);
+  }
+  50% {
+    transform: translateY(0) scaleX(1);
+  }
+  75% {
+    transform: translateY(-1px) scaleX(0.97);
+  }
+}
+
+.samurai-run {
+  animation: samurai-run 0.4s ease-in-out infinite;
+}
+
+/* Victory pose animation */
+@keyframes samurai-victory {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.1) rotate(5deg);
+  }
+}
+
+.samurai-victory {
+  animation: samurai-victory 0.8s ease-in-out infinite;
+}
+
+/* Animated ellipsis for "Sending..." text */
+@keyframes samurai-dots {
+  0%, 20% {
+    content: '.';
+  }
+  40% {
+    content: '..';
+  }
+  60%, 100% {
+    content: '...';
+  }
+}
+
+.samurai-dots::after {
+  content: '';
+  animation: samurai-dots 1.5s steps(1) infinite;
+}

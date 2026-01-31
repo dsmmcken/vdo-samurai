@@ -10,6 +10,7 @@ import { useMediaStream } from '../../hooks/useMediaStream';
 import { UserPopover } from '../user/UserPopover';
 import { ShareLink } from '../connection/ShareLink';
 import { ConnectionStatus } from '../connection/ConnectionStatus';
+import { TransferIndicator } from '../transfer/TransferIndicator';
 import { formatRoomCode } from '../../utils/roomCode';
 
 function formatTime(ms: number): string {
@@ -178,6 +179,7 @@ export function TitleBar() {
               </svg>
               Leave
             </button>
+            <TransferIndicator />
             {isRecording && (
               <div className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium">
                 <span className="relative flex h-2 w-2">
