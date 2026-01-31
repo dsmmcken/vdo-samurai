@@ -144,8 +144,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     setFocusedPeerId,
     setTileOrder
   });
-  // Keep refs updated (but don't trigger re-renders)
-  storeFunctionsRef.current = { setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder };
+  // Keep refs updated via useEffect (not during render)
+  useEffect(() => {
+    storeFunctionsRef.current = { setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder };
+  }, [setActiveScreenSharePeerId, setFocusedPeerId, setTileOrder]);
 
   // State that doesn't need to trigger re-renders
   const stateRef = useRef<{
@@ -591,16 +593,17 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const initialTimestamp = 1;
 
       // Only initialize if not already set (prevents overwriting on reconnect)
+      // Use refs to avoid dependency changes in useCallback
       if (stateRef.current.focusTimestamp === 0) {
         stateRef.current.focusedPeerId = null;
         stateRef.current.focusTimestamp = initialTimestamp;
-        setFocusedPeerId(null, initialTimestamp);
+        storeFunctionsRef.current.setFocusedPeerId(null, initialTimestamp);
       }
 
       if (stateRef.current.tileOrderTimestamp === 0) {
         stateRef.current.tileOrder = ['self'];
         stateRef.current.tileOrderTimestamp = initialTimestamp;
-        setTileOrder(['self'], initialTimestamp);
+        storeFunctionsRef.current.setTileOrder(['self'], initialTimestamp);
       }
 
       // Log MQTT status after a short delay to allow connections
@@ -683,7 +686,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   // Add local stream
   // Use ref for setActiveScreenShare to ensure stable function identity
   const setActiveScreenShareRef = useRef(setActiveScreenShare);
-  setActiveScreenShareRef.current = setActiveScreenShare;
+  useEffect(() => {
+    setActiveScreenShareRef.current = setActiveScreenShare;
+  }, [setActiveScreenShare]);
 
   const addLocalStream = useCallback(
     (stream: MediaStream, metadata?: { type: string }) => {
