@@ -40,10 +40,43 @@ function createWindow(): void {
 
   mainWindow = new BrowserWindow(windowOptions);
 
-  // Hide menu on Windows/Linux for cleaner look (no File/Edit/View)
-  if (!isMac) {
-    Menu.setApplicationMenu(null);
-  }
+  // Create a minimal menu to enable keyboard shortcuts (like DevTools toggle)
+  // On Windows/Linux with frameless window, the menu bar isn't visible anyway
+  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const }
+            ]
+          }
+        ]
+      : []),
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(menuTemplate);
+  Menu.setApplicationMenu(menu);
 
   // Show window when ready to prevent visual flash (unless headless)
   mainWindow.once('ready-to-show', () => {
