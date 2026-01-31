@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useTransferStore } from '../../store/transferStore';
 import { usePopoverStore } from '../../store/popoverStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { TransferRacePopover } from './TransferRacePopover';
 
 function formatBytes(bytes: number): string {
@@ -16,13 +17,15 @@ export function TransferIndicator() {
   const { transfers, indicatorDismissed, hasHadTransfers, setIndicatorDismissed } =
     useTransferStore();
   const { activePopover, togglePopover } = usePopoverStore();
+  const { isHost, sessionId } = useSessionStore();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const isHomePage = location.pathname === '/';
 
   // Show if we've ever had transfers and not dismissed
-  // This ensures indicator persists even if transfers array is temporarily cleared
-  const shouldShow = (transfers.length > 0 || hasHadTransfers) && !indicatorDismissed;
+  // Also show for host when in a session (so they can see the race like participants)
+  const isHostInSession = isHost && sessionId !== null;
+  const shouldShow = ((transfers.length > 0 || hasHadTransfers) && !indicatorDismissed) || isHostInSession;
   if (!shouldShow) return null;
 
   // Calculate progress for all transfers (both sending and receiving)
