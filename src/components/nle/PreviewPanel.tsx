@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNLEStore, getClipAtPlayhead, getTimeInClip } from '../../store/nleStore';
 import { useRecordingStore } from '../../store/recordingStore';
-import { useTransferStore, RecordingType } from '../../store/transferStore';
+import { useTransferStore, type RecordingType } from '../../store/transferStore';
 
 export function PreviewPanel() {
   const mainVideoRef = useRef<HTMLVideoElement>(null);
