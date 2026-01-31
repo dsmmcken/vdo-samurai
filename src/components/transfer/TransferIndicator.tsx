@@ -25,23 +25,22 @@ export function TransferIndicator() {
   const shouldShow = (transfers.length > 0 || hasHadTransfers) && !indicatorDismissed;
   if (!shouldShow) return null;
 
-  // Calculate your own progress (sending transfers)
-  const myTransfers = transfers.filter((t) => t.direction === 'send');
-  const activeMyTransfers = myTransfers.filter(
+  // Calculate progress for all transfers (both sending and receiving)
+  const activeTransfers = transfers.filter(
     (t) => t.status === 'active' || t.status === 'pending'
   );
-  const completedMyTransfers = myTransfers.filter((t) => t.status === 'complete');
-  const totalMyProgress =
-    myTransfers.length > 0
-      ? myTransfers.reduce((acc, t) => acc + t.progress, 0) / myTransfers.length
+  const completedTransfers = transfers.filter((t) => t.status === 'complete');
+  const totalProgress =
+    transfers.length > 0
+      ? transfers.reduce((acc, t) => acc + t.progress, 0) / transfers.length
       : 0;
 
   // Get total transfer size
-  const totalSize = myTransfers.reduce((acc, t) => acc + t.size, 0);
-  const transferredSize = myTransfers.reduce((acc, t) => acc + t.size * t.progress, 0);
+  const totalSize = transfers.reduce((acc, t) => acc + t.size, 0);
+  const transferredSize = transfers.reduce((acc, t) => acc + t.size * t.progress, 0);
 
-  const isActive = activeMyTransfers.length > 0;
-  const allComplete = myTransfers.length > 0 && completedMyTransfers.length === myTransfers.length;
+  const isActive = activeTransfers.length > 0;
+  const allComplete = transfers.length > 0 && completedTransfers.length === transfers.length;
   const isPopoverOpen = activePopover === 'transfer';
 
   const getTextColor = () => {
@@ -58,7 +57,7 @@ export function TransferIndicator() {
           relative flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium
           transition-all cursor-pointer group
           ${isHomePage ? 'bg-gray-100 hover:bg-gray-200' : 'bg-white/10 hover:bg-white/20'}
-          ${isPopoverOpen ? 'ring-2 ring-amber-400/50' : ''}
+          ${isPopoverOpen ? 'ring-2 ring-[--color-primary]/50' : ''}
         `}
         aria-label="File transfers"
         aria-expanded={isPopoverOpen}
@@ -84,8 +83,8 @@ export function TransferIndicator() {
           {/* Activity pulse */}
           {isActive && (
             <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[--color-primary] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[--color-primary]"></span>
             </span>
           )}
         </div>
@@ -94,7 +93,7 @@ export function TransferIndicator() {
         <div className={`flex items-center gap-1.5 ${getTextColor()}`}>
           {isActive ? (
             <>
-              <span className="font-mono tabular-nums">{Math.round(totalMyProgress * 100)}%</span>
+              <span className="font-mono tabular-nums">{Math.round(totalProgress * 100)}%</span>
               <span className="text-[10px] opacity-60">
                 {formatBytes(transferredSize)}/{formatBytes(totalSize)}
               </span>
@@ -111,7 +110,7 @@ export function TransferIndicator() {
               <span>Done</span>
             </span>
           ) : (
-            <span>{myTransfers.length} files</span>
+            <span>{transfers.length} files</span>
           )}
         </div>
 
@@ -121,8 +120,8 @@ export function TransferIndicator() {
             className={`absolute bottom-0 left-0 right-0 h-0.5 rounded-b-md overflow-hidden ${isHomePage ? 'bg-gray-300' : 'bg-white/20'}`}
           >
             <div
-              className="h-full bg-amber-500 transition-all duration-300 ease-out"
-              style={{ width: `${totalMyProgress * 100}%` }}
+              className="h-full bg-[--color-primary] transition-all duration-300 ease-out"
+              style={{ width: `${totalProgress * 100}%` }}
             />
           </div>
         )}

@@ -107,11 +107,11 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
       {/* Racer info header */}
       <div className="flex items-center justify-between mb-1.5 px-1">
         <div className="flex items-center gap-2">
-          <span className="text-amber-400/60 text-xs font-mono">#{position}</span>
-          <span className={`text-sm font-semibold ${isYou ? 'text-amber-300' : 'text-gray-200'}`}>
+          <span className="text-[--color-primary]/60 text-xs font-mono">#{position}</span>
+          <span className={`text-sm font-semibold ${isYou ? 'text-[--color-primary]' : 'text-gray-200'}`}>
             {racer.name}
             {isYou && (
-              <span className="ml-1.5 text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
+              <span className="ml-1.5 text-[10px] bg-[--color-primary]/20 text-[--color-primary] px-1.5 py-0.5 rounded-full">
                 YOU
               </span>
             )}
@@ -133,7 +133,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="0.5"
-                className="text-amber-500"
+                className="text-[--color-primary]"
               />
             </pattern>
             <rect width="100%" height="100%" fill={`url(#wave-${racer.id})`} />
@@ -159,7 +159,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
             racer.status === 'finished'
               ? 'bg-gradient-to-r from-emerald-900/40 to-emerald-700/40'
               : racer.status === 'racing'
-                ? 'bg-gradient-to-r from-amber-900/30 to-amber-700/30'
+                ? 'bg-gradient-to-r from-[--color-primary]/30 to-[--color-primary]/50'
                 : 'bg-gray-800/30'
           }`}
           style={{ width: `${Math.min(progressPercent, 92)}%` }}
@@ -175,7 +175,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
               racer.status === 'finished'
                 ? 'text-emerald-400 samurai-victory'
                 : racer.status === 'racing'
-                  ? 'text-amber-400 samurai-run'
+                  ? 'text-[--color-primary] samurai-run'
                   : 'text-gray-500'
             } ${isYou ? 'scale-110' : ''}`}
           />
@@ -187,7 +187,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
             racer.status === 'finished'
               ? 'text-emerald-400'
               : racer.status === 'racing'
-                ? 'text-amber-400'
+                ? 'text-[--color-primary]'
                 : 'text-gray-500'
           }`}
         >
@@ -201,7 +201,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
           {formatBytes(racer.transferredSize)} / {formatBytes(racer.totalSize)}
         </span>
         {racer.status === 'finished' && <span className="text-emerald-500">✓ Complete</span>}
-        {racer.status === 'racing' && <span className="text-amber-500 samurai-dots">Sending</span>}
+        {racer.status === 'racing' && <span className="text-[--color-primary] samurai-dots">Sending</span>}
         {racer.status === 'idle' && <span>Waiting</span>}
       </div>
     </div>
@@ -306,11 +306,11 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
         absolute right-2 top-full mt-1 w-80
         border rounded-xl shadow-2xl z-50
         ${isExiting ? 'popover-exit' : 'popover-enter'}
-        bg-gray-950/95 border-amber-900/30 backdrop-blur-xl
+        bg-gray-950/95 border-gray-700/50 backdrop-blur-xl
       `}
     >
       {/* Header with Japanese-inspired styling */}
-      <div className="relative px-4 py-3 border-b border-amber-900/20 overflow-hidden">
+      <div className="relative px-4 py-3 border-b border-gray-700/50 overflow-hidden">
         {/* Decorative background pattern */}
         <div className="absolute inset-0 opacity-5">
           <svg className="w-full h-full" preserveAspectRatio="none">
@@ -318,21 +318,21 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
               <circle cx="20" cy="20" r="15" fill="none" stroke="currentColor" strokeWidth="0.5" />
               <circle cx="20" cy="20" r="8" fill="none" stroke="currentColor" strokeWidth="0.5" />
             </pattern>
-            <rect width="100%" height="100%" fill="url(#header-pattern)" className="text-amber-500" />
+            <rect width="100%" height="100%" fill="url(#header-pattern)" className="text-[--color-primary]" />
           </svg>
         </div>
 
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* Decorative emblem */}
-            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="currentColor">
+            <div className="w-6 h-6 rounded-full bg-[--color-primary]/10 border border-[--color-primary]/30 flex items-center justify-center">
+              <svg className="w-3.5 h-3.5 text-[--color-primary]" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2L4 7v10l8 5 8-5V7l-8-5zm0 2.5L18 8v8l-6 3.5L6 16V8l6-3.5z" />
               </svg>
             </div>
             <div>
-              <h3 className="text-sm font-bold text-amber-100 tracking-wide">SAMURAI RACE</h3>
-              <p className="text-[10px] text-amber-500/60 uppercase tracking-widest">
+              <h3 className="text-sm font-bold text-gray-100 tracking-wide">SAMURAI RACE</h3>
+              <p className="text-[10px] text-[--color-primary]/60 uppercase tracking-widest">
                 File Transfer Battle
               </p>
             </div>
@@ -341,7 +341,7 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
             className={`text-xs font-mono px-2 py-1 rounded-full ${
               allComplete
                 ? 'bg-emerald-500/20 text-emerald-400'
-                : 'bg-amber-500/20 text-amber-400'
+                : 'bg-[--color-primary]/20 text-[--color-primary]'
             }`}
           >
             {completedFiles}/{totalFiles}
@@ -361,7 +361,7 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2 border-t border-amber-900/20 flex items-center justify-between">
+      <div className="px-4 py-2 border-t border-gray-700/50 flex items-center justify-between">
         <span className="text-[10px] text-gray-600">
           {allComplete ? '🎌 All transfers complete!' : '⚔️ Battle in progress...'}
         </span>
@@ -372,7 +372,7 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
                 onDismiss();
                 closePopover();
               }}
-              className="text-[10px] text-amber-500/70 hover:text-amber-400 transition-colors cursor-pointer"
+              className="text-[10px] text-[--color-primary]/70 hover:text-[--color-primary] transition-colors cursor-pointer"
             >
               Dismiss
             </button>
