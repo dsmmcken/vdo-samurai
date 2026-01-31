@@ -25,33 +25,65 @@ const SVG_DATA = {
 
 interface AnimatedNumberProps {
   number: 1 | 2 | 3;
+  isExiting?: boolean;
 }
 
-function AnimatedNumber({ number }: AnimatedNumberProps) {
+function AnimatedNumber({ number, isExiting = false }: AnimatedNumberProps) {
   const pathRef = useRef<SVGPathElement>(null);
+  const [pathLength, setPathLength] = useState<number>(1000);
   const data = SVG_DATA[number];
 
   useEffect(() => {
     if (pathRef.current) {
       const length = pathRef.current.getTotalLength();
-      pathRef.current.style.strokeDasharray = String(length);
-      pathRef.current.style.strokeDashoffset = String(length);
-      // Trigger animation
-      pathRef.current.getBoundingClientRect(); // Force reflow
-      pathRef.current.style.animation = 'draw 0.8s ease-out forwards';
+      setPathLength(length);
     }
   }, []);
 
-  const maskId = `mask-${number}-${Date.now()}`;
+  const maskId = `mask-${number}-${Math.random().toString(36).substr(2, 9)}`;
+  const filterId = `blur-${number}-${Math.random().toString(36).substr(2, 9)}`;
 
   return (
-    <svg
-      viewBox={data.viewBox}
-      className="w-[480px] h-[480px]"
+    <div
+      className={`${isExiting ? 'animate-exit-down' : 'animate-enter'}`}
       style={{
-        filter: 'drop-shadow(4px 4px 8px rgba(0, 0, 0, 0.5)) drop-shadow(8px 8px 16px rgba(0, 0, 0, 0.3))',
+        animation: isExiting ? 'exitDown 0.3s ease-in forwards' : 'enterIn 0.2s ease-out',
       }}
     >
+      <svg
+        viewBox={data.viewBox}
+        className="w-[480px] h-[480px]"
+        style={{
+          filter: 'drop-shadow(4px 4px 8px rgba(0, 0, 0, 0.5)) drop-shadow(8px 8px 16px rgba(0, 0, 0, 0.3))',
+        }}
+      >
+        <defs>
+          <filter id={filterId}>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="8" />
+          </filter>
+          <mask id={maskId}>
+            <path
+              ref={pathRef}
+              d={data.reveal}
+              fill="none"
+              stroke="white"
+              strokeWidth="70"
+              strokeMiterlimit="10"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter={`url(#${filterId})`}
+              style={{
+                strokeDasharray: pathLength,
+                strokeDashoffset: pathLength,
+                animation: 'draw 0.8s ease-out forwards',
+              }}
+            />
+          </mask>
+        </defs>
+        <g mask={`url(#${maskId})`}>
+          <path d={data.content} fill="white" />
+        </g>
+      </svg>
       <style>
         {`
           @keyframes draw {
@@ -59,32 +91,34 @@ function AnimatedNumber({ number }: AnimatedNumberProps) {
               stroke-dashoffset: 0;
             }
           }
+          @keyframes exitDown {
+            from {
+              opacity: 1;
+              transform: translateY(0);
+            }
+            to {
+              opacity: 0;
+              transform: translateY(60px);
+            }
+          }
+          @keyframes enterIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
+          }
         `}
       </style>
-      <defs>
-        <mask id={maskId}>
-          <path
-            ref={pathRef}
-            d={data.reveal}
-            fill="none"
-            stroke="white"
-            strokeWidth="56"
-            strokeMiterlimit="10"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </mask>
-      </defs>
-      <g mask={`url(#${maskId})`}>
-        <path d={data.content} fill="white" />
-      </g>
-    </svg>
+    </div>
   );
 }
 
 export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
   const [visible, setVisible] = useState(false);
   const [displayCount, setDisplayCount] = useState<number | null>(null);
+  const [exitingCount, setExitingCount] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevCountdownRef = useRef<number | null>(null);
 
@@ -97,14 +131,27 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
 
     if (countdown !== null) {
       setVisible(true);
+      // If we have a previous number, set it as exiting
+      if (displayCount !== null && displayCount !== countdown) {
+        setExitingCount(displayCount);
+        // Clear exiting after animation
+        setTimeout(() => setExitingCount(null), 300);
+      }
       setDisplayCount(countdown);
     } else if (prevCountdownRef.current !== null) {
+      // Set the last number as exiting
+      if (displayCount !== null) {
+        setExitingCount(displayCount);
+      }
       // Brief delay before hiding after countdown ends
-      timerRef.current = setTimeout(() => setVisible(false), 300);
+      timerRef.current = setTimeout(() => {
+        setVisible(false);
+        setExitingCount(null);
+      }, 300);
     }
 
     prevCountdownRef.current = countdown;
-  }, [countdown]);
+  }, [countdown, displayCount]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Responding to countdown prop change is valid
@@ -118,12 +165,19 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
 
   if (!visible) return null;
 
-  const isValidNumber = displayCount === 1 || displayCount === 2 || displayCount === 3;
+  const isValidNumber = (n: number | null): n is 1 | 2 | 3 => n === 1 || n === 2 || n === 3;
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="text-center">
-        {isValidNumber ? (
+      <div className="text-center relative">
+        {/* Exiting number */}
+        {isValidNumber(exitingCount) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <AnimatedNumber key={`exit-${exitingCount}`} number={exitingCount} isExiting />
+          </div>
+        )}
+        {/* Current number */}
+        {isValidNumber(displayCount) ? (
           <div key={displayCount}>
             <AnimatedNumber number={displayCount} />
           </div>
