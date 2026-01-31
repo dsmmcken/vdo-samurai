@@ -49,7 +49,7 @@ function AnimatedNumber({ number }: AnimatedNumberProps) {
       viewBox={data.viewBox}
       className="w-80 h-80"
       style={{
-        filter: 'drop-shadow(0 0 40px rgba(220, 42, 38, 0.6)) drop-shadow(0 0 80px rgba(220, 42, 38, 0.3))',
+        filter: 'drop-shadow(4px 4px 8px rgba(0, 0, 0, 0.5)) drop-shadow(8px 8px 16px rgba(0, 0, 0, 0.3))',
       }}
     >
       <style>
@@ -76,7 +76,7 @@ function AnimatedNumber({ number }: AnimatedNumberProps) {
         </mask>
       </defs>
       <g mask={`url(#${maskId})`}>
-        <path d={data.content} fill="#dc2a26" />
+        <path d={data.content} fill="white" />
       </g>
     </svg>
   );
@@ -131,7 +131,7 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
           <div
             className="text-[12rem] font-bold text-white animate-bounce"
             style={{
-              textShadow: '0 0 60px rgba(220, 42, 38, 0.8), 0 0 120px rgba(220, 42, 38, 0.4)',
+              textShadow: '4px 4px 8px rgba(0, 0, 0, 0.5), 8px 8px 16px rgba(0, 0, 0, 0.3)',
             }}
           >
             {displayCount}
