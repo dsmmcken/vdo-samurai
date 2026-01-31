@@ -7,6 +7,7 @@ import {
   useSensors,
   type DragEndEvent
 } from '@dnd-kit/core';
+import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSessionStore } from '../../store/sessionStore';
 import { usePeerStore } from '../../store/peerStore';
@@ -77,10 +78,15 @@ export function TileGrid() {
   const totalParticipants = orderedParticipantIds.length;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      modifiers={[restrictToHorizontalAxis]}
+      onDragEnd={handleDragEnd}
+    >
       <SortableContext items={orderedParticipantIds} strategy={horizontalListSortingStrategy}>
         <div
-          className="flex gap-2 overflow-x-auto"
+          className="flex gap-2 overflow-hidden"
           role="list"
           aria-label={`Participant tiles (${totalParticipants} participant${totalParticipants !== 1 ? 's' : ''})`}
         >
