@@ -11,6 +11,11 @@ import {
   type CompositeOptions
 } from './ffmpeg';
 import {
+  compositeTimeline,
+  cancelTimelineExport,
+  type TimelineExportOptions
+} from './ffmpeg-timeline';
+import {
   saveChunk,
   getChunks,
   finalizeRecording,
@@ -108,6 +113,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('ffmpeg:getVideoInfo', async (_event, inputPath: string) => {
     return getVideoInfo(inputPath);
+  });
+
+  // Timeline-aware export handler
+  ipcMain.handle('ffmpeg:compositeTimeline', async (_event, options: TimelineExportOptions) => {
+    return compositeTimeline(options);
+  });
+
+  ipcMain.handle('ffmpeg:cancelTimeline', () => {
+    return cancelTimelineExport();
   });
 
   // Storage handlers

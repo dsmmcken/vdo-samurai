@@ -18,13 +18,14 @@ files:
   - "!{.prettierrc,.prettierignore,tsconfig*.json,vite.config.ts,electron.vite.config.ts}"
 
 extraResources:
-  - from: node_modules/@ffmpeg-installer
-    to: ffmpeg
+  - from: node_modules/ffmpeg-static
+    to: ffmpeg-static
     filter:
-      - "**/*"
+      - "ffmpeg"
+      - "ffmpeg.exe"
 
 asarUnpack:
-  - node_modules/@ffmpeg-installer/**/*
+  - node_modules/ffmpeg-static/**/*
 
 mac:
   category: public.app-category.video

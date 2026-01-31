@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useNLEStore, getClipDuration } from '../../store/nleStore';
 import { useTransferStore } from '../../store/transferStore';
 import { useRecordingStore } from '../../store/recordingStore';
-import { useComposite, type VideoSource } from '../../hooks/useComposite';
+import { useComposite } from '../../hooks/useComposite';
 import { FFmpegService } from '../../utils/ffmpeg';
 import { Timeline } from './Timeline';
 import { PreviewPanel } from './PreviewPanel';
@@ -27,7 +27,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     totalDuration
   } = useNLEStore();
   const { transfers, receivedRecordings } = useTransferStore();
-  const { localBlob, localScreenBlob, startTime, endTime, editPoints } = useRecordingStore();
+  const { localBlob, localScreenBlob } = useRecordingStore();
 
   // Use the composite hook instead of direct service
   const {
@@ -38,7 +38,7 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     outputBlob,
     outputUrl,
     outputFormat,
-    composite,
+    compositeTimeline,
     reset: resetExport,
     terminate: terminateComposite
   } = useComposite();
@@ -145,66 +145,33 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
   ]);
 
   const handleExport = useCallback(async () => {
-    if (!localBlob) {
+    // Need at least local recording or clips to export
+    if (!localBlob && clips.length === 0) {
       return;
-    }
-
-    // Use startTime/endTime from store, or calculate from current time
-    const exportStartTime = startTime || Date.now();
-    const exportEndTime = endTime || Date.now();
-
-    if (exportEndTime <= exportStartTime) {
-      return;
-    }
-
-    // Build video sources from clips
-    const sources: VideoSource[] = [];
-
-    // Add local camera recording
-    sources.push({
-      id: 'local',
-      name: 'My Recording',
-      blob: localBlob,
-      type: 'camera'
-    });
-
-    // Add local screen recording if available
-    if (localScreenBlob) {
-      sources.push({
-        id: 'local-screen',
-        name: 'My Screen',
-        blob: localScreenBlob,
-        type: 'screen'
-      });
-    }
-
-    // Add received recordings (camera and screen)
-    for (const recording of receivedRecordings) {
-      sources.push({
-        id: recording.type === 'screen' ? `${recording.peerId}-screen` : recording.peerId,
-        name: recording.type === 'screen' ? `${recording.peerName}'s Screen` : recording.peerName,
-        blob: recording.blob,
-        type: recording.type
-      });
     }
 
     try {
-      await composite(sources, editPoints, exportStartTime, exportEndTime, {
-        format: outputFormat,
-        layout: 'focus'
-      });
+      // Use timeline-aware export
+      await compositeTimeline(
+        clips,
+        localBlob,
+        localScreenBlob,
+        receivedRecordings,
+        {
+          format: outputFormat,
+          transitionDurationMs: 300, // 0.3s crossfade
+        }
+      );
     } catch (err) {
       console.error('Export failed:', err);
     }
   }, [
-    startTime,
-    endTime,
+    clips,
     localBlob,
     localScreenBlob,
     receivedRecordings,
-    editPoints,
     outputFormat,
-    composite
+    compositeTimeline
   ]);
 
   const handleCancelExport = useCallback(() => {

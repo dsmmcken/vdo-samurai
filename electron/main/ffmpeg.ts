@@ -1,5 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
-import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import { join } from 'path';
@@ -7,7 +7,9 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 
 // Configure fluent-ffmpeg to use the bundled ffmpeg binary
-ffmpeg.setFfmpegPath(ffmpegPath);
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
+}
 
 // Configuration
 const COMPOSITE_CONFIG = {

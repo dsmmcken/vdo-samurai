@@ -42,6 +42,41 @@ interface VideoInfo {
   height: number;
 }
 
+// Timeline export types
+type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only';
+
+interface ExportSourceRef {
+  sourceIndex: number;
+  trimStartMs: number;
+  trimEndMs: number;
+}
+
+interface ExportSegment {
+  id: string;
+  startTimeMs: number;
+  endTimeMs: number;
+  peerId: string | null;
+  peerName: string;
+  layout: ExportLayout;
+  camera?: ExportSourceRef;
+  screen?: ExportSourceRef;
+}
+
+interface TimelineExportOptions {
+  inputFiles: string[];
+  outputPath: string;
+  format: 'mp4' | 'webm';
+  segments: ExportSegment[];
+  sourceCount: number;
+  transitionDurationMs: number;
+}
+
+interface TimelineExportResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
 interface ScreenSource {
   id: string;
   name: string;
@@ -88,7 +123,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('ffmpeg:concatenate', inputFiles, outputPath, format),
 
     getVideoInfo: (inputPath: string): Promise<VideoInfo> =>
-      ipcRenderer.invoke('ffmpeg:getVideoInfo', inputPath)
+      ipcRenderer.invoke('ffmpeg:getVideoInfo', inputPath),
+
+    // Timeline-aware export
+    compositeTimeline: (options: TimelineExportOptions): Promise<TimelineExportResult> =>
+      ipcRenderer.invoke('ffmpeg:compositeTimeline', options),
+
+    cancelTimeline: (): Promise<boolean> => ipcRenderer.invoke('ffmpeg:cancelTimeline')
   },
 
   // Storage operations

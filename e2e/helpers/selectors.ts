@@ -53,6 +53,9 @@ export const selectors = {
     // Export states
     exportingHeader: 'h2:has-text("Exporting Video")',
     exportCompleteTitle: 'h3:has-text("Video Ready!")',
+    exportFailedTitle: 'h3:has-text("Export Failed")',
+    exportErrorMessage: '.text-red-400',
+    exportRetryButton: 'button:has-text("Try Again")',
     backToEditorButton: 'button:has-text("Back to Editor")',
 
     // Transfer indicator

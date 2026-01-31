@@ -43,6 +43,41 @@ export interface VideoInfo {
   height: number;
 }
 
+// Timeline export types
+export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only';
+
+export interface ExportSourceRef {
+  sourceIndex: number;
+  trimStartMs: number;
+  trimEndMs: number;
+}
+
+export interface ExportSegment {
+  id: string;
+  startTimeMs: number;
+  endTimeMs: number;
+  peerId: string | null;
+  peerName: string;
+  layout: ExportLayout;
+  camera?: ExportSourceRef;
+  screen?: ExportSourceRef;
+}
+
+export interface TimelineExportOptions {
+  inputFiles: string[];
+  outputPath: string;
+  format: 'mp4' | 'webm';
+  segments: ExportSegment[];
+  sourceCount: number;
+  transitionDurationMs: number;
+}
+
+export interface TimelineExportResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
 export interface ScreenSource {
   id: string;
   name: string;
@@ -74,6 +109,9 @@ export interface ElectronAPI {
       format: 'mp4' | 'webm'
     ) => Promise<CompositeResult>;
     getVideoInfo: (inputPath: string) => Promise<VideoInfo>;
+    // Timeline-aware export
+    compositeTimeline: (options: TimelineExportOptions) => Promise<TimelineExportResult>;
+    cancelTimeline: () => Promise<boolean>;
   };
   storage: {
     saveChunk: (
