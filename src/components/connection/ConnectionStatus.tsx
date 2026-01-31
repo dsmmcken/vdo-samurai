@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useSessionStore } from '../../store/sessionStore';
 import { usePeerStore } from '../../store/peerStore';
 import { usePopoverStore } from '../../store/popoverStore';
+import { useRecordingStore } from '../../store/recordingStore';
 import { useDelayedUnmount } from '../../hooks/useDelayedUnmount';
 
 interface ConnectionStatusProps {
@@ -13,6 +14,7 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
   const { isConnected, isConnecting, sessionId } = useSessionStore();
   const { peers } = usePeerStore();
   const { activePopover, togglePopover, closePopover } = usePopoverStore();
+  const { isRecording, internalSessionId } = useRecordingStore();
   const location = useLocation();
   const isSessionPage = location.pathname.startsWith('/session/');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -118,6 +120,16 @@ export function ConnectionStatus({ onReconnect }: ConnectionStatusProps) {
                 <h4 className="text-sm font-medium text-gray-400 mb-2">Session</h4>
                 <code className="text-xs text-gray-300 bg-[--color-dark] px-2 py-1 rounded block truncate">
                   {sessionId}
+                </code>
+              </div>
+            )}
+
+            {/* Recording session ID */}
+            {isRecording && internalSessionId && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-400 mb-2">Recording Session</h4>
+                <code className="text-xs text-gray-300 bg-[--color-dark] px-2 py-1 rounded block truncate">
+                  {internalSessionId}
                 </code>
               </div>
             )}
