@@ -45,9 +45,16 @@ export interface CompositeResult {
 let currentProcess: ReturnType<typeof ffmpeg> | null = null;
 
 function sendProgressToRenderer(progress: number): void {
+  // Validate progress to prevent NaN from being sent to renderer
+  if (typeof progress !== 'number' || !Number.isFinite(progress)) {
+    console.warn('[FFmpeg] Invalid progress value:', progress);
+    return;
+  }
+  // Clamp to valid range [0, 1]
+  const clampedProgress = Math.max(0, Math.min(1, progress));
   const windows = BrowserWindow.getAllWindows();
   windows.forEach((win) => {
-    win.webContents.send('ffmpeg:progress-update', progress);
+    win.webContents.send('ffmpeg:progress-update', clampedProgress);
   });
 }
 
@@ -104,7 +111,9 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
       });
       sendProgressToRenderer(0.1); // Probe complete
 
-      const { hasAudio, duration: expectedDuration } = probeResult;
+      const { hasAudio, duration: probedDuration } = probeResult;
+      // If duration is 0 (common with MediaRecorder WebM files), use a default estimate
+      const expectedDuration = probedDuration > 0 ? probedDuration : 30;
       console.log('[FFmpeg] Single file, hasAudio:', hasAudio, 'duration:', expectedDuration);
 
       return new Promise((resolve) => {
@@ -134,8 +143,12 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
             console.log('[FFmpeg]', line);
           })
           .on('progress', (progress) => {
-            // Use percent if available, otherwise calculate from timemark
-            if (progress.percent !== undefined && progress.percent > 0) {
+            // Use percent if available and valid, otherwise calculate from timemark
+            if (
+              progress.percent !== undefined &&
+              Number.isFinite(progress.percent) &&
+              progress.percent > 0
+            ) {
               sendProgressToRenderer(progress.percent / 100);
             } else {
               const calculatedProgress = calculateProgressFromTimemark(
@@ -190,7 +203,9 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
       sendProgressToRenderer(0.1); // Probe complete
 
       // Use the longest duration as expected output duration
-      const expectedDuration = Math.max(...fileInfos.map((f) => f.duration));
+      // If all durations are 0 (common with MediaRecorder WebM files), use a default estimate
+      const maxDuration = Math.max(...fileInfos.map((f) => f.duration));
+      const expectedDuration = maxDuration > 0 ? maxDuration : 30; // Default to 30 seconds if unknown
       console.log('[FFmpeg] File info:', fileInfos, 'expectedDuration:', expectedDuration);
 
       const filterComplex = buildFilterComplex(inputFiles, layout, fileInfos);
@@ -203,8 +218,12 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
       });
 
       // If no audio, add anullsrc as an input for the filter graph
+      // Use the expected duration to limit anullsrc (prevents infinite audio with -shortest)
       if (!fileInfos.some((f) => f.hasAudio)) {
-        command = command.input('anullsrc=r=48000:cl=stereo').inputOptions(['-f', 'lavfi']);
+        const audioDuration = expectedDuration + 5; // Add buffer to ensure audio covers video
+        command = command
+          .input(`anullsrc=r=48000:cl=stereo`)
+          .inputOptions(['-f', 'lavfi', '-t', String(audioDuration)]);
       }
 
       const outputOpts = ['-y'];
@@ -233,8 +252,12 @@ export async function compositeVideos(options: CompositeOptions): Promise<Compos
             console.log('[FFmpeg]', line);
           })
           .on('progress', (progress) => {
-            // Use percent if available, otherwise calculate from timemark
-            if (progress.percent !== undefined && progress.percent > 0) {
+            // Use percent if available and valid, otherwise calculate from timemark
+            if (
+              progress.percent !== undefined &&
+              Number.isFinite(progress.percent) &&
+              progress.percent > 0
+            ) {
               sendProgressToRenderer(progress.percent / 100);
             } else {
               const calculatedProgress = calculateProgressFromTimemark(

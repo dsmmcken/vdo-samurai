@@ -280,3 +280,22 @@ export async function waitForFocusedPeerId(
     { timeout }
   );
 }
+
+/**
+ * Wait for local blob to be set in recording store
+ * More reliable than UI-based detection for verifying recording completed
+ */
+export async function waitForLocalBlob(page: Page, timeout = 30000): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const store = (window as unknown as Record<string, { getState?: () => { localBlob?: Blob | null } }>).useRecordingStore;
+      if (store?.getState) {
+        const state = store.getState();
+        return state?.localBlob !== null && state?.localBlob !== undefined;
+      }
+      return false;
+    },
+    undefined,
+    { timeout }
+  );
+}
