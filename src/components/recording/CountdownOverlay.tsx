@@ -47,7 +47,7 @@ function AnimatedNumber({ number }: AnimatedNumberProps) {
   return (
     <svg
       viewBox={data.viewBox}
-      className="w-80 h-80"
+      className="w-[480px] h-[480px]"
       style={{
         filter: 'drop-shadow(4px 4px 8px rgba(0, 0, 0, 0.5)) drop-shadow(8px 8px 16px rgba(0, 0, 0, 0.3))',
       }}
