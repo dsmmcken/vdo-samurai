@@ -190,9 +190,9 @@ export function SessionPage() {
 
         if (point.type !== 'focus-change') continue;
 
-        const clipStartTime = Math.max(0, point.timestamp - startTime);
+        const clipStartTime = Math.max(0, point.timestamp);
         const clipEndTime = nextPoint
-          ? Math.max(clipStartTime, nextPoint.timestamp - startTime)
+          ? Math.max(clipStartTime, nextPoint.timestamp)
           : recordingDuration;
 
         // Skip clips with no duration

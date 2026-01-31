@@ -57,6 +57,10 @@ export const selectors = {
 
     // Transfer indicator
     transfersInProgress: 'text=Transfers in progress',
+
+    // Timeline clips
+    timelineClip: '[data-testid="timeline-clip"]',
+    clipByPeerName: (name: string) => `[data-testid="timeline-clip"][data-peer-name="${name}"]`,
   },
 
   // General

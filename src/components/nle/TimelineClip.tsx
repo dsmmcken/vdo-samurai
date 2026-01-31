@@ -107,6 +107,9 @@ export function TimelineClip({
   return (
     <div
       ref={clipRef}
+      data-testid="timeline-clip"
+      data-peer-name={clip.peerName}
+      data-duration={duration}
       className={`relative h-12 rounded cursor-pointer select-none group transition-all ${
         isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-black' : ''
       } ${isDragging ? 'opacity-70 cursor-grabbing' : ''}`}
