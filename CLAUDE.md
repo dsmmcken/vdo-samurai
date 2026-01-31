@@ -18,7 +18,7 @@ npm run format       # Format code with Prettier
 npm run format:check # Check formatting
 npm run tsc         # TypeScript type check
 npm run test:e2e         # Run E2E tests (visible browser)
-npm run test:e2e:headless # Run E2E tests in headless mode
+npm run test:e2e:headless # Run E2E tests in headless mode (preferred for agents and CI)
 npm run test:e2e:ui      # Run with Playwright UI
 npm run test:e2e:debug   # Run in debug mode
 ```
