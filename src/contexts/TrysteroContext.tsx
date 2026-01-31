@@ -298,32 +298,50 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
 
         // Send current focus state to the new peer (so they sync to existing focus)
-        // Always send if we have a focus state set (timestamp > 0).
-        // The receiving peer will use timestamp comparison to determine which focus wins.
-        // This ensures that peers who join later sync to the established focus state.
-        if (stateRef.current.focusTimestamp > 0) {
+        // Only the host sends initial focus state to avoid race conditions where both
+        // peers try to set focus simultaneously. The host is the authority since they
+        // were in the room first.
+        // Use Date.now() to ensure the timestamp is always newer than the receiver's initial
+        // timestamp (which is 1), guaranteeing the sync is applied.
+        if (stateRef.current.isHost && stateRef.current.focusTimestamp > 0) {
           const focusPeerId = stateRef.current.focusedPeerId ?? selfId;
-          const focusTimestamp = stateRef.current.focusTimestamp;
+          const syncTimestamp = Date.now();
           const focusMsg: FocusChangeData = {
             peerId: focusPeerId,
-            timestamp: focusTimestamp
+            timestamp: syncTimestamp
           };
+          // Update our local timestamp to match what we're sending
+          stateRef.current.focusTimestamp = syncTimestamp;
           console.log('[TrysteroProvider] Sending focus state to new peer:', peerId, focusMsg);
           sendFocusChange(focusMsg, peerId);
+        } else if (!stateRef.current.isHost) {
+          console.log('[TrysteroProvider] Not host, skipping focus sync to new peer:', peerId);
         } else {
           console.log('[TrysteroProvider] No focus state to send to new peer:', peerId);
         }
 
         // Send current tile order to the new peer (so they sync to existing order)
-        if (stateRef.current.tileOrderTimestamp > 0 && stateRef.current.tileOrder.length > 0) {
+        // Only the host sends initial tile order to avoid race conditions where both
+        // peers try to set order simultaneously. The host is the authority since they
+        // were in the room first.
+        // Use Date.now() to ensure the timestamp is always newer than the receiver's initial
+        // timestamp (which is 1), guaranteeing the sync is applied.
+        if (
+          stateRef.current.isHost &&
+          stateRef.current.tileOrderTimestamp > 0 &&
+          stateRef.current.tileOrder.length > 0
+        ) {
           // Translate 'self' to actual selfId for the message
           const broadcastOrder = stateRef.current.tileOrder.map((id) =>
             id === 'self' ? selfId : id
           );
+          const tileOrderSyncTimestamp = Date.now();
           const tileOrderMsg: TileOrderData = {
             order: broadcastOrder,
-            timestamp: stateRef.current.tileOrderTimestamp
+            timestamp: tileOrderSyncTimestamp
           };
+          // Update our local timestamp to match what we're sending
+          stateRef.current.tileOrderTimestamp = tileOrderSyncTimestamp;
           console.log('[TrysteroProvider] Sending tile order to new peer:', peerId, tileOrderMsg);
           sendTileOrder(tileOrderMsg, peerId);
         }
