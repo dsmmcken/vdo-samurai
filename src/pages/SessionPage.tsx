@@ -5,6 +5,7 @@ import { useRecordingStore } from '../store/recordingStore';
 import { useNLEStore, type NLEClip } from '../store/nleStore';
 import { usePopoverStore } from '../store/popoverStore';
 import { usePeerStore } from '../store/peerStore';
+import { useTransferStore } from '../store/transferStore';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { useTrystero } from '../contexts/TrysteroContext';
@@ -55,6 +56,7 @@ export function SessionPage() {
   const { mode, setMode, initializeClips, reset: resetNLE } = useNLEStore();
   const { openPopover } = usePopoverStore();
   const { peers } = usePeerStore();
+  const { receivedRecordings } = useTransferStore();
   const { createSession, joinSession } = useWebRTC();
   const { requestStream, toggleVideo, toggleVideoFull, toggleAudio, getAudioOnlyStream } =
     useMediaStream();
@@ -156,19 +158,69 @@ export function SessionPage() {
     }
   }, [localBlob, isHost, isRecording, openPopover]);
 
+  // Track if recordings have been sent to prevent duplicate sends
+  const recordingsSentRef = useRef(false);
+
   // When recording stops and we're NOT the host, send recordings to host
+  // We use a flag to ensure recordings are only sent once, after both blobs are ready
+  // or after a short delay to ensure the screen blob has time to be set
   useEffect(() => {
-    if (localBlob && !isHost) {
-      // Non-host users send their recording(s) to all peers (host will receive them)
+    if (!localBlob || isHost || recordingsSentRef.current) return;
+
+    // If screen recording was active, wait for the screen blob to be available
+    // The screen blob is set asynchronously after the camera blob
+    const sendRecordings = () => {
+      if (recordingsSentRef.current) return;
+      recordingsSentRef.current = true;
+
       const recordings: Array<{ blob: Blob; type: 'camera' | 'screen' }> = [
         { blob: localBlob, type: 'camera' }
       ];
       if (localScreenBlob) {
         recordings.push({ blob: localScreenBlob, type: 'screen' });
+        console.log('[SessionPage] Sending camera and screen recordings');
+      } else {
+        console.log('[SessionPage] Sending camera recording only (no screen blob)');
       }
       sendMultipleToAllPeers(recordings);
+    };
+
+    // If we already have both blobs, send immediately
+    if (localScreenBlob) {
+      sendRecordings();
+      return;
     }
+
+    // Otherwise, wait a short time for the screen blob to be set
+    // This handles the async timing between camera and screen blob being set
+    const timeoutId = setTimeout(() => {
+      // Check again if screen blob is now available
+      // We need to read from the store directly to get the latest value
+      const currentState = useRecordingStore.getState();
+      if (currentState.localScreenBlob) {
+        // Use the current screen blob from the store
+        recordingsSentRef.current = true;
+        const recordings: Array<{ blob: Blob; type: 'camera' | 'screen' }> = [
+          { blob: localBlob, type: 'camera' },
+          { blob: currentState.localScreenBlob, type: 'screen' }
+        ];
+        console.log('[SessionPage] Sending camera and screen recordings (after delay)');
+        sendMultipleToAllPeers(recordings);
+      } else {
+        // No screen blob available, just send camera
+        sendRecordings();
+      }
+    }, 500); // Wait 500ms for screen blob to be set
+
+    return () => clearTimeout(timeoutId);
   }, [localBlob, localScreenBlob, isHost, sendMultipleToAllPeers]);
+
+  // Reset the sent flag when recording starts
+  useEffect(() => {
+    if (isRecording) {
+      recordingsSentRef.current = false;
+    }
+  }, [isRecording]);
 
   // Initialize clips from editPoints for NLE editor
   const initializeNLEClips = useCallback(() => {
@@ -199,14 +251,31 @@ export function SessionPage() {
         if (clipEndTime <= clipStartTime) continue;
 
         // Determine peer info
+        // IMPORTANT: Always use focusedPeerId directly, even if peer has disconnected
+        // This ensures received recordings can be matched by peerId
         let peerId: string | null = null;
         let peerName = profile?.displayName || 'You';
 
         if (point.focusedPeerId) {
-          const peer = peers.find((p) => p.id === point.focusedPeerId);
-          if (peer) {
-            peerId = peer.id;
-            peerName = peer.name;
+          // Always use the focusedPeerId - this is critical for matching with received recordings
+          peerId = point.focusedPeerId;
+
+          // Try to find the peer name from multiple sources
+          // 1. First check if peer is still connected
+          const connectedPeer = peers.find((p) => p.id === point.focusedPeerId);
+          if (connectedPeer) {
+            peerName = connectedPeer.name;
+          } else {
+            // 2. Fall back to name from received recordings
+            const receivedRecording = receivedRecordings.find(
+              (r) => r.peerId === point.focusedPeerId
+            );
+            if (receivedRecording) {
+              peerName = receivedRecording.peerName;
+            } else {
+              // 3. Final fallback: use peer ID prefix
+              peerName = `Peer-${point.focusedPeerId.slice(0, 4)}`;
+            }
           }
         }
 
@@ -244,7 +313,7 @@ export function SessionPage() {
     }
 
     initializeClips(clips);
-  }, [editPoints, startTime, endTime, peers, profile, localBlob, initializeClips]);
+  }, [editPoints, startTime, endTime, peers, receivedRecordings, profile, localBlob, initializeClips]);
 
   const handleBeginTransferAndEdit = useCallback(() => {
     // Initialize clips for NLE

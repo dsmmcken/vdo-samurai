@@ -54,6 +54,9 @@ export function useRecording() {
   const sendRecordingMessageRef = useRef<((data: RecordingMessage) => void) | null>(null);
   const sendPeerClipMessageRef = useRef<((data: PeerClipMessage) => void) | null>(null);
   const activeAudioClipIdRef = useRef<string | null>(null);
+  // Refs to avoid stale closures in P2P message handlers
+  const handleStartRecordingRef = useRef<((hostGlobalClockStart: number) => void) | null>(null);
+  const handleStopRecordingRef = useRef<(() => void) | null>(null);
 
   // Lazy initialization of recorders
   const getClipRecorder = useCallback(() => {
@@ -101,11 +104,13 @@ export function useRecording() {
             break;
           case 'start':
             if (message.globalClockStart) {
-              handleStartRecording(message.globalClockStart);
+              // Use ref to get the latest handler (avoids stale closure)
+              handleStartRecordingRef.current?.(message.globalClockStart);
             }
             break;
           case 'stop':
-            handleStopRecording();
+            // Use ref to get the latest handler (avoids stale closure)
+            handleStopRecordingRef.current?.();
             break;
         }
       });
@@ -312,6 +317,17 @@ export function useRecording() {
     finalizeClip,
     broadcastClipInfo
   ]);
+
+  // Keep refs up to date to avoid stale closures in P2P message handlers
+  // This is necessary because onRecording callback is set up once and captures
+  // the handlers at that moment. Using refs allows us to always call the latest version.
+  useEffect(() => {
+    handleStartRecordingRef.current = handleStartRecording;
+  }, [handleStartRecording]);
+
+  useEffect(() => {
+    handleStopRecordingRef.current = handleStopRecording;
+  }, [handleStopRecording]);
 
   /**
    * Start recording (host only)
