@@ -125,9 +125,9 @@ test.describe('Transfer Indicator Persistence', () => {
     const { page } = app;
     await navigateToSession(page);
 
-    // Verify indicator is not visible initially
     const indicator = page.locator('button[aria-label="File transfers"]');
-    await expect(indicator).toHaveCount(0);
+    // Note: Indicator is visible for host in session (to see the race), but without active transfers
+    // The indicator is always visible now for hosts, so we just verify the store state
 
     // Verify store is accessible
     const initialState = await getTransferState(page);
@@ -151,10 +151,10 @@ test.describe('Transfer Indicator Persistence', () => {
 
     expect(injected).toBe(true);
 
-    // Indicator should now be visible
+    // Indicator should be visible
     await expect(indicator).toBeVisible({ timeout: 5000 });
 
-    // Verify it shows progress
+    // Verify it shows progress after transfer is injected
     await expect(page.locator('text=50%')).toBeVisible();
   });
 
@@ -282,12 +282,12 @@ test.describe('Transfer Indicator Persistence', () => {
     // Wait for animation
     await page.waitForTimeout(500);
 
-    // Indicator should now be hidden
-    await expect(indicator).toHaveCount(0);
-
-    // Verify state
+    // Verify state - indicatorDismissed should be true
     const state = await getTransferState(page);
     expect(state?.indicatorDismissed).toBe(true);
+
+    // Note: The indicator may still be visible for hosts in session (isHostInSession)
+    // as the host can always access the race view. The key is that indicatorDismissed is set.
   });
 
   test('popover displays samurai race theme', async () => {
