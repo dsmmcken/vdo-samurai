@@ -24,10 +24,11 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     setPlayheadPosition,
     isPlaying,
     setIsPlaying,
-    totalDuration
+    totalDuration,
+    reset: resetNLE
   } = useNLEStore();
-  const { transfers, receivedRecordings } = useTransferStore();
-  const { localBlob, localScreenBlob } = useRecordingStore();
+  const { transfers, receivedRecordings, clearReceivedRecordings } = useTransferStore();
+  const { localBlob, localScreenBlob, reset: resetRecording } = useRecordingStore();
 
   // Use the composite hook instead of direct service
   const {
@@ -173,6 +174,16 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
     // Playhead drag ended - could resume playback here if desired
   }, []);
 
+  const handleDiscard = useCallback(() => {
+    // Reset all stores
+    resetNLE();
+    resetRecording();
+    clearReceivedRecordings();
+
+    // Return to session
+    onClose();
+  }, [resetNLE, resetRecording, clearReceivedRecordings, onClose]);
+
   // Show export progress overlay
   if (exportStatus === 'loading' || exportStatus === 'processing' || exportStatus === 'error') {
     return (
@@ -298,6 +309,23 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
               />
             </svg>
             Export
+          </button>
+
+          {/* Discard button */}
+          <button
+            onClick={handleDiscard}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+            title="Discard recording"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+            Discard
           </button>
 
           {/* Close button */}

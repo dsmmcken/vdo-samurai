@@ -64,11 +64,10 @@ async function recordForDuration(page: Page, durationMs: number) {
 }
 
 /**
- * Helper to navigate to NLE Editor after recording
+ * Helper to wait for NLE Editor to open after recording
+ * The editor now opens automatically when recording stops
  */
 async function goToNLEEditor(page: Page) {
-  await page.waitForSelector(selectors.recordingComplete.popoverTitle, { timeout: 10000 });
-  await page.click(selectors.recordingComplete.beginTransferButton);
   await page.waitForSelector(selectors.nle.editor, { timeout: 10000 });
 }
 
@@ -742,11 +741,9 @@ test.describe('Multi-User Timeline Export', () => {
     console.log('[Multi-User Export] Both camera and screen recordings received');
 
     // ==========================================
-    // STEP 9: Go to NLE Editor
+    // STEP 9: NLE Editor opens automatically after recording
     // ==========================================
-    console.log('[Multi-User Export] Going to NLE editor...');
-    await host.page.waitForSelector(selectors.recordingComplete.popoverTitle, { timeout: 10000 });
-    await host.page.click(selectors.recordingComplete.beginTransferButton);
+    console.log('[Multi-User Export] Waiting for NLE editor to open...');
     await host.page.waitForSelector(selectors.nle.editor, { timeout: 10000 });
 
     // Wait for transfers to complete if any pending

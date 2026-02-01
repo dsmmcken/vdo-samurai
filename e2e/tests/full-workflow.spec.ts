@@ -257,15 +257,11 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     console.log('[E2E] File transfer complete');
 
     // ==========================================
-    // STEP 11: Host begins transfer & edit
+    // STEP 11: NLE Editor opens automatically
     // ==========================================
-    console.log('[E2E] Host clicking Begin Transfer & Edit...');
+    console.log('[E2E] Waiting for NLE Editor to open...');
 
-    // Wait for the recording complete popover to appear
-    await host.page.waitForSelector(selectors.recordingComplete.popoverTitle, { timeout: 10000 });
-    await host.page.click(selectors.recordingComplete.beginTransferButton);
-
-    // Wait for NLE editor to load
+    // Editor opens automatically after recording stops
     await host.page.waitForSelector(selectors.nle.editor, { timeout: 10000 });
 
     console.log('[E2E] NLE Editor loaded');

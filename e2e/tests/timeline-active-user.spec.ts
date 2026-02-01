@@ -161,16 +161,10 @@ test.describe('VDO Samurai E2E - Timeline Active User Segments', () => {
     await waitForRecordingComplete(host.page, 30000);
     console.log('[E2E] Recording complete');
 
-    // Wait for Recording Complete popover to appear
-    await host.page.waitForSelector(selectors.recordingComplete.popoverTitle, { timeout: 10000 });
-
     // ==========================================
-    // STEP 9: Open NLE editor
+    // STEP 9: NLE editor opens automatically
     // ==========================================
-    console.log('[E2E] Opening NLE editor...');
-    await host.page.click(selectors.recordingComplete.beginTransferButton);
-
-    // Wait for editor to appear
+    console.log('[E2E] Waiting for NLE editor to open...');
     await host.page.waitForSelector(selectors.nle.editor, { timeout: 10000 });
     console.log('[E2E] NLE editor opened');
 

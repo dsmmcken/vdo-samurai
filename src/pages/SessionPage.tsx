@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
 import { useNLEStore, type NLEClip } from '../store/nleStore';
-import { usePopoverStore } from '../store/popoverStore';
 import { usePeerStore } from '../store/peerStore';
 import { useTransferStore } from '../store/transferStore';
 import { useWebRTC } from '../hooks/useWebRTC';
@@ -16,7 +15,6 @@ import { useFileTransfer } from '../hooks/useFileTransfer';
 import { MainDisplay } from '../components/video/MainDisplay';
 import { TileGrid } from '../components/video/TileGrid';
 import { RecordButton } from '../components/recording/RecordButton';
-import { RecordingCompletePopover } from '../components/recording/RecordingCompletePopover';
 import { CountdownOverlay } from '../components/recording/CountdownOverlay';
 import { NLEEditor } from '../components/nle';
 import { useUserStore } from '../store/userStore';
@@ -53,8 +51,7 @@ export function SessionPage() {
   }, [sessionId, searchParams]);
   const { isConnected, isConnecting, isHost, localStream } = useSessionStore();
   const { localBlob, localScreenBlob, editPoints, startTime, endTime } = useRecordingStore();
-  const { mode, setMode, initializeClips, reset: resetNLE } = useNLEStore();
-  const { openPopover } = usePopoverStore();
+  const { mode, setMode, initializeClips } = useNLEStore();
   const { peers } = usePeerStore();
   const { receivedRecordings } = useTransferStore();
   const { createSession, joinSession } = useWebRTC();
@@ -146,17 +143,6 @@ export function SessionPage() {
       wasRecordingRef.current = true;
     }
   }, [isRecording]);
-
-  // When recording stops and host has a blob, show the popover
-  // Only if we actually recorded in this session (wasRecordingRef is true)
-  useEffect(() => {
-    if (localBlob && isHost && wasRecordingRef.current && !isRecording) {
-      // Reset the flag so it doesn't trigger again
-      wasRecordingRef.current = false;
-      // Show the recording complete popover
-      openPopover('recordingComplete');
-    }
-  }, [localBlob, isHost, isRecording, openPopover]);
 
   // Track if recordings have been sent to prevent duplicate sends
   const recordingsSentRef = useRef(false);
@@ -324,18 +310,17 @@ export function SessionPage() {
     initializeClips
   ]);
 
-  const handleBeginTransferAndEdit = useCallback(() => {
-    // Initialize clips for NLE
-    initializeNLEClips();
-    // Switch to editing mode
-    setMode('editing');
-  }, [initializeNLEClips, setMode]);
-
-  const handleDiscardRecording = useCallback(() => {
-    // Reset recording store will be handled elsewhere
-    // Just close the popover for now
-    resetNLE();
-  }, [resetNLE]);
+  // When recording stops and host has a blob, go straight to editor
+  // Only if we actually recorded in this session (wasRecordingRef is true)
+  useEffect(() => {
+    if (localBlob && isHost && wasRecordingRef.current && !isRecording) {
+      // Reset the flag so it doesn't trigger again
+      wasRecordingRef.current = false;
+      // Go straight to editor instead of showing popover
+      initializeNLEClips();
+      setMode('editing');
+    }
+  }, [localBlob, isHost, isRecording, initializeNLEClips, setMode]);
 
   const handleCloseEditor = useCallback(() => {
     setMode('session');
@@ -586,23 +571,15 @@ export function SessionPage() {
               <ScreenShareButton />
             </div>
 
-            {/* Record button (host only) - with popover anchor */}
-            <div className="relative">
-              <RecordButton
-                ref={recordButtonRef}
-                isRecording={isRecording}
-                isHost={isHost}
-                countdown={countdown}
-                onStart={startRecording}
-                onStop={stopRecording}
-              />
-              {/* Recording complete popover */}
-              <RecordingCompletePopover
-                anchorRef={recordButtonRef}
-                onBeginTransfer={handleBeginTransferAndEdit}
-                onDiscard={handleDiscardRecording}
-              />
-            </div>
+            {/* Record button (host only) */}
+            <RecordButton
+              ref={recordButtonRef}
+              isRecording={isRecording}
+              isHost={isHost}
+              countdown={countdown}
+              onStart={startRecording}
+              onStop={stopRecording}
+            />
           </div>
         </MainDisplay>
       </div>
