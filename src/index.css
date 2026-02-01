@@ -129,12 +129,13 @@ body {
 }
 
 /* Animated diagonal stripes for transferring clips */
+/* For 45deg stripes with 20px period, horizontal repeat is 20/sin(45) ≈ 28.28px */
 @keyframes stripe-animate {
   0% {
     background-position: 0 0;
   }
   100% {
-    background-position: 40px 0;
+    background-position: 28.28px 0;
   }
 }
 
@@ -146,7 +147,7 @@ body {
     rgba(255, 255, 255, 0.15) 10px,
     rgba(255, 255, 255, 0.15) 20px
   );
-  background-size: 40px 40px;
+  /* No background-size - let the repeating gradient tile naturally */
   animation: stripe-animate 1s linear infinite;
 }
 
@@ -220,4 +221,39 @@ body {
 .samurai-dots::after {
   content: '';
   animation: samurai-dots 1.5s steps(1) infinite;
+}
+
+/* Samurai Sprite Sheet Animation */
+.samurai-sprite {
+  width: 37px;
+  height: 30px;
+  background-image: url('/samurai-sprite.png');
+  background-repeat: no-repeat;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+/* Run animation - frames 0-7 (first 8 frames) */
+@keyframes samurai-sprite-run {
+  from { background-position: 0 0; }
+  to { background-position: -296px 0; }
+}
+
+.samurai-sprite-run {
+  animation: samurai-sprite-run 0.5s steps(8) infinite;
+}
+
+/* Idle - static frame at position 8 */
+.samurai-sprite-idle {
+  background-position: -296px 0;
+}
+
+/* Color tinting via CSS filters - red for "You" */
+.samurai-tint-red {
+  filter: sepia(1) saturate(5) hue-rotate(320deg) brightness(0.9);
+}
+
+/* Blue tint for others (enhance the existing blue) */
+.samurai-tint-blue {
+  filter: saturate(1.2) brightness(1.05);
 }
