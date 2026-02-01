@@ -157,6 +157,17 @@ export function TitleBar() {
           <>
             <ShareLink sessionId={shareableCode} />
             <ConnectionStatus />
+            <TransferIndicator />
+            {isRecording && (
+              <div className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                </span>
+                <span>REC</span>
+                <span className="font-mono">{elapsed}</span>
+              </div>
+            )}
             <button
               onClick={handleLeave}
               className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/80 hover:bg-red-500 text-white text-xs font-medium transition-colors cursor-pointer"
@@ -179,17 +190,6 @@ export function TitleBar() {
               </svg>
               Leave
             </button>
-            <TransferIndicator />
-            {isRecording && (
-              <div className="flex items-center gap-1.5 bg-red-500 text-white px-2 py-0.5 rounded text-xs font-medium">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                </span>
-                <span>REC</span>
-                <span className="font-mono">{elapsed}</span>
-              </div>
-            )}
           </>
         )}
 
