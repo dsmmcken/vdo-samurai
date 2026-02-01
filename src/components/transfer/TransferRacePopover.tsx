@@ -3,6 +3,7 @@ import { useTransferStore } from '../../store/transferStore';
 import { useUserStore } from '../../store/userStore';
 import { usePopoverStore } from '../../store/popoverStore';
 import { useDelayedUnmount } from '../../hooks/useDelayedUnmount';
+import gateImg from '/gate.png';
 
 interface TransferRacePopoverProps {
   anchorRef: React.RefObject<HTMLButtonElement | null>;
@@ -29,78 +30,33 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-// Samurai character SVG - running pose
-function SamuraiRunning({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 32 32" fill="currentColor">
-      {/* Head with topknot */}
-      <circle cx="16" cy="6" r="4" />
-      <path d="M16 2 L17 0 L15 0 Z" /> {/* Topknot */}
-      {/* Body leaning forward */}
-      <path d="M12 10 L14 18 L18 18 L20 10 Z" />
-      {/* Running legs */}
-      <path d="M14 18 L10 26 L12 27 L16 20" /> {/* Back leg extended */}
-      <path d="M18 18 L22 24 L20 26 L16 20" /> {/* Front leg forward */}
-      {/* Arms with katana */}
-      <path d="M12 12 L6 14 L7 16 L12 14" /> {/* Back arm */}
-      <path d="M20 12 L26 10 L28 8" strokeWidth="1" /> {/* Katana extended */}
-      <circle cx="26" cy="10" r="1" /> {/* Katana guard */}
-    </svg>
-  );
+// Preload sprite sheet for instant display
+if (typeof window !== 'undefined') {
+  const img = new Image();
+  img.src = '/samurai-sprite.png';
 }
 
-// Samurai at rest/victory
-function SamuraiVictory({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 32 32" fill="currentColor">
-      {/* Head */}
-      <circle cx="16" cy="6" r="4" />
-      <path d="M16 2 L17 0 L15 0 Z" />
-      {/* Body standing tall */}
-      <path d="M13 10 L14 22 L18 22 L19 10 Z" />
-      {/* Legs standing */}
-      <path d="M14 22 L12 30 L14 30 L15 22" />
-      <path d="M18 22 L20 30 L18 30 L17 22" />
-      {/* Arms raised in victory with katana */}
-      <path d="M13 12 L8 8 L6 4" strokeWidth="1" /> {/* Katana raised high */}
-      <circle cx="6" cy="4" r="1" />
-      <path d="M19 12 L24 10 L25 12 L20 14" /> {/* Other arm */}
-    </svg>
-  );
-}
-
-// Samurai idle/waiting
-function SamuraiIdle({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 32 32" fill="currentColor">
-      {/* Head */}
-      <circle cx="16" cy="6" r="4" />
-      <path d="M16 2 L17 0 L15 0 Z" />
-      {/* Body */}
-      <path d="M13 10 L14 22 L18 22 L19 10 Z" />
-      {/* Legs */}
-      <path d="M14 22 L12 30 L14 30 L15 22" />
-      <path d="M18 22 L20 30 L18 30 L17 22" />
-      {/* Arms at rest, katana sheathed */}
-      <path d="M13 12 L10 16 L11 18 L14 14" />
-      <path d="M19 12 L22 16 L21 18 L18 14" />
-      {/* Sheathed katana at side */}
-      <path d="M20 14 L24 26" strokeWidth="1.5" />
-    </svg>
-  );
+// Sprite-based samurai animation component
+function SamuraiSprite({
+  animation,
+  isYou,
+  className = ''
+}: {
+  animation: 'run' | 'idle';
+  isYou: boolean;
+  className?: string;
+}) {
+  const animClass = animation === 'run' ? 'samurai-sprite-run' : 'samurai-sprite-idle';
+  const tintClass = isYou ? 'samurai-tint-red' : 'samurai-tint-blue';
+  return <div className={`samurai-sprite ${animClass} ${tintClass} ${className}`} />;
 }
 
 function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
   const isYou = racer.isYou;
   const progressPercent = Math.round(racer.progress * 100);
 
-  // Determine which samurai to show
-  const SamuraiIcon =
-    racer.status === 'finished'
-      ? SamuraiVictory
-      : racer.status === 'racing'
-        ? SamuraiRunning
-        : SamuraiIdle;
+  // Determine which animation to use (run during race, idle otherwise)
+  const samuraiAnimation = racer.status === 'racing' ? 'run' : 'idle';
 
   return (
     <div className="relative">
@@ -125,67 +81,39 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
       </div>
 
       {/* Race track */}
-      <div className="relative h-10 bg-gray-900/50 rounded-lg overflow-hidden border border-gray-700/50">
-        {/* Track pattern - traditional wave pattern (seigaiha inspired) */}
-        <div className="absolute inset-0 opacity-10">
-          <svg className="w-full h-full" preserveAspectRatio="none">
-            <pattern id={`wave-${racer.id}`} width="20" height="10" patternUnits="userSpaceOnUse">
-              <path
-                d="M0 10 Q5 0 10 10 Q15 20 20 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="0.5"
-                className="text-[--color-primary]"
-              />
-            </pattern>
-            <rect width="100%" height="100%" fill={`url(#wave-${racer.id})`} />
-          </svg>
-        </div>
-
-        {/* Start gate */}
-        <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-600" />
-        <div className="absolute left-1 top-1 text-[8px] text-gray-500 font-bold">START</div>
-
-        {/* Finish gate with torii-inspired design */}
-        <div className="absolute right-3 top-0 bottom-0 flex flex-col items-center justify-center">
-          <div className="w-4 h-1 bg-red-600 rounded-sm" />
-          <div className="flex gap-2 h-6">
-            <div className="w-0.5 bg-red-600" />
-            <div className="w-0.5 bg-red-600" />
-          </div>
-        </div>
-
-        {/* Progress track fill */}
+      <div className="relative h-10 bg-gray-800/50 rounded-lg overflow-hidden border border-gray-700/50">
+        {/* Progress track fill - back layer, chases samurai, fills completely when done */}
         <div
-          className={`absolute left-0 top-0 bottom-0 transition-all duration-500 ease-out ${
+          className={`absolute z-0 left-0 top-0 bottom-0 transition-all duration-500 ease-out ${
             racer.status === 'finished'
               ? 'bg-gradient-to-r from-emerald-900/40 to-emerald-700/40'
               : racer.status === 'racing'
                 ? 'bg-gradient-to-r from-[--color-primary]/30 to-[--color-primary]/50'
                 : 'bg-gray-800/30'
           }`}
-          style={{ width: `${Math.min(progressPercent, 92)}%` }}
+          style={{ width: racer.status === 'finished' ? '100%' : `${Math.min(progressPercent, 85)}%` }}
         />
 
-        {/* Samurai runner */}
+        {/* Finish gate */}
+        <div className="absolute z-10 right-1 top-0 bottom-0 flex items-center justify-center">
+          <img src={gateImg} alt="Finish gate" className="h-full object-contain" />
+        </div>
+
+        {/* Samurai runner - sprite animation */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 transition-all duration-500 ease-out"
-          style={{ left: `calc(${Math.min(progressPercent, 88)}% + 4px)` }}
+          className="absolute z-20 bottom-0 transition-all duration-500 ease-out"
+          style={{ left: `calc(${Math.min(progressPercent, 85)}%)` }}
         >
-          <SamuraiIcon
-            className={`w-7 h-7 drop-shadow-lg ${
-              racer.status === 'finished'
-                ? 'text-emerald-400 samurai-victory'
-                : racer.status === 'racing'
-                  ? 'text-[--color-primary] samurai-run'
-                  : 'text-gray-500'
-            } ${isYou ? 'scale-110' : ''}`}
+          <SamuraiSprite
+            animation={samuraiAnimation}
+            isYou={isYou}
+            className="drop-shadow-lg"
           />
         </div>
 
-        {/* Progress percentage badge */}
+        {/* Progress percentage badge - anchored left */}
         <div
-          className={`absolute right-8 top-1/2 -translate-y-1/2 text-xs font-mono font-bold ${
+          className={`absolute z-30 left-2 top-1/2 -translate-y-1/2 text-xs font-mono font-bold ${
             racer.status === 'finished'
               ? 'text-emerald-400'
               : racer.status === 'racing'
@@ -200,13 +128,15 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
       {/* Transfer details */}
       <div className="flex items-center justify-between mt-1 px-1 text-[10px] text-gray-500">
         <span>
+          {racer.status === 'finished' && <span className="text-emerald-500">✓ Complete</span>}
+          {racer.status === 'racing' && (
+            <span className="text-[--color-primary] samurai-dots">Sending</span>
+          )}
+          {racer.status === 'idle' && <span>Waiting</span>}
+        </span>
+        <span>
           {formatBytes(racer.transferredSize)} / {formatBytes(racer.totalSize)}
         </span>
-        {racer.status === 'finished' && <span className="text-emerald-500">✓ Complete</span>}
-        {racer.status === 'racing' && (
-          <span className="text-[--color-primary] samurai-dots">Sending</span>
-        )}
-        {racer.status === 'idle' && <span>Waiting</span>}
       </div>
     </div>
   );
@@ -240,21 +170,21 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
     }
   }, [isOpen, closePopover, anchorRef]);
 
-  // Build racer data from transfers
+  // Build racer data from transfers - group by actual sender (using senderId)
   const racers = useMemo(() => {
     const racerMap = new Map<string, RacerData>();
 
-    // Group transfers by sender
+    // Group transfers by sender (use senderId for accurate grouping)
     transfers.forEach((transfer) => {
-      const isOutgoing = transfer.direction === 'send';
-      const racerId = isOutgoing ? 'you' : transfer.peerId;
-      const racerName = isOutgoing ? profile?.displayName || 'You' : transfer.peerName;
+      const isYou = transfer.role === 'sender';
+      const racerId = transfer.senderId;
+      const racerName = isYou ? profile?.displayName || 'You' : transfer.senderName;
 
       if (!racerMap.has(racerId)) {
         racerMap.set(racerId, {
           id: racerId,
           name: racerName,
-          isYou: isOutgoing,
+          isYou: isYou,
           progress: 0,
           status: 'idle',
           totalSize: 0,
@@ -379,6 +309,12 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
           {allComplete ? '🎌 All transfers complete!' : '⚔️ Battle in progress...'}
         </span>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => useTransferStore.getState().simulateRace(5000)}
+            className="text-[10px] text-orange-400/70 hover:text-orange-400 transition-colors cursor-pointer"
+          >
+            Simulate
+          </button>
           {allComplete && (
             <button
               onClick={() => {
