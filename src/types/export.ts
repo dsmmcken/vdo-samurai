@@ -59,5 +59,5 @@ export const TIMELINE_EXPORT_CONFIG = {
   PIP_PADDING: 20, // pixels from edge
   PIP_CORNER_RADIUS: 10, // pixels
   TRANSITION_DURATION_MS: 300, // 0.3 seconds
-  BACKGROUND_COLOR: '#000000',
+  BACKGROUND_COLOR: '#000000'
 } as const;

@@ -152,27 +152,14 @@ export function NLEEditor({ onClose }: NLEEditorProps) {
 
     try {
       // Use timeline-aware export
-      await compositeTimeline(
-        clips,
-        localBlob,
-        localScreenBlob,
-        receivedRecordings,
-        {
-          format: outputFormat,
-          transitionDurationMs: 300, // 0.3s crossfade
-        }
-      );
+      await compositeTimeline(clips, localBlob, localScreenBlob, receivedRecordings, {
+        format: outputFormat,
+        transitionDurationMs: 300 // 0.3s crossfade
+      });
     } catch (err) {
       console.error('Export failed:', err);
     }
-  }, [
-    clips,
-    localBlob,
-    localScreenBlob,
-    receivedRecordings,
-    outputFormat,
-    compositeTimeline
-  ]);
+  }, [clips, localBlob, localScreenBlob, receivedRecordings, outputFormat, compositeTimeline]);
 
   const handleCancelExport = useCallback(() => {
     terminateComposite();

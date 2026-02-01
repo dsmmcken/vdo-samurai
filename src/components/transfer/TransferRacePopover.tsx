@@ -108,7 +108,9 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
       <div className="flex items-center justify-between mb-1.5 px-1">
         <div className="flex items-center gap-2">
           <span className="text-[--color-primary]/60 text-xs font-mono">#{position}</span>
-          <span className={`text-sm font-semibold ${isYou ? 'text-[--color-primary]' : 'text-gray-200'}`}>
+          <span
+            className={`text-sm font-semibold ${isYou ? 'text-[--color-primary]' : 'text-gray-200'}`}
+          >
             {racer.name}
             {isYou && (
               <span className="ml-1.5 text-[10px] bg-[--color-primary]/20 text-[--color-primary] px-1.5 py-0.5 rounded-full">
@@ -201,7 +203,9 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
           {formatBytes(racer.transferredSize)} / {formatBytes(racer.totalSize)}
         </span>
         {racer.status === 'finished' && <span className="text-emerald-500">✓ Complete</span>}
-        {racer.status === 'racing' && <span className="text-[--color-primary] samurai-dots">Sending</span>}
+        {racer.status === 'racing' && (
+          <span className="text-[--color-primary] samurai-dots">Sending</span>
+        )}
         {racer.status === 'idle' && <span>Waiting</span>}
       </div>
     </div>
@@ -256,7 +260,7 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
           totalSize: 0,
           transferredSize: 0,
           fileCount: 0,
-          completedCount: 0,
+          completedCount: 0
         });
       }
 
@@ -318,7 +322,12 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
               <circle cx="20" cy="20" r="15" fill="none" stroke="currentColor" strokeWidth="0.5" />
               <circle cx="20" cy="20" r="8" fill="none" stroke="currentColor" strokeWidth="0.5" />
             </pattern>
-            <rect width="100%" height="100%" fill="url(#header-pattern)" className="text-[--color-primary]" />
+            <rect
+              width="100%"
+              height="100%"
+              fill="url(#header-pattern)"
+              className="text-[--color-primary]"
+            />
           </svg>
         </div>
 
@@ -326,7 +335,11 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
           <div className="flex items-center gap-2">
             {/* Decorative emblem */}
             <div className="w-6 h-6 rounded-full bg-[--color-primary]/10 border border-[--color-primary]/30 flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-[--color-primary]" viewBox="0 0 24 24" fill="currentColor">
+              <svg
+                className="w-3.5 h-3.5 text-[--color-primary]"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
                 <path d="M12 2L4 7v10l8 5 8-5V7l-8-5zm0 2.5L18 8v8l-6 3.5L6 16V8l6-3.5z" />
               </svg>
             </div>

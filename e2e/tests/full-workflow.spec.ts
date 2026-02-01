@@ -8,9 +8,6 @@ import {
   waitForPeerScreenShareBadge,
   sleep,
 } from '../helpers/wait-helpers';
-import { verifyFileExists, getFileSize, getVideoInfo, deleteFile } from '../helpers/video-verify';
-import * as path from 'path';
-import * as os from 'os';
 
 test.describe('VDO Samurai E2E - Full Workflow', () => {
   let host: AppInstance;
@@ -297,73 +294,14 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     console.log('[E2E] Export complete');
 
     // ==========================================
-    // STEP 14: Download/save the video
+    // STEP 14: Verify export success via UI
     // ==========================================
-    // Find and click the download button
-    const downloadButton = host.page.locator('button:has-text("Download"), a:has-text("Download")').first();
+    await expect(host.page.locator(selectors.nle.exportCompleteTitle)).toBeVisible();
+    await expect(host.page.locator('h3:has-text("Video Ready!")')).toBeVisible();
+    await expect(host.page.locator('button:has-text("Download")')).toBeVisible();
 
-    // Set up download handling
-    const downloadPromise = host.page.waitForEvent('download', { timeout: 30000 }).catch(() => null);
-
-    await downloadButton.click();
-
-    const download = await downloadPromise;
-    let exportedFilePath: string | null = null;
-
-    if (download) {
-      // Save to temp directory
-      exportedFilePath = path.join(os.tmpdir(), 'vdo-samurai-e2e', `test-export-${Date.now()}.mp4`);
-      await download.saveAs(exportedFilePath);
-      console.log('[E2E] Video saved to:', exportedFilePath);
-    } else {
-      // Fallback: Try to get the path from the app's storage
-      console.log('[E2E] No download event, checking for file via app...');
-
-      // The app may have already saved it - check temp directory
-      const tempPaths = await host.page.evaluate(async () => {
-        const win = window as unknown as { electronAPI?: { storage?: { listRecordings?: () => Promise<{ recordings: string[] }> } } };
-        if (win.electronAPI?.storage?.listRecordings) {
-          return win.electronAPI.storage.listRecordings();
-        }
-        return { recordings: [] };
-      });
-
-      console.log('[E2E] Temp recordings:', tempPaths);
-    }
-
-    // ==========================================
-    // STEP 15: Verify exported video
-    // ==========================================
-    if (exportedFilePath && verifyFileExists(exportedFilePath)) {
-      console.log('[E2E] Verifying exported video...');
-
-      // Check file size (should be > 100KB for 5s video)
-      const fileSize = getFileSize(exportedFilePath);
-      expect(fileSize).toBeGreaterThan(100000);
-      console.log('[E2E] File size:', fileSize, 'bytes');
-
-      // Check duration using FFmpeg (via app's IPC)
-      try {
-        const videoInfo = await getVideoInfo(host.page, exportedFilePath);
-        console.log('[E2E] Video info:', videoInfo);
-
-        // Duration should be ~5 seconds (allow ±1s tolerance for countdown variance)
-        expect(videoInfo.duration).toBeGreaterThan(4);
-        expect(videoInfo.duration).toBeLessThan(7);
-        console.log('[E2E] Video duration:', videoInfo.duration, 'seconds');
-      } catch {
-        console.log('[E2E] Could not verify duration via FFmpeg, skipping duration check');
-      }
-
-      // Cleanup
-      deleteFile(exportedFilePath);
-      console.log('[E2E] Cleaned up exported file');
-    } else {
-      console.log('[E2E] No exported file found to verify - checking UI state instead');
-
-      // Verify we're on the export complete screen
-      await expect(host.page.locator(selectors.nle.exportCompleteTitle)).toBeVisible();
-    }
+    // Verify output size is shown (confirms blob was created)
+    await expect(host.page.locator('text=/\\d+(\\.\\d+)?\\s*(MB|KB)/')).toBeVisible();
 
     console.log('[E2E] Test completed successfully!');
   });

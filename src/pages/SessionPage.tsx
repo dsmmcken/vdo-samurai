@@ -313,7 +313,16 @@ export function SessionPage() {
     }
 
     initializeClips(clips);
-  }, [editPoints, startTime, endTime, peers, receivedRecordings, profile, localBlob, initializeClips]);
+  }, [
+    editPoints,
+    startTime,
+    endTime,
+    peers,
+    receivedRecordings,
+    profile,
+    localBlob,
+    initializeClips
+  ]);
 
   const handleBeginTransferAndEdit = useCallback(() => {
     // Initialize clips for NLE

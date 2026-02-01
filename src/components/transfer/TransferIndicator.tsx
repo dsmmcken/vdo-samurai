@@ -25,18 +25,15 @@ export function TransferIndicator() {
   // Show if we've ever had transfers and not dismissed
   // Also show for host when in a session (so they can see the race like participants)
   const isHostInSession = isHost && sessionId !== null;
-  const shouldShow = ((transfers.length > 0 || hasHadTransfers) && !indicatorDismissed) || isHostInSession;
+  const shouldShow =
+    ((transfers.length > 0 || hasHadTransfers) && !indicatorDismissed) || isHostInSession;
   if (!shouldShow) return null;
 
   // Calculate progress for all transfers (both sending and receiving)
-  const activeTransfers = transfers.filter(
-    (t) => t.status === 'active' || t.status === 'pending'
-  );
+  const activeTransfers = transfers.filter((t) => t.status === 'active' || t.status === 'pending');
   const completedTransfers = transfers.filter((t) => t.status === 'complete');
   const totalProgress =
-    transfers.length > 0
-      ? transfers.reduce((acc, t) => acc + t.progress, 0) / transfers.length
-      : 0;
+    transfers.length > 0 ? transfers.reduce((acc, t) => acc + t.progress, 0) / transfers.length : 0;
 
   // Get total transfer size
   const totalSize = transfers.reduce((acc, t) => acc + t.size, 0);

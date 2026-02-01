@@ -5,12 +5,7 @@ import type { VideoSource } from '../utils/TimelineBuilder';
 import type { EditPoint } from '../store/recordingStore';
 import type { OutputFormat } from '../utils/compositeConfig';
 import type { NLEClip } from '../store/nleStore';
-import type {
-  ExportSegment,
-  ExportSource,
-  ExportPlan,
-  ExportLayout,
-} from '../types/export';
+import type { ExportSegment, ExportSource, ExportPlan, ExportLayout } from '../types/export';
 
 export type CompositeStatus = 'idle' | 'loading' | 'processing' | 'complete' | 'error';
 
@@ -31,13 +26,19 @@ function buildExportPlan(
   // Log inputs for debugging
   console.log('[Export] Building export plan:');
   console.log('[Export]   localBlob:', localBlob ? `${localBlob.size} bytes` : 'null');
-  console.log('[Export]   localScreenBlob:', localScreenBlob ? `${localScreenBlob.size} bytes` : 'null');
-  console.log('[Export]   receivedRecordings:', receivedRecordings.map(r => ({
-    peerId: r.peerId,
-    peerName: r.peerName,
-    type: r.type,
-    size: r.blob?.size
-  })));
+  console.log(
+    '[Export]   localScreenBlob:',
+    localScreenBlob ? `${localScreenBlob.size} bytes` : 'null'
+  );
+  console.log(
+    '[Export]   receivedRecordings:',
+    receivedRecordings.map((r) => ({
+      peerId: r.peerId,
+      peerName: r.peerName,
+      type: r.type,
+      size: r.blob?.size
+    }))
+  );
 
   // Build sources array
   const sources: ExportSource[] = [];
@@ -52,7 +53,7 @@ function buildExportPlan(
       peerId: null,
       peerName: 'You',
       sourceType: 'camera',
-      blob: localBlob,
+      blob: localBlob
     });
   }
 
@@ -64,7 +65,7 @@ function buildExportPlan(
       peerId: null,
       peerName: 'You',
       sourceType: 'screen',
-      blob: localScreenBlob,
+      blob: localScreenBlob
     });
   }
 
@@ -77,7 +78,7 @@ function buildExportPlan(
       peerId: recording.peerId,
       peerName: recording.peerName,
       sourceType: recording.type,
-      blob: recording.blob,
+      blob: recording.blob
     });
   }
 
@@ -86,12 +87,15 @@ function buildExportPlan(
 
   // Log available sources for debugging
   console.log('[Export] Available sources:', Array.from(sourceIndexMap.entries()));
-  console.log('[Export] Clips to process:', sortedClips.map(c => ({
-    id: c.id,
-    peerId: c.peerId,
-    peerName: c.peerName,
-    sourceType: c.sourceType,
-  })));
+  console.log(
+    '[Export] Clips to process:',
+    sortedClips.map((c) => ({
+      id: c.id,
+      peerId: c.peerId,
+      peerName: c.peerName,
+      sourceType: c.sourceType
+    }))
+  );
 
   // Build segments from clips
   const segments: ExportSegment[] = [];
@@ -112,7 +116,9 @@ function buildExportPlan(
     const cameraIndex = sourceIndexMap.get(cameraKey);
     const screenIndex = sourceIndexMap.get(screenKey);
 
-    console.log(`[Export] Clip ${clip.id} (${clip.peerName}): cameraKey=${cameraKey} (${cameraIndex}), screenKey=${screenKey} (${screenIndex})`);
+    console.log(
+      `[Export] Clip ${clip.id} (${clip.peerName}): cameraKey=${cameraKey} (${cameraIndex}), screenKey=${screenKey} (${screenIndex})`
+    );
 
     // Determine layout based on available sources
     let layout: ExportLayout;
@@ -136,7 +142,7 @@ function buildExportPlan(
       endTimeMs: currentOutputTime + clipDurationMs,
       peerId: clip.peerId,
       peerName: clip.peerName,
-      layout,
+      layout
     };
 
     // Add source references
@@ -144,7 +150,7 @@ function buildExportPlan(
       segment.camera = {
         sourceIndex: cameraIndex,
         trimStartMs: clip.trimStart,
-        trimEndMs: clip.trimEnd,
+        trimEndMs: clip.trimEnd
       };
     }
 
@@ -152,7 +158,7 @@ function buildExportPlan(
       segment.screen = {
         sourceIndex: screenIndex,
         trimStartMs: clip.trimStart,
-        trimEndMs: clip.trimEnd,
+        trimEndMs: clip.trimEnd
       };
     }
 
@@ -163,7 +169,7 @@ function buildExportPlan(
   return {
     segments,
     sources,
-    totalDurationMs: currentOutputTime,
+    totalDurationMs: currentOutputTime
   };
 }
 
@@ -388,7 +394,9 @@ export function useComposite() {
         }
 
         // Get output path
-        const outputPath = await window.electronAPI.storage.getTempPath(`timeline-output.${format}`);
+        const outputPath = await window.electronAPI.storage.getTempPath(
+          `timeline-output.${format}`
+        );
 
         setProgress(0.1, 'Processing timeline...');
 
@@ -405,7 +413,7 @@ export function useComposite() {
             format,
             segments: plan.segments,
             sourceCount: plan.sources.length,
-            transitionDurationMs,
+            transitionDurationMs
           });
 
           if (!result.success) {

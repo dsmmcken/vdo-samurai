@@ -100,3 +100,8 @@ test('example', async () => {
 ```
 
 Use `selectors.ts` for UI elements. Each `launchApp()` creates an isolated Electron instance with separate userData.
+
+### Running E2E Tests
+- Always let tests complete: `npm run test:e2e:headless`
+- Never use `head`, `tail`, or `timeout` with test output
+- Tests use mock streams (no real camera/mic needed)

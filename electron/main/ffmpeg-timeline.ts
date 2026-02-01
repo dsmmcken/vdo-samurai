@@ -31,8 +31,8 @@ const CONFIG = {
   FRAMERATE: 30,
   OUTPUT_FORMATS: {
     webm: { videoCodec: 'libvpx-vp9', audioCodec: 'libopus' },
-    mp4: { videoCodec: 'libx264', audioCodec: 'aac' },
-  },
+    mp4: { videoCodec: 'libx264', audioCodec: 'aac' }
+  }
 } as const;
 
 // Calculate PiP dimensions
@@ -123,7 +123,7 @@ function buildRoundedCornersAlphaExpr(width: number, height: number, radius: num
     // Bottom-right corner
     `if(gt(X,${width - r})*gt(Y,${height - r})*gt(hypot(X-${width - r},Y-${height - r}),${r}),0,`,
     // Default: fully opaque
-    `255))))`,
+    `255))))`
   ].join('');
 }
 
@@ -171,7 +171,11 @@ function buildTimelineFilterComplex(
       );
 
       // Scale camera to PiP size, apply rounded corners, and trim - inline
-      const pipAlphaExpr = buildRoundedCornersAlphaExpr(PIP_WIDTH, PIP_HEIGHT, CONFIG.PIP_CORNER_RADIUS);
+      const pipAlphaExpr = buildRoundedCornersAlphaExpr(
+        PIP_WIDTH,
+        PIP_HEIGHT,
+        CONFIG.PIP_CORNER_RADIUS
+      );
       filters.push(
         `[${camIdx}:v]scale=${PIP_WIDTH}:${PIP_HEIGHT}:force_original_aspect_ratio=decrease,` +
           `pad=${PIP_WIDTH}:${PIP_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=${CONFIG.BACKGROUND_COLOR},` +
@@ -180,9 +184,7 @@ function buildTimelineFilterComplex(
       );
 
       // Overlay PiP camera on screen - both inputs already have CFR from fps filter
-      filters.push(
-        `[screen${i}][pip${i}]overlay=${PIP_X}:${PIP_Y}:format=auto[${segLabel}]`
-      );
+      filters.push(`[screen${i}][pip${i}]overlay=${PIP_X}:${PIP_Y}:format=auto[${segLabel}]`);
 
       // Audio from camera source (typically has the mic audio)
       segmentAudioFilters.push(
@@ -268,23 +270,17 @@ function buildTimelineFilterComplex(
 
       // Audio: use concat instead of acrossfade to avoid timing complexity
       const aconcatLabel = `aconcat${i}`;
-      filters.push(
-        `[${currentAudioLabel}][${nextAudioLabel}]concat=n=2:v=0:a=1[${aconcatLabel}]`
-      );
+      filters.push(`[${currentAudioLabel}][${nextAudioLabel}]concat=n=2:v=0:a=1[${aconcatLabel}]`);
       currentAudioLabel = aconcatLabel;
     } else {
       // Concatenate without transition
       const concatLabel = `concat${i}`;
-      filters.push(
-        `[${currentVideoLabel}][${nextVideoLabel}]concat=n=2:v=1:a=0[${concatLabel}]`
-      );
+      filters.push(`[${currentVideoLabel}][${nextVideoLabel}]concat=n=2:v=1:a=0[${concatLabel}]`);
       currentVideoLabel = concatLabel;
       cumulativeDurationS += nextSegDurationS;
 
       const aconcatLabel = `aconcat${i}`;
-      filters.push(
-        `[${currentAudioLabel}][${nextAudioLabel}]concat=n=2:v=0:a=1[${aconcatLabel}]`
-      );
+      filters.push(`[${currentAudioLabel}][${nextAudioLabel}]concat=n=2:v=0:a=1[${aconcatLabel}]`);
       currentAudioLabel = aconcatLabel;
     }
   }
@@ -295,7 +291,7 @@ function buildTimelineFilterComplex(
 
   return {
     filter: filters.join(';'),
-    outputs: ['vout', 'aout'],
+    outputs: ['vout', 'aout']
   };
 }
 
@@ -387,14 +383,7 @@ function buildFilterWithAudioFallback(
 export async function compositeTimeline(
   options: TimelineExportOptions
 ): Promise<TimelineExportResult> {
-  const {
-    inputFiles,
-    outputPath,
-    format,
-    segments,
-    sourceCount,
-    transitionDurationMs,
-  } = options;
+  const { inputFiles, outputPath, format, segments, sourceCount, transitionDurationMs } = options;
 
   const formatConfig = CONFIG.OUTPUT_FORMATS[format];
   const transitionDurationS = transitionDurationMs / 1000;
@@ -455,7 +444,7 @@ export async function compositeTimeline(
           CONFIG.AUDIO_BITRATE,
           '-r',
           String(CONFIG.FRAMERATE),
-          '-y',
+          '-y'
         ])
         .on('start', (cmd) => {
           console.log('[FFmpeg Timeline] Command:', cmd);
@@ -484,7 +473,7 @@ export async function compositeTimeline(
           console.error('[FFmpeg Timeline] Stderr:', stderrLog);
           resolve({
             success: false,
-            error: `${err.message}\n\nFilter:\n${filter}\n\nStderr:\n${stderrLog}`,
+            error: `${err.message}\n\nFilter:\n${filter}\n\nStderr:\n${stderrLog}`
           });
         })
         .save(outputPath);
@@ -493,7 +482,7 @@ export async function compositeTimeline(
     currentProcess = null;
     return {
       success: false,
-      error: err instanceof Error ? err.message : 'Unknown error',
+      error: err instanceof Error ? err.message : 'Unknown error'
     };
   }
 }

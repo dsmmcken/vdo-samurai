@@ -54,9 +54,12 @@ export const useTransferStore = create<TransferState>((set, get) => ({
       transfers,
       // Once we've had transfers, remember it (reset dismissed when new transfers arrive)
       hasHadTransfers: state.hasHadTransfers || hadTransfers,
-      indicatorDismissed: hadTransfers && state.indicatorDismissed && transfers.length <= state.transfers.length
-        ? state.indicatorDismissed
-        : hadTransfers ? false : state.indicatorDismissed,
+      indicatorDismissed:
+        hadTransfers && state.indicatorDismissed && transfers.length <= state.transfers.length
+          ? state.indicatorDismissed
+          : hadTransfers
+            ? false
+            : state.indicatorDismissed
     }));
   },
 
@@ -91,7 +94,13 @@ export const useTransferStore = create<TransferState>((set, get) => ({
 
   setIndicatorDismissed: (dismissed) => set({ indicatorDismissed: dismissed }),
 
-  reset: () => set({ transfers: [], receivedRecordings: [], indicatorDismissed: false, hasHadTransfers: false })
+  reset: () =>
+    set({
+      transfers: [],
+      receivedRecordings: [],
+      indicatorDismissed: false,
+      hasHadTransfers: false
+    })
 }));
 
 // Expose store for E2E testing
