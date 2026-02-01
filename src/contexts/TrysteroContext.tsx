@@ -26,7 +26,7 @@ import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
 import { useNLEStore } from '../store/nleStore';
 import { useCompositeStore } from '../store/compositeStore';
-import { useTransferStore } from '../store/transferStore';
+import { useTransferStore, type TransferBroadcast } from '../store/transferStore';
 
 // Debug: Log relay socket status
 const logRelayStatus = () => {
@@ -95,6 +95,20 @@ interface TileOrderData {
   timestamp: number;
 }
 
+interface TransferStatusData {
+  transferId: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  receiverName: string;
+  filename: string;
+  size: number;
+  progress: number;
+  status: 'pending' | 'active' | 'complete' | 'error';
+  error?: string;
+  timestamp: number;
+}
+
 interface TrysteroContextValue {
   room: Room | null;
   selfId: string;
@@ -109,6 +123,7 @@ interface TrysteroContextValue {
   broadcastVideoState: (videoEnabled: boolean, audioEnabled: boolean) => void;
   broadcastSessionInfo: (internalSessionId: string) => void;
   broadcastTileOrder: (order: string[]) => void;
+  broadcastTransferStatus: (status: TransferBroadcast) => void;
 }
 
 const TrysteroContext = createContext<TrysteroContextValue | null>(null);
@@ -184,6 +199,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendSessionInfo: ((data: SessionInfoData, peerId?: string) => void) | null;
     sendSessionInfoRequest: ((data: SessionInfoRequestData, peerId?: string) => void) | null;
     sendTileOrder: ((data: TileOrderData, peerId?: string) => void) | null;
+    sendTransferStatus: ((data: TransferStatusData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
@@ -192,7 +208,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendVideoState: null,
     sendSessionInfo: null,
     sendSessionInfoRequest: null,
-    sendTileOrder: null
+    sendTileOrder: null,
+    sendTransferStatus: null
   });
 
   // Setup peer handlers when room changes
@@ -222,6 +239,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendSessionInfoRequest, onSessionInfoRequest] = newRoom.makeAction<any>('sess-req');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendTileOrder, onTileOrder] = newRoom.makeAction<any>('tile-order');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendTransferStatus, onTransferStatus] = newRoom.makeAction<any>('xfer-status');
 
       sendersRef.current = {
         sendPeerInfo,
@@ -231,7 +250,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendVideoState,
         sendSessionInfo,
         sendSessionInfoRequest,
-        sendTileOrder
+        sendTileOrder,
+        sendTransferStatus
       };
 
       // Handle peer join
@@ -347,6 +367,32 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           console.log('[TrysteroProvider] Sending tile order to new peer:', peerId, tileOrderMsg);
           sendTileOrder(tileOrderMsg, peerId);
         }
+
+        // Send active transfers to the new peer (so they can observe ongoing transfers)
+        // Only send transfers where we're the sender (to avoid duplicate broadcasts)
+        const activeTransfers = useTransferStore
+          .getState()
+          .transfers.filter(
+            (t) =>
+              t.role === 'sender' && (t.status === 'pending' || t.status === 'active')
+          );
+        activeTransfers.forEach((transfer) => {
+          const statusMsg: TransferStatusData = {
+            transferId: transfer.id,
+            senderId: transfer.senderId,
+            senderName: transfer.senderName,
+            receiverId: transfer.receiverId,
+            receiverName: transfer.receiverName,
+            filename: transfer.filename,
+            size: transfer.size,
+            progress: transfer.progress,
+            status: transfer.status,
+            error: transfer.error,
+            timestamp: Date.now()
+          };
+          console.log('[TrysteroProvider] Sending active transfer to new peer:', peerId, statusMsg);
+          sendTransferStatus(statusMsg, peerId);
+        });
       });
 
       // Handle peer leave
@@ -546,6 +592,29 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      // Handle transfer status broadcasts - allows all peers to see all transfers
+      onTransferStatus((data: unknown) => {
+        if (typeof data === 'object' && data !== null) {
+          const statusData = data as TransferStatusData;
+          console.log('[TrysteroProvider] Received transfer status:', statusData);
+          useTransferStore.getState().upsertTransferFromBroadcast(
+            {
+              transferId: statusData.transferId,
+              senderId: statusData.senderId,
+              senderName: statusData.senderName,
+              receiverId: statusData.receiverId,
+              receiverName: statusData.receiverName,
+              filename: statusData.filename,
+              size: statusData.size,
+              progress: statusData.progress,
+              status: statusData.status,
+              error: statusData.error
+            },
+            selfId
+          );
+        }
+      });
+
       // Handle incoming streams
       newRoom.onPeerStream((stream, peerId, metadata) => {
         console.log('[TrysteroProvider] Received stream from peer:', peerId, metadata);
@@ -673,7 +742,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendVideoState: null,
       sendSessionInfo: null,
       sendSessionInfoRequest: null,
-      sendTileOrder: null
+      sendTileOrder: null,
+      sendTransferStatus: null
     };
   }, [clearPeers]);
 
@@ -848,6 +918,17 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Broadcast transfer status to all peers
+  const broadcastTransferStatus = useCallback((status: TransferBroadcast) => {
+    if (sendersRef.current.sendTransferStatus) {
+      const data: TransferStatusData = {
+        ...status,
+        timestamp: Date.now()
+      };
+      sendersRef.current.sendTransferStatus(data);
+    }
+  }, []);
+
   // Update name/isHost when they change (for sending to new peers)
   const updateUserInfo = useCallback((name: string, isHost: boolean) => {
     stateRef.current.name = name;
@@ -872,7 +953,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         broadcastFocusChange,
         broadcastVideoState,
         broadcastSessionInfo,
-        broadcastTileOrder
+        broadcastTileOrder,
+        broadcastTransferStatus
       }}
     >
       <TrysteroProviderInner updateUserInfo={updateUserInfo}>{children}</TrysteroProviderInner>

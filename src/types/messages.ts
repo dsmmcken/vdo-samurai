@@ -65,6 +65,22 @@ export interface TileOrderMessage {
   timestamp: number; // For conflict resolution (newer wins)
 }
 
+// Transfer status broadcast for observing file transfers between other peers
+export interface TransferStatusMessage {
+  type: 'transfer-status';
+  transferId: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  receiverName: string;
+  filename: string;
+  size: number;
+  progress: number;
+  status: 'pending' | 'active' | 'complete' | 'error';
+  error?: string;
+  timestamp: number;
+}
+
 export type P2PMessage =
   | FocusChangeMessage
   | PeerInfoMessage
@@ -75,4 +91,5 @@ export type P2PMessage =
   | PeerClipMessage
   | SessionInfoMessage
   | SessionInfoRequestMessage
-  | TileOrderMessage;
+  | TileOrderMessage
+  | TransferStatusMessage;

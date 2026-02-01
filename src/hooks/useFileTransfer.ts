@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useTransferStore, type Transfer, type RecordingType } from '../store/transferStore';
 import { usePeerStore } from '../store/peerStore';
+import { useSessionStore } from '../store/sessionStore';
 import { useTrystero } from '../contexts/TrysteroContext';
 import { FileTransferProtocol } from '../utils/FileTransferProtocol';
 import { TRANSFER_CONFIG } from '../utils/transferConfig';
@@ -16,6 +17,10 @@ export interface QueuedTransfer {
   error?: string;
 }
 
+// Throttle progress broadcasts to avoid flooding the network
+const PROGRESS_BROADCAST_INTERVAL_MS = 500;
+const PROGRESS_BROADCAST_THRESHOLD = 0.1; // 10%
+
 // Parse recording type from filename (e.g., "camera-recording-123.webm" or "screen-recording-123.webm")
 function parseRecordingType(filename: string): RecordingType {
   if (filename.includes('screen-')) {
@@ -25,9 +30,10 @@ function parseRecordingType(filename: string): RecordingType {
 }
 
 export function useFileTransfer() {
-  const { room } = useTrystero();
+  const { room, selfId, broadcastTransferStatus } = useTrystero();
   const { transfers, setTransfers, addReceivedRecording, isTransferring } = useTransferStore();
   const { peers } = usePeerStore();
+  const { userName } = useSessionStore();
   const initializedRef = useRef(false);
 
   // Transfer queue and protocol management
@@ -35,6 +41,9 @@ export function useFileTransfer() {
   const protocolsRef = useRef<Map<string, FileTransferProtocol>>(new Map());
   const activeCountRef = useRef(0);
   const sendTransferRef = useRef<((data: unknown, peerId: string) => void) | null>(null);
+
+  // Track last broadcast time and progress for throttling
+  const lastBroadcastRef = useRef<Map<string, { time: number; progress: number }>>(new Map());
 
   // Setup beforeunload warning
   useEffect(() => {
@@ -51,6 +60,7 @@ export function useFileTransfer() {
   }, [isTransferring]);
 
   const updateStoreFromQueue = useCallback(() => {
+    const senderName = userName || 'Anonymous';
     const transferList: Transfer[] = queueRef.current.map((q) => ({
       id: q.id,
       peerId: q.peerId,
@@ -60,20 +70,72 @@ export function useFileTransfer() {
       progress: q.progress,
       status: q.status,
       error: q.error,
-      direction: 'send' as const
+      direction: 'send' as const,
+      role: 'sender' as const,
+      senderId: selfId,
+      senderName: senderName,
+      receiverId: q.peerId,
+      receiverName: q.peerName
     }));
     setTransfers(transferList);
-  }, [setTransfers]);
+  }, [setTransfers, selfId, userName]);
 
   const updateQueuedTransfer = useCallback(
     (id: string, updates: Partial<QueuedTransfer>) => {
       const index = queueRef.current.findIndex((t) => t.id === id);
       if (index !== -1) {
-        queueRef.current[index] = { ...queueRef.current[index], ...updates };
+        const oldTransfer = queueRef.current[index];
+        queueRef.current[index] = { ...oldTransfer, ...updates };
         updateStoreFromQueue();
+
+        const updatedTransfer = queueRef.current[index];
+        const senderName = userName || 'Anonymous';
+
+        // Determine if we should broadcast this update
+        let shouldBroadcast = false;
+
+        // Always broadcast status changes (pending->active, active->complete, error)
+        if (updates.status && updates.status !== oldTransfer.status) {
+          shouldBroadcast = true;
+        }
+
+        // Throttle progress updates: only broadcast if enough time or progress delta
+        if (updates.progress !== undefined && !shouldBroadcast) {
+          const lastBroadcast = lastBroadcastRef.current.get(id);
+          const now = Date.now();
+          const progressDelta = updates.progress - (lastBroadcast?.progress ?? 0);
+
+          if (
+            !lastBroadcast ||
+            now - lastBroadcast.time >= PROGRESS_BROADCAST_INTERVAL_MS ||
+            progressDelta >= PROGRESS_BROADCAST_THRESHOLD
+          ) {
+            shouldBroadcast = true;
+          }
+        }
+
+        if (shouldBroadcast) {
+          lastBroadcastRef.current.set(id, {
+            time: Date.now(),
+            progress: updatedTransfer.progress
+          });
+
+          broadcastTransferStatus({
+            transferId: updatedTransfer.id,
+            senderId: selfId,
+            senderName: senderName,
+            receiverId: updatedTransfer.peerId,
+            receiverName: updatedTransfer.peerName,
+            filename: updatedTransfer.filename,
+            size: updatedTransfer.blob.size,
+            progress: updatedTransfer.progress,
+            status: updatedTransfer.status,
+            error: updatedTransfer.error
+          });
+        }
       }
     },
-    [updateStoreFromQueue]
+    [updateStoreFromQueue, broadcastTransferStatus, selfId, userName]
   );
 
   const processNext = useCallback(async () => {
@@ -208,6 +270,7 @@ export function useFileTransfer() {
   const enqueue = useCallback(
     (peerId: string, peerName: string, blob: Blob, filename: string): string => {
       const id = `transfer-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const senderName = userName || 'Anonymous';
 
       queueRef.current.push({
         id,
@@ -220,11 +283,25 @@ export function useFileTransfer() {
       });
 
       updateStoreFromQueue();
+
+      // Broadcast the new transfer to all peers
+      broadcastTransferStatus({
+        transferId: id,
+        senderId: selfId,
+        senderName: senderName,
+        receiverId: peerId,
+        receiverName: peerName,
+        filename: filename,
+        size: blob.size,
+        progress: 0,
+        status: 'pending'
+      });
+
       processNext();
 
       return id;
     },
-    [updateStoreFromQueue, processNext]
+    [updateStoreFromQueue, processNext, broadcastTransferStatus, selfId, userName]
   );
 
   const sendRecording = useCallback(
