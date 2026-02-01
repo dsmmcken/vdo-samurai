@@ -225,3 +225,8 @@ export function getTimeInClip(clip: NLEClip, playheadPosition: number, clips: NL
   }
   return clip.startTime + clip.trimStart;
 }
+
+// Expose store for E2E testing
+if (typeof window !== 'undefined') {
+  (window as unknown as { __nleStore__: typeof useNLEStore }).__nleStore__ = useNLEStore;
+}

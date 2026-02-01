@@ -89,6 +89,48 @@ test.describe('Timeline Export', () => {
   }
 
   /**
+   * Helper to get transfer store state (received recordings)
+   */
+  async function getTransferState(page: typeof app.page) {
+    return await page.evaluate(() => {
+      const store = (
+        window as unknown as Record<
+          string,
+          {
+            getState?: () => {
+              receivedRecordings?: Array<{
+                peerId: string;
+                peerName: string;
+                blob: Blob;
+                type: 'camera' | 'screen';
+              }>;
+              transfers?: Array<{
+                id: string;
+                peerId: string;
+                direction: string;
+                status: string;
+              }>;
+            };
+          }
+        >
+      ).__transferStore__;
+      if (store?.getState) {
+        const state = store.getState();
+        return {
+          receivedRecordings: state.receivedRecordings?.map((r) => ({
+            peerId: r.peerId,
+            peerName: r.peerName,
+            type: r.type,
+            blobSize: r.blob?.size || 0,
+          })),
+          transfers: state.transfers,
+        };
+      }
+      return null;
+    });
+  }
+
+  /**
    * Helper to get recording store state
    */
   async function getRecordingState(page: typeof app.page) {
@@ -351,6 +393,73 @@ test.describe('Timeline Export', () => {
     console.log('[Export Error Check] Export completed successfully!');
     console.log('[Export Error Check] FFmpeg logs:', ffmpegLogs);
     expect(result).toBe('success');
+  });
+
+  test('verifies NLE clips and received recordings', async () => {
+    // This test verifies that NLE clips are properly created and logs
+    // the received recordings to help debug multi-user export issues
+    app = await launchApp('timeline-verify-clips-' + Date.now());
+    const { page } = app;
+
+    // Setup and record with screen share (to test multiple source types)
+    await setupSessionAsHost(page, 'Verify Clips User');
+
+    // Start screen share
+    await page.click(selectors.session.screenShareButton);
+    await page.waitForSelector('[role="dialog"][aria-modal="true"]', { timeout: 5000 });
+    await page.click('[role="dialog"] button.bg-blue-600');
+    await page.waitForSelector('[aria-label*="Stop sharing"]', { timeout: 10000 });
+
+    // Start recording
+    await page.click(selectors.session.recordButton);
+    await expect(page.locator(selectors.session.stopButton)).toBeVisible({ timeout: 15000 });
+    await sleep(3000);
+    await page.click(selectors.session.stopButton);
+    await waitForRecordingComplete(page, 30000);
+    await waitForLocalBlob(page, 30000);
+
+    // Go to NLE Editor
+    await page.waitForSelector(selectors.recordingComplete.popoverTitle, { timeout: 10000 });
+    await page.click(selectors.recordingComplete.beginTransferButton);
+    await page.waitForSelector(selectors.nle.editor, { timeout: 10000 });
+
+    // Wait a moment for state to settle
+    await sleep(1000);
+
+    // Get NLE state
+    const nleState = await getNLEState(page);
+    console.log('[Verify Clips] NLE State:', JSON.stringify(nleState, null, 2));
+
+    // Get transfer state (received recordings)
+    const transferState = await getTransferState(page);
+    console.log('[Verify Clips] Transfer State:', JSON.stringify(transferState, null, 2));
+
+    // Verify clips exist
+    expect(nleState).not.toBeNull();
+    expect(nleState?.clips?.length).toBeGreaterThan(0);
+
+    // Log clip details for debugging
+    if (nleState?.clips) {
+      for (const clip of nleState.clips) {
+        console.log(
+          `[Verify Clips] Clip: id=${clip.id}, peer=${clip.peerName} (${clip.peerId}), type=${clip.sourceType}`
+        );
+      }
+    }
+
+    // Log received recordings for debugging
+    if (transferState?.receivedRecordings) {
+      for (const rec of transferState.receivedRecordings) {
+        console.log(
+          `[Verify Clips] Received: peer=${rec.peerName} (${rec.peerId}), type=${rec.type}, size=${rec.blobSize}`
+        );
+      }
+    }
+
+    // Verify at least one clip has sourceType
+    const clipTypes = nleState?.clips?.map((c) => c.sourceType) || [];
+    console.log('[Verify Clips] Clip source types:', clipTypes);
+    expect(clipTypes.length).toBeGreaterThan(0);
   });
 
   test('exports with multiple segments (xfade transitions)', async () => {

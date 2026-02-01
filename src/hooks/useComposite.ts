@@ -28,6 +28,17 @@ function buildExportPlan(
     type: 'camera' | 'screen';
   }>
 ): ExportPlan {
+  // Log inputs for debugging
+  console.log('[Export] Building export plan:');
+  console.log('[Export]   localBlob:', localBlob ? `${localBlob.size} bytes` : 'null');
+  console.log('[Export]   localScreenBlob:', localScreenBlob ? `${localScreenBlob.size} bytes` : 'null');
+  console.log('[Export]   receivedRecordings:', receivedRecordings.map(r => ({
+    peerId: r.peerId,
+    peerName: r.peerName,
+    type: r.type,
+    size: r.blob?.size
+  })));
+
   // Build sources array
   const sources: ExportSource[] = [];
   const sourceIndexMap = new Map<string, number>(); // peerId-type -> index
@@ -73,6 +84,15 @@ function buildExportPlan(
   // Sort clips by order
   const sortedClips = [...clips].sort((a, b) => a.order - b.order);
 
+  // Log available sources for debugging
+  console.log('[Export] Available sources:', Array.from(sourceIndexMap.entries()));
+  console.log('[Export] Clips to process:', sortedClips.map(c => ({
+    id: c.id,
+    peerId: c.peerId,
+    peerName: c.peerName,
+    sourceType: c.sourceType,
+  })));
+
   // Build segments from clips
   const segments: ExportSegment[] = [];
   let currentOutputTime = 0;
@@ -92,6 +112,8 @@ function buildExportPlan(
     const cameraIndex = sourceIndexMap.get(cameraKey);
     const screenIndex = sourceIndexMap.get(screenKey);
 
+    console.log(`[Export] Clip ${clip.id} (${clip.peerName}): cameraKey=${cameraKey} (${cameraIndex}), screenKey=${screenKey} (${screenIndex})`);
+
     // Determine layout based on available sources
     let layout: ExportLayout;
     if (screenIndex !== undefined && cameraIndex !== undefined) {
@@ -105,6 +127,8 @@ function buildExportPlan(
       console.warn(`[Export] No sources found for clip ${clip.id} (peer: ${peerKeyPrefix})`);
       continue;
     }
+
+    console.log(`[Export] Clip ${clip.id} layout: ${layout}`);
 
     const segment: ExportSegment = {
       id: clip.id,
