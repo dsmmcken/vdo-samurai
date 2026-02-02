@@ -6,11 +6,12 @@ import { useSessionStore } from '../../store/sessionStore';
 import { TransferRacePopover } from './TransferRacePopover';
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return '00.0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  const value = (bytes / Math.pow(k, i)).toFixed(1);
+  return value.padStart(4, '0') + ' ' + sizes[i];
 }
 
 export function TransferIndicator() {
@@ -62,39 +63,12 @@ export function TransferIndicator() {
         aria-label="File transfers"
         aria-expanded={isPopoverOpen}
       >
-        {/* Katana Icon */}
-        <div className="relative">
-          <svg
-            className={`w-4 h-4 ${getTextColor()} ${isActive ? 'samurai-slash' : ''}`}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {/* Katana blade */}
-            <path d="M4 20 L18 6 L20 4" />
-            {/* Handle wrap */}
-            <path d="M4 20 L6 18" strokeWidth="3" />
-            {/* Guard (tsuba) */}
-            <circle cx="7" cy="17" r="1.5" fill="currentColor" />
-          </svg>
-          {/* Activity pulse */}
-          {isActive && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[--color-primary] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[--color-primary]"></span>
-            </span>
-          )}
-        </div>
-
         {/* Progress info */}
         <div className={`flex items-center gap-1.5 ${getTextColor()}`}>
           {isActive ? (
             <>
-              <span className="font-mono tabular-nums">{Math.round(totalProgress * 100)}%</span>
-              <span className="text-[10px] opacity-60">
+              <span className="font-mono tabular-nums">{String(Math.round(totalProgress * 100)).padStart(2, '0')}%</span>
+              <span className="text-[10px] opacity-60 font-mono tabular-nums">
                 {formatBytes(transferredSize)}/{formatBytes(totalSize)}
               </span>
             </>

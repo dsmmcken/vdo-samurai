@@ -248,12 +248,21 @@ body {
   background-position: -296px 0;
 }
 
-/* Color tinting via CSS filters - red for "You" */
-.samurai-tint-red {
-  filter: sepia(1) saturate(5) hue-rotate(320deg) brightness(0.9);
+/* Race track fill */
+.race-fill-racing-you {
+  background: linear-gradient(to right, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.5));
 }
 
-/* Blue tint for others (enhance the existing blue) */
+.race-fill-racing-other {
+  background: linear-gradient(to right, rgba(107, 114, 128, 0.2), rgba(107, 114, 128, 0.5));
+}
+
+.race-fill-finished {
+  background-color: rgba(16, 185, 129, 0.4);
+}
+
+/* No color tinting - use original sprite colors */
+.samurai-tint-red,
 .samurai-tint-blue {
-  filter: saturate(1.2) brightness(1.05);
+  /* Keep original sprite appearance */
 }
