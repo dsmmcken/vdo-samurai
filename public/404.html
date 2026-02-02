@@ -14,8 +14,9 @@
       const query = window.location.search;
 
       // Preserve the original path and query params
+      // Use _spa to avoid collision with room password parameter 'p'
       const redirectPath = pathSegments.length > 0
-        ? '?p=' + encodeURIComponent('/' + pathSegments.join('/') + query)
+        ? '?_spa=' + encodeURIComponent('/' + pathSegments.join('/') + query)
         : query;
 
       window.location.replace('/vdo-samurai/' + redirectPath);

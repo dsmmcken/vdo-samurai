@@ -21,11 +21,12 @@
     <script>
       (function() {
         // Handle redirect from 404.html for GitHub Pages SPA support
+        // Use _spa to avoid collision with room password parameter 'p'
         var params = new URLSearchParams(window.location.search);
-        var redirectPath = params.get('p');
+        var redirectPath = params.get('_spa');
         if (redirectPath) {
           // Remove the redirect param and restore the original path
-          params.delete('p');
+          params.delete('_spa');
           var remainingParams = params.toString();
           var newUrl = redirectPath + (remainingParams ? '?' + remainingParams : '');
           window.history.replaceState(null, '', newUrl);
