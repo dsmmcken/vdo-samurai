@@ -12,6 +12,7 @@ import { ScreenShareButton } from '../components/video/ScreenShareButton';
 import { useRecording } from '../hooks/useRecording';
 import { useEditPoints } from '../hooks/useEditPoints';
 import { useFileTransfer } from '../hooks/useFileTransfer';
+import { usePendingTransfers } from '../hooks/usePendingTransfers';
 import { MainDisplay } from '../components/video/MainDisplay';
 import { TileGrid } from '../components/video/TileGrid';
 import { RecordButton } from '../components/recording/RecordButton';
@@ -19,6 +20,7 @@ import { CountdownOverlay } from '../components/recording/CountdownOverlay';
 import { NLEEditor } from '../components/nle';
 import { useUserStore } from '../store/userStore';
 import { getColorForName } from '../utils/colorHash';
+import { isBrowser } from '../utils/platform';
 
 const LAST_SESSION_KEY = 'vdo-samurai-last-session';
 
@@ -130,6 +132,9 @@ export function SessionPage() {
   const { isRecording, countdown, startRecording, stopRecording, onVideoEnabled, onVideoDisabled } =
     useRecording();
   const { sendMultipleToAllPeers } = useFileTransfer();
+  const { addPendingTransfer, markCompleted } = usePendingTransfers();
+
+  const browserMode = isBrowser();
 
   // Initialize edit points tracking
   useEditPoints();
@@ -146,6 +151,8 @@ export function SessionPage() {
 
   // Track if recordings have been sent to prevent duplicate sends
   const recordingsSentRef = useRef(false);
+  // Track pending transfer IDs to mark complete when P2P transfer finishes
+  const pendingTransferIdsRef = useRef<Map<string, string>>(new Map());
 
   // When recording stops and we're NOT the host, send recordings to host
   // We use a flag to ensure recordings are only sent once, after both blobs are ready
@@ -155,7 +162,7 @@ export function SessionPage() {
 
     // If screen recording was active, wait for the screen blob to be available
     // The screen blob is set asynchronously after the camera blob
-    const sendRecordings = () => {
+    const sendRecordings = async () => {
       if (recordingsSentRef.current) return;
       recordingsSentRef.current = true;
 
@@ -168,6 +175,30 @@ export function SessionPage() {
       } else {
         console.log('[SessionPage] Sending camera recording only (no screen blob)');
       }
+
+      // In browser mode, save recordings to IndexedDB first for persistence
+      // This ensures recordings survive browser crashes/closes
+      if (browserMode && fullRoomCode && profile?.displayName) {
+        for (const rec of recordings) {
+          try {
+            const filename = `${rec.type}-recording-${Date.now()}.webm`;
+            const pendingId = await addPendingTransfer(
+              rec.blob,
+              filename,
+              rec.type,
+              fullRoomCode,
+              profile.displayName
+            );
+            // Store mapping to mark complete when P2P finishes
+            pendingTransferIdsRef.current.set(`${rec.type}`, pendingId);
+            console.log(`[SessionPage] Saved ${rec.type} recording to IndexedDB: ${pendingId}`);
+          } catch (err) {
+            console.error(`[SessionPage] Failed to save ${rec.type} to IndexedDB:`, err);
+          }
+        }
+      }
+
+      // Start P2P transfer
       sendMultipleToAllPeers(recordings);
     };
 
@@ -179,7 +210,7 @@ export function SessionPage() {
 
     // Otherwise, wait a short time for the screen blob to be set
     // This handles the async timing between camera and screen blob being set
-    const timeoutId = setTimeout(() => {
+    const timeoutId = setTimeout(async () => {
       // Check again if screen blob is now available
       // We need to read from the store directly to get the latest value
       const currentState = useRecordingStore.getState();
@@ -190,6 +221,27 @@ export function SessionPage() {
           { blob: localBlob, type: 'camera' },
           { blob: currentState.localScreenBlob, type: 'screen' }
         ];
+
+        // Save to IndexedDB in browser mode
+        if (browserMode && fullRoomCode && profile?.displayName) {
+          for (const rec of recordings) {
+            try {
+              const filename = `${rec.type}-recording-${Date.now()}.webm`;
+              const pendingId = await addPendingTransfer(
+                rec.blob,
+                filename,
+                rec.type,
+                fullRoomCode,
+                profile.displayName
+              );
+              pendingTransferIdsRef.current.set(`${rec.type}`, pendingId);
+              console.log(`[SessionPage] Saved ${rec.type} recording to IndexedDB: ${pendingId}`);
+            } catch (err) {
+              console.error(`[SessionPage] Failed to save ${rec.type} to IndexedDB:`, err);
+            }
+          }
+        }
+
         console.log('[SessionPage] Sending camera and screen recordings (after delay)');
         sendMultipleToAllPeers(recordings);
       } else {
@@ -199,14 +251,38 @@ export function SessionPage() {
     }, 500); // Wait 500ms for screen blob to be set
 
     return () => clearTimeout(timeoutId);
-  }, [localBlob, localScreenBlob, isHost, sendMultipleToAllPeers]);
+  }, [localBlob, localScreenBlob, isHost, sendMultipleToAllPeers, browserMode, fullRoomCode, profile, addPendingTransfer]);
 
   // Reset the sent flag when recording starts
   useEffect(() => {
     if (isRecording) {
       recordingsSentRef.current = false;
+      pendingTransferIdsRef.current.clear();
     }
   }, [isRecording]);
+
+  // Watch for transfer completion and mark pending transfers as complete (browser mode only)
+  const { transfers } = useTransferStore();
+  useEffect(() => {
+    if (!browserMode || pendingTransferIdsRef.current.size === 0) return;
+
+    // Check if any of our transfers completed
+    for (const transfer of transfers) {
+      if (transfer.status === 'complete') {
+        // Check if this was a camera or screen recording we sent
+        // The transfer filename includes the type
+        const type = transfer.filename.includes('camera') ? 'camera' : 'screen';
+        const pendingId = pendingTransferIdsRef.current.get(type);
+        if (pendingId) {
+          console.log(`[SessionPage] P2P transfer completed, marking pending transfer done: ${pendingId}`);
+          markCompleted(pendingId).catch((err) => {
+            console.error('[SessionPage] Failed to mark pending transfer complete:', err);
+          });
+          pendingTransferIdsRef.current.delete(type);
+        }
+      }
+    }
+  }, [transfers, browserMode, markCompleted]);
 
   // Initialize clips from editPoints for NLE editor
   const initializeNLEClips = useCallback(() => {

@@ -1,14 +1,10 @@
 /**
  * Recording storage service - uses Electron IPC for file system storage
- * Falls back to in-memory storage if Electron API is not available
+ * Falls back to IndexedDB storage in browser environments
  */
 
-// In-memory fallback for non-Electron environments
-const memoryStorage = new Map<string, Map<number, Blob>>();
-
-function isElectron(): boolean {
-  return typeof window !== 'undefined' && typeof window.electronAPI !== 'undefined';
-}
+import { isElectron } from './platform';
+import * as browserStorage from './browserStorage';
 
 export async function saveRecordingChunk(
   recordingId: string,
@@ -27,12 +23,9 @@ export async function saveRecordingChunk(
       throw new Error(result.error || 'Failed to save chunk');
     }
   } else {
-    // In-memory fallback
-    console.log(`[RecordingStorage] Using memory fallback for chunk ${index}`);
-    if (!memoryStorage.has(recordingId)) {
-      memoryStorage.set(recordingId, new Map());
-    }
-    memoryStorage.get(recordingId)!.set(index, chunk);
+    // IndexedDB fallback for browser
+    console.log(`[RecordingStorage] Using IndexedDB for chunk ${index}`);
+    await browserStorage.saveChunk(recordingId, chunk, index);
   }
 }
 
@@ -48,16 +41,8 @@ export async function getRecordingChunks(recordingId: string): Promise<Blob[]> {
       (buffer: ArrayBuffer) => new Blob([buffer], { type: 'video/webm' })
     );
   } else {
-    // In-memory fallback
-    const chunks = memoryStorage.get(recordingId);
-    if (!chunks) return [];
-
-    const sortedChunks: Blob[] = [];
-    const indices = Array.from(chunks.keys()).sort((a, b) => a - b);
-    for (const index of indices) {
-      sortedChunks.push(chunks.get(index)!);
-    }
-    return sortedChunks;
+    // IndexedDB fallback for browser
+    return browserStorage.getChunks(recordingId);
   }
 }
 
@@ -72,14 +57,8 @@ export async function finalizeRecording(recordingId: string): Promise<Blob> {
     const buffer = await window.electronAPI.storage.readFile(result.path!);
     return new Blob([buffer], { type: 'video/webm' });
   } else {
-    // In-memory fallback
-    const chunks = await getRecordingChunks(recordingId);
-    if (chunks.length === 0) {
-      throw new Error('No recording chunks found');
-    }
-
-    const mimeType = chunks[0].type || 'video/webm';
-    return new Blob(chunks, { type: mimeType });
+    // IndexedDB fallback for browser
+    return browserStorage.finalizeRecording(recordingId);
   }
 }
 
@@ -90,8 +69,8 @@ export async function deleteRecording(recordingId: string): Promise<void> {
       throw new Error(result.error || 'Failed to delete recording');
     }
   } else {
-    // In-memory fallback
-    memoryStorage.delete(recordingId);
+    // IndexedDB fallback for browser
+    await browserStorage.deleteChunks(recordingId);
   }
 }
 
@@ -103,7 +82,8 @@ export async function listRecordings(): Promise<string[]> {
     }
     return result.recordings || [];
   } else {
-    // In-memory fallback
-    return Array.from(memoryStorage.keys());
+    // Not implemented for browser - would need to track recording IDs separately
+    console.warn('[RecordingStorage] listRecordings not fully implemented for browser');
+    return [];
   }
 }

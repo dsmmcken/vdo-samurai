@@ -12,6 +12,7 @@ import { ShareLink } from '../connection/ShareLink';
 import { ConnectionStatus } from '../connection/ConnectionStatus';
 import { TransferIndicator } from '../transfer/TransferIndicator';
 import { formatRoomCode } from '../../utils/roomCode';
+import { isElectron } from '../../utils/platform';
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -34,10 +35,11 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-const platform = window.electronAPI?.platform;
-const isMac = platform === 'darwin';
-// Windows and Linux use frameless windows with custom controls
-const useCustomControls = platform === 'win32' || platform === 'linux';
+// Platform detection - safe for browser mode
+const electronPlatform = isElectron() ? window.electronAPI?.platform : undefined;
+const isMac = electronPlatform === 'darwin';
+// Windows and Linux use frameless windows with custom controls (Electron only)
+const useCustomControls = electronPlatform === 'win32' || electronPlatform === 'linux';
 
 export function TitleBar() {
   const { profile } = useUserStore();
@@ -59,9 +61,9 @@ export function TitleBar() {
   const location = useLocation();
   const isUserPopoverOpen = activePopover === 'user';
 
-  // Check maximized state for frameless windows (Windows/Linux)
+  // Check maximized state for frameless windows (Windows/Linux) - Electron only
   useEffect(() => {
-    if (!useCustomControls) return;
+    if (!useCustomControls || !isElectron()) return;
 
     const checkMaximized = async () => {
       const maximized = await window.electronAPI.window.isMaximized();
@@ -75,12 +77,18 @@ export function TitleBar() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleMinimize = () => window.electronAPI.window.minimize();
+  // Window control handlers - only used in Electron
+  const handleMinimize = () => {
+    if (isElectron()) window.electronAPI.window.minimize();
+  };
   const handleMaximize = async () => {
+    if (!isElectron()) return;
     await window.electronAPI.window.maximize();
     setIsMaximized(!isMaximized);
   };
-  const handleClose = () => window.electronAPI.window.close();
+  const handleClose = () => {
+    if (isElectron()) window.electronAPI.window.close();
+  };
 
   const updateElapsed = useCallback(() => {
     if (startTime) {

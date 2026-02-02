@@ -16,6 +16,22 @@
 
     <!-- Icons -->
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
+    <!-- GitHub Pages SPA redirect handler -->
+    <script>
+      (function() {
+        // Handle redirect from 404.html for GitHub Pages SPA support
+        var params = new URLSearchParams(window.location.search);
+        var redirectPath = params.get('p');
+        if (redirectPath) {
+          // Remove the redirect param and restore the original path
+          params.delete('p');
+          var remainingParams = params.toString();
+          var newUrl = redirectPath + (remainingParams ? '?' + remainingParams : '');
+          window.history.replaceState(null, '', newUrl);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

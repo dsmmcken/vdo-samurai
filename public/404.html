@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>VDO Samurai</title>
+    <script>
+      // GitHub Pages SPA redirect hack
+      // Converts the path to a query string and redirects to index.html
+      // The index.html then parses the query string and restores the path
+      const pathSegments = window.location.pathname
+        .replace('/vdo-samurai', '')
+        .split('/')
+        .filter(Boolean);
+      const query = window.location.search;
+
+      // Preserve the original path and query params
+      const redirectPath = pathSegments.length > 0
+        ? '?p=' + encodeURIComponent('/' + pathSegments.join('/') + query)
+        : query;
+
+      window.location.replace('/vdo-samurai/' + redirectPath);
+    </script>
+  </head>
+  <body>
+    <p>Redirecting...</p>
+  </body>
+</html>

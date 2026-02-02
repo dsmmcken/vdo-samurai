@@ -4,7 +4,11 @@ import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { useUserStore } from '../store/userStore';
 import { CherryBlossomButton } from '../components/ui/CherryBlossomButton';
+import { PendingTransferBanner } from '../components/PendingTransferBanner';
+import { usePendingTransfers } from '../hooks/usePendingTransfers';
 import { formatRoomCode } from '../utils/roomCode';
+import { isBrowser } from '../utils/platform';
+import { getRoomCodeFromUrl, clearRoomFromUrl } from '../utils/urlParams';
 
 const DEBUG_ROOM_CODE = formatRoomCode('debug_room', 'debug_password');
 
@@ -35,18 +39,41 @@ export function HomePage() {
   const [isJoining, setIsJoining] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [bgLoaded, setBgLoaded] = useState(false);
+  const [urlRoomCode, setUrlRoomCode] = useState<string | null>(null);
   const navigate = useNavigate();
   const { createSession, joinSession } = useWebRTC();
   const { requestStream } = useMediaStream();
   const { profile } = useUserStore();
 
+  // Pending transfers (browser only)
+  const {
+    pendingTransfers,
+    hasPendingTransfers,
+    downloadPendingTransfer,
+    removePendingTransfer
+  } = usePendingTransfers();
+
+  const browserMode = isBrowser();
+
+  // Check URL for room code on mount
+  useEffect(() => {
+    const roomFromUrl = getRoomCodeFromUrl();
+    if (roomFromUrl) {
+      setUrlRoomCode(roomFromUrl);
+      setRoomCode(roomFromUrl);
+      // Clear from URL to keep it clean
+      clearRoomFromUrl();
+    }
+  }, []);
+
   useEffect(() => {
     const stored = getLastSession();
     setLastSession(stored);
-    if (stored?.roomCode) {
+    // Only populate from last session if no URL room code
+    if (stored?.roomCode && !urlRoomCode) {
       setRoomCode(stored.roomCode);
     }
-  }, []);
+  }, [urlRoomCode]);
 
   useEffect(() => {
     const img = new Image();
@@ -61,7 +88,9 @@ export function HomePage() {
     setIsJoining(true);
     try {
       const code = roomCode.trim();
-      const isRejoiningAsHost = lastSession?.roomCode === code && lastSession?.wasHost;
+      // In browser mode, always join as participant (never as host)
+      const isRejoiningAsHost =
+        !browserMode && lastSession?.roomCode === code && lastSession?.wasHost;
 
       // Request media access first
       await requestStream();
@@ -75,7 +104,7 @@ export function HomePage() {
       }
 
       saveLastSession(code, isRejoiningAsHost);
-      navigate(`/session/${code}`);
+      navigate(`/session/${encodeURIComponent(code)}`);
     } catch (err) {
       console.error('Failed to join session:', err);
     } finally {
@@ -95,7 +124,7 @@ export function HomePage() {
       const newSessionId = await createSession(profile.displayName);
 
       saveLastSession(newSessionId, true);
-      navigate(`/session/${newSessionId}`);
+      navigate(`/session/${encodeURIComponent(newSessionId)}`);
     } catch (err) {
       console.error('Failed to create session:', err);
     } finally {
@@ -111,12 +140,19 @@ export function HomePage() {
       await requestStream();
       await createSession(profile.displayName, DEBUG_ROOM_CODE);
       saveLastSession(DEBUG_ROOM_CODE, true);
-      navigate(`/session/${DEBUG_ROOM_CODE}`);
+      navigate(`/session/${encodeURIComponent(DEBUG_ROOM_CODE)}`);
     } catch (err) {
       console.error('Failed to create debug session:', err);
     } finally {
       setIsCreating(false);
     }
+  };
+
+  // Handle reconnect from pending transfer banner
+  const handleReconnect = (sessionCode: string) => {
+    setRoomCode(sessionCode);
+    // The user will need to click "Join Room" to actually connect
+    // This ensures they can see what they're connecting to
   };
 
   return (
@@ -125,7 +161,23 @@ export function HomePage() {
       style={{ backgroundImage: `url(${BG_IMAGE_URL})` }}
     >
       <div className="flex flex-col items-center p-8 border border-white/30 rounded-xl bg-white/20 backdrop-blur-xl shadow-lg w-full max-w-sm">
-        <h1 className="text-3xl font-bold text-black mb-8">VDO Samurai</h1>
+        <h1 className="text-3xl font-bold text-black mb-2">VDO Samurai</h1>
+
+        {browserMode && (
+          <p className="text-xs text-gray-600 mb-4 text-center">
+            Browser Participant Mode
+          </p>
+        )}
+
+        {/* Pending transfer banner (browser only) */}
+        {browserMode && hasPendingTransfers && (
+          <PendingTransferBanner
+            transfers={pendingTransfers}
+            onReconnect={handleReconnect}
+            onDownload={downloadPendingTransfer}
+            onDismiss={removePendingTransfer}
+          />
+        )}
 
         <form onSubmit={handleJoin} className="w-full">
           <label htmlFor="room-code" className="block text-sm font-medium text-gray-700 mb-2">
@@ -147,34 +199,54 @@ export function HomePage() {
           >
             {isJoining
               ? 'Joining...'
-              : lastSession?.roomCode === roomCode.trim()
+              : lastSession?.roomCode === roomCode.trim() && !browserMode
                 ? 'Rejoin Room'
                 : 'Join Room'}
           </CherryBlossomButton>
         </form>
 
-        <div className="flex items-center w-full my-6">
-          <div className="flex-1 border-t border-gray-300"></div>
-          <span className="px-4 text-gray-500 text-sm">or</span>
-          <div className="flex-1 border-t border-gray-300"></div>
-        </div>
+        {/* Only show "Create Room" in Electron mode */}
+        {!browserMode && (
+          <>
+            <div className="flex items-center w-full my-6">
+              <div className="flex-1 border-t border-gray-300"></div>
+              <span className="px-4 text-gray-500 text-sm">or</span>
+              <div className="flex-1 border-t border-gray-300"></div>
+            </div>
 
-        <CherryBlossomButton
-          onClick={handleCreate}
-          disabled={isCreating}
-          className="w-full px-4 py-2 bg-white/50 text-black border border-gray-300 rounded-lg font-medium hover:bg-white/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-        >
-          {isCreating ? 'Creating...' : 'Create Room'}
-        </CherryBlossomButton>
+            <CherryBlossomButton
+              onClick={handleCreate}
+              disabled={isCreating}
+              className="w-full px-4 py-2 bg-white/50 text-black border border-gray-300 rounded-lg font-medium hover:bg-white/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              {isCreating ? 'Creating...' : 'Create Room'}
+            </CherryBlossomButton>
 
-        {import.meta.env.DEV && (
-          <button
-            onClick={handleCreateDebugRoom}
-            disabled={isCreating}
-            className="w-full mt-2 px-4 py-2 bg-yellow-500/50 text-black border border-yellow-600 rounded-lg font-medium hover:bg-yellow-500/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors text-sm"
-          >
-            Create Debug Room
-          </button>
+            {import.meta.env.DEV && (
+              <button
+                onClick={handleCreateDebugRoom}
+                disabled={isCreating}
+                className="w-full mt-2 px-4 py-2 bg-yellow-500/50 text-black border border-yellow-600 rounded-lg font-medium hover:bg-yellow-500/70 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors text-sm"
+              >
+                Create Debug Room
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Browser mode info */}
+        {browserMode && (
+          <p className="mt-6 text-xs text-gray-500 text-center">
+            To host a session, download the{' '}
+            <a
+              href="https://github.com/dsmmcken/vdo-samurai/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              desktop app
+            </a>
+          </p>
         )}
       </div>
     </div>

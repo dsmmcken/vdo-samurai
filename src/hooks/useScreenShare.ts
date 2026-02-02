@@ -3,10 +3,7 @@ import { useSessionStore } from '../store/sessionStore';
 import { useRecordingStore } from '../store/recordingStore';
 import { usePeerManager } from './usePeerManager';
 import { ScreenRecorder } from '../utils/ScreenRecorder';
-
-function isElectron(): boolean {
-  return typeof window !== 'undefined' && !!window.electronAPI;
-}
+import { isElectron } from '../utils/platform';
 
 export function useScreenShare() {
   const [isSharing, setIsSharing] = useState(false);
