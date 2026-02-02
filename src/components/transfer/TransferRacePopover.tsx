@@ -23,11 +23,12 @@ interface RacerData {
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return '00.0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  const value = (bytes / Math.pow(k, i)).toFixed(1);
+  return value.padStart(4, '0') + ' ' + sizes[i];
 }
 
 // Preload sprite sheet for instant display
@@ -55,6 +56,13 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
   const isYou = racer.isYou;
   const progressPercent = Math.round(racer.progress * 100);
 
+  // Samurai position: linear but capped at 85% to stay on screen near gate (even when finished)
+  const samuraiPos = Math.min(racer.progress * 100, 85);
+
+  // Fill position: trails just slightly behind samurai, but continues to 100% at the end
+  // Using progress^1.1 gives subtle trailing that passes the samurai toward the end
+  const fillPos = racer.status === 'finished' ? 100 : Math.pow(racer.progress, 1.1) * 100;
+
   // Determine which animation to use (run during race, idle otherwise)
   const samuraiAnimation = racer.status === 'racing' ? 'run' : 'idle';
 
@@ -75,23 +83,25 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
             )}
           </span>
         </div>
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-gray-400 font-mono tabular-nums">
           {racer.completedCount}/{racer.fileCount} files
         </div>
       </div>
 
       {/* Race track */}
       <div className="relative h-10 bg-gray-800/50 rounded-lg overflow-hidden border border-gray-700/50">
-        {/* Progress track fill - back layer, chases samurai, fills completely when done */}
+        {/* Progress track fill - gradient trailing behind the samurai */}
         <div
-          className={`absolute z-0 left-0 top-0 bottom-0 transition-all duration-500 ease-out ${
+          className={`absolute z-0 left-0 top-0 bottom-0 transition-all duration-500 ease-out overflow-hidden ${
             racer.status === 'finished'
-              ? 'bg-gradient-to-r from-emerald-900/40 to-emerald-700/40'
+              ? 'race-fill-finished'
               : racer.status === 'racing'
-                ? 'bg-gradient-to-r from-[--color-primary]/30 to-[--color-primary]/50'
+                ? isYou
+                  ? 'race-fill-racing-you'
+                  : 'race-fill-racing-other'
                 : 'bg-gray-800/30'
           }`}
-          style={{ width: racer.status === 'finished' ? '100%' : `${Math.min(progressPercent, 85)}%` }}
+          style={{ width: `${fillPos}%` }}
         />
 
         {/* Finish gate */}
@@ -102,7 +112,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
         {/* Samurai runner - sprite animation */}
         <div
           className="absolute z-20 bottom-0 transition-all duration-500 ease-out"
-          style={{ left: `calc(${Math.min(progressPercent, 85)}%)` }}
+          style={{ left: `${samuraiPos}%` }}
         >
           <SamuraiSprite
             animation={samuraiAnimation}
@@ -121,7 +131,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
                 : 'text-gray-500'
           }`}
         >
-          {progressPercent}%
+          {String(progressPercent).padStart(2, '0')}%
         </div>
       </div>
 
@@ -134,7 +144,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
           )}
           {racer.status === 'idle' && <span>Waiting</span>}
         </span>
-        <span>
+        <span className="font-mono tabular-nums">
           {formatBytes(racer.transferredSize)} / {formatBytes(racer.totalSize)}
         </span>
       </div>
@@ -274,9 +284,9 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
               </svg>
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-100 tracking-wide">SAMURAI RACE</h3>
-              <p className="text-[10px] text-[--color-primary]/60 uppercase tracking-widest">
-                File Transfer Battle
+              <h3 className="text-sm font-bold text-gray-100 tracking-wide">File transfer</h3>
+              <p className="text-[10px] text-gray-400">
+                Keep browser open until your transfer completes.
               </p>
             </div>
           </div>
