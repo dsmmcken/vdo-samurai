@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { buildJoinUrl, GITHUB_PAGES_URL } from '../../utils/urlParams';
 
 interface ShareLinkProps {
   sessionId: string;
@@ -9,7 +10,9 @@ export function ShareLink({ sessionId }: ShareLinkProps) {
 
   const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(sessionId);
+      // Build the full GitHub Pages URL for sharing
+      const shareUrl = buildJoinUrl(GITHUB_PAGES_URL, sessionId);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {

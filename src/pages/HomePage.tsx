@@ -8,7 +8,7 @@ import { PendingTransferBanner } from '../components/PendingTransferBanner';
 import { usePendingTransfers } from '../hooks/usePendingTransfers';
 import { formatRoomCode } from '../utils/roomCode';
 import { isBrowser } from '../utils/platform';
-import { getRoomCodeFromUrl, clearRoomFromUrl } from '../utils/urlParams';
+import { getRoomCodeFromUrl, clearRoomFromUrl, parseRoomInput } from '../utils/urlParams';
 
 const DEBUG_ROOM_CODE = formatRoomCode('debug_room', 'debug_password');
 
@@ -187,8 +187,8 @@ export function HomePage() {
             id="room-code"
             type="text"
             value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value)}
-            placeholder="Enter room code"
+            onChange={(e) => setRoomCode(parseRoomInput(e.target.value))}
+            placeholder="Enter room code or paste link"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
           />
           <CherryBlossomButton

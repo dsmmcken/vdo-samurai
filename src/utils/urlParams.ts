@@ -2,6 +2,9 @@
  * URL parameter utilities for browser-based session joining
  */
 
+// GitHub Pages deployment URL
+export const GITHUB_PAGES_URL = 'https://dsmmcken.github.io/vdo-samurai';
+
 /**
  * Extract room code from URL query parameters
  * Supports format: ?room=roomId&p=password
@@ -16,6 +19,34 @@ export function getRoomCodeFromUrl(): string | null {
   if (!password) return room; // parseRoomCode will handle missing password
 
   return `${room}?p=${password}`;
+}
+
+/**
+ * Parse a pasted value that could be either:
+ * - A full URL (https://dsmmcken.github.io/vdo-samurai/?room=xxx&p=yyy)
+ * - Just the room code (roomId?p=password)
+ * Returns the room code in format: roomId?p=password
+ */
+export function parseRoomInput(input: string): string {
+  const trimmed = input.trim();
+
+  // Check if it looks like a URL
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      const room = url.searchParams.get('room');
+      const password = url.searchParams.get('p');
+
+      if (room) {
+        return password ? `${room}?p=${password}` : room;
+      }
+    } catch {
+      // Not a valid URL, return as-is
+    }
+  }
+
+  // Return as-is (already a room code)
+  return trimmed;
 }
 
 /**
