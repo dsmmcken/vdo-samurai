@@ -129,10 +129,20 @@ export async function startTestServer(port: number = DEFAULT_PORT): Promise<Test
         port,
         baseUrl,
         close: () => new Promise<void>((closeResolve) => {
+          // Force close all connections after a timeout
+          const forceCloseTimeout = setTimeout(() => {
+            console.warn('[TestServer] Force closing after timeout');
+            closeResolve();
+          }, 5000);
+
           server.close(() => {
+            clearTimeout(forceCloseTimeout);
             console.log('[TestServer] Stopped');
             closeResolve();
           });
+
+          // Also close all keep-alive connections immediately
+          server.closeAllConnections?.();
         }),
       });
     });

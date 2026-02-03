@@ -260,9 +260,22 @@ export async function launchApp(instanceId: string): Promise<AppInstance> {
 }
 
 /**
- * Clean up an app instance
+ * Clean up an app instance with timeout protection and force kill
  */
 export async function closeApp(instance: AppInstance): Promise<void> {
+  // Helper to wrap operations with a timeout
+  const withTimeout = <T>(promise: Promise<T>, ms: number, name: string): Promise<{ result: T; timedOut: false } | { timedOut: true }> => {
+    return Promise.race([
+      promise.then((result) => ({ result, timedOut: false as const })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        setTimeout(() => {
+          console.warn(`[E2E] ${name} timed out after ${ms}ms for ${instance.instanceId}, will force kill`);
+          resolve({ timedOut: true });
+        }, ms);
+      }),
+    ]);
+  };
+
   try {
     // Set up dialog handler to auto-accept any dialogs during close
     instance.page.on('dialog', async (dialog) => {
@@ -273,9 +286,34 @@ export async function closeApp(instance: AppInstance): Promise<void> {
       }
     });
 
-    await instance.app.close();
+    const closeResult = await withTimeout(instance.app.close(), 5000, 'app.close');
+
+    // If timed out, force kill the Electron process
+    if (closeResult.timedOut) {
+      console.log(`[E2E] Force killing Electron process for ${instance.instanceId}`);
+      try {
+        // Get the process from the Electron app and kill it
+        const electronProcess = instance.app.process();
+        if (electronProcess && !electronProcess.killed) {
+          electronProcess.kill('SIGKILL');
+        }
+      } catch (killError) {
+        console.warn(`[E2E] Could not force kill: ${killError}`);
+      }
+    }
+
+    console.log(`[E2E] Closed app ${instance.instanceId}`);
   } catch (e) {
     console.error(`[E2E] Failed to close app ${instance.instanceId}:`, e);
+    // Try to force kill on any error
+    try {
+      const electronProcess = instance.app.process();
+      if (electronProcess && !electronProcess.killed) {
+        electronProcess.kill('SIGKILL');
+      }
+    } catch {
+      // Ignore kill errors
+    }
   }
 
   // Clean up userData directory
