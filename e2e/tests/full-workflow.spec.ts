@@ -61,11 +61,11 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     // Wait for session page to load
     await host.page.waitForSelector(selectors.session.recordButton, { timeout: 30000 });
 
-    // Extract session ID from URL
+    // Extract session ID from URL (must decode since it's URL-encoded)
     const hostUrl = host.page.url();
     const sessionIdMatch = hostUrl.match(/\/session\/([^/]+)/);
     expect(sessionIdMatch).toBeTruthy();
-    const sessionId = sessionIdMatch![1];
+    const sessionId = decodeURIComponent(sessionIdMatch![1]);
     console.log('[E2E] Session created:', sessionId);
 
     // ==========================================

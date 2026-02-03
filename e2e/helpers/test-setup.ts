@@ -22,7 +22,8 @@ export async function createSession(page: Page): Promise<string> {
   const url = page.url();
   const match = url.match(/\/session\/([^/]+)/);
   if (!match) throw new Error('Could not extract session ID from URL');
-  return match[1];
+  // Must decode since URL contains encoded room code (e.g., ?p= becomes %3Fp%3D)
+  return decodeURIComponent(match[1]);
 }
 
 /**
