@@ -332,7 +332,12 @@ export function PreviewPanel() {
               {showCameraOverlay && currentCameraUrl && (
                 <div
                   className="absolute bottom-4 right-4 w-24 aspect-square overflow-hidden shadow-lg z-10"
-                  style={{ 'corner-shape': 'superellipse(4)', borderRadius: '20%' } as React.CSSProperties}
+                  style={
+                    {
+                      'corner-shape': 'superellipse(2)',
+                      borderRadius: '20%'
+                    } as React.CSSProperties
+                  }
                 >
                   <video
                     ref={cameraVideoRef}
