@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useTransferStore } from '../../store/transferStore';
 import { usePopoverStore } from '../../store/popoverStore';
@@ -20,8 +20,17 @@ export function TransferIndicator() {
   const { activePopover, togglePopover } = usePopoverStore();
   const { isHost, sessionId } = useSessionStore();
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const prevTransferCountRef = useRef(0);
   const location = useLocation();
   const isHomePage = location.pathname === '/';
+
+  // Auto-open popover when transfers start (transition from 0 to > 0)
+  useEffect(() => {
+    if (prevTransferCountRef.current === 0 && transfers.length > 0) {
+      usePopoverStore.getState().openPopover('transfer');
+    }
+    prevTransferCountRef.current = transfers.length;
+  }, [transfers.length]);
 
   // Show if we've ever had transfers and not dismissed
   // Also show for host when in a session (so they can see the race like participants)

@@ -302,6 +302,23 @@ export function TransferRacePopover({ anchorRef, onDismiss }: TransferRacePopove
         </div>
       </div>
 
+      {/* "Safe to close" banner when YOUR transfers are complete */}
+      {racers.find((r) => r.isYou && r.status === 'finished') && (
+        <div className="mx-3 mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+          <div className="flex items-center gap-2 text-emerald-400">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                fillRule="evenodd"
+                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="text-sm font-medium">Your transfer is complete!</span>
+          </div>
+          <p className="mt-1 text-xs text-emerald-400/70">It is now safe to close this window.</p>
+        </div>
+      )}
+
       {/* Race tracks */}
       <div className="p-3 space-y-4 max-h-80 overflow-y-auto no-scrollbar">
         {racers.length === 0 ? (
