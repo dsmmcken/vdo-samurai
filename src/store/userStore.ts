@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface UserProfile {
   displayName: string;
   fullName: string;
+  subtitle: string; // Job title shown below name in video lower-third
 }
 
 interface UserState {

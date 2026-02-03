@@ -6,6 +6,7 @@ const BG_IMAGE_URL = './samurai-bg.jpg';
 export function ProfileSetup() {
   const [displayName, setDisplayName] = useState('');
   const [fullName, setFullName] = useState('');
+  const [subtitle, setSubtitle] = useState('');
   const [bgLoaded, setBgLoaded] = useState(false);
   const { setProfile } = useUserStore();
 
@@ -20,7 +21,8 @@ export function ProfileSetup() {
     if (displayName.trim() && fullName.trim()) {
       setProfile({
         displayName: displayName.trim(),
-        fullName: fullName.trim()
+        fullName: fullName.trim(),
+        subtitle: subtitle.trim()
       });
     }
   };
@@ -75,7 +77,22 @@ export function ProfileSetup() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
                 required
               />
-              <p className="mt-1.5 text-xs text-gray-500">Used for recordings and video exports</p>
+              <p className="mt-1.5 text-xs text-gray-500">Displayed in video lower-third</p>
+            </div>
+
+            <div>
+              <label htmlFor="subtitle" className="block text-sm font-medium text-gray-700 mb-2">
+                Subtitle
+              </label>
+              <input
+                id="subtitle"
+                type="text"
+                value={subtitle}
+                onChange={(e) => setSubtitle(e.target.value)}
+                placeholder="e.g., Software Engineer"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white/50 text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
+              />
+              <p className="mt-1.5 text-xs text-gray-500">Job title shown below your name</p>
             </div>
 
             <button

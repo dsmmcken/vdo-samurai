@@ -16,6 +16,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
   const [fullName, setFullName] = useState(profile?.fullName || '');
+  const [subtitle, setSubtitle] = useState(profile?.subtitle || '');
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const isOpen = activePopover === 'user';
@@ -28,6 +29,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDisplayName(profile.displayName);
       setFullName(profile.fullName);
+      setSubtitle(profile.subtitle || '');
       setIsEditing(false);
     }
   }, [isOpen, profile]);
@@ -54,7 +56,8 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
     if (displayName.trim() && fullName.trim()) {
       updateProfile({
         displayName: displayName.trim(),
-        fullName: fullName.trim()
+        fullName: fullName.trim(),
+        subtitle: subtitle.trim()
       });
       setIsEditing(false);
     }
@@ -64,6 +67,7 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
     if (profile) {
       setDisplayName(profile.displayName);
       setFullName(profile.fullName);
+      setSubtitle(profile.subtitle || '');
     }
     setIsEditing(false);
   };
@@ -120,7 +124,25 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
                     ? 'border-gray-600 bg-gray-900 text-white placeholder-gray-500 focus:ring-gray-500'
                     : 'border-gray-300 bg-white/50 text-black placeholder-gray-400 focus:ring-gray-400'
                 }`}
-                placeholder="For recordings"
+                placeholder="For lower-third"
+              />
+            </div>
+            <div>
+              <label
+                className={`block text-xs font-medium mb-1 ${isSessionPage ? 'text-gray-400' : 'text-gray-700'}`}
+              >
+                Subtitle
+              </label>
+              <input
+                type="text"
+                value={subtitle}
+                onChange={(e) => setSubtitle(e.target.value)}
+                className={`w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
+                  isSessionPage
+                    ? 'border-gray-600 bg-gray-900 text-white placeholder-gray-500 focus:ring-gray-500'
+                    : 'border-gray-300 bg-white/50 text-black placeholder-gray-400 focus:ring-gray-400'
+                }`}
+                placeholder="e.g., Software Engineer"
               />
             </div>
             <div className="flex gap-2 pt-1">
@@ -169,6 +191,18 @@ export function UserPopover({ anchorRef }: UserPopoverProps) {
                 {profile.fullName}
               </div>
             </div>
+            {profile.subtitle && (
+              <div>
+                <div
+                  className={`text-xs font-medium mb-0.5 ${isSessionPage ? 'text-gray-400' : 'text-gray-600'}`}
+                >
+                  Subtitle
+                </div>
+                <div className={`font-medium ${isSessionPage ? 'text-white' : 'text-black'}`}>
+                  {profile.subtitle}
+                </div>
+              </div>
+            )}
             <button
               onClick={() => setIsEditing(true)}
               className={`w-full px-3 py-1.5 text-sm border rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-2 ${
