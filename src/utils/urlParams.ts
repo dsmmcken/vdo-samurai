@@ -76,3 +76,28 @@ export function clearRoomFromUrl(): void {
   url.searchParams.delete('p');
   window.history.replaceState({}, '', url.toString());
 }
+
+// Auto-join intent storage key
+const AUTO_JOIN_KEY = 'vdo-samurai-auto-join';
+
+/**
+ * Store an auto-join intent in sessionStorage
+ * This survives the ProfileSetup → HomePage transition
+ */
+export function setAutoJoinIntent(roomCode: string): void {
+  sessionStorage.setItem(AUTO_JOIN_KEY, roomCode);
+}
+
+/**
+ * Get the stored auto-join intent
+ */
+export function getAutoJoinIntent(): string | null {
+  return sessionStorage.getItem(AUTO_JOIN_KEY);
+}
+
+/**
+ * Clear the auto-join intent
+ */
+export function clearAutoJoinIntent(): void {
+  sessionStorage.removeItem(AUTO_JOIN_KEY);
+}

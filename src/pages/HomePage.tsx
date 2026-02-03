@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
@@ -8,7 +8,14 @@ import { PendingTransferBanner } from '../components/PendingTransferBanner';
 import { usePendingTransfers } from '../hooks/usePendingTransfers';
 import { formatRoomCode } from '../utils/roomCode';
 import { isBrowser } from '../utils/platform';
-import { getRoomCodeFromUrl, clearRoomFromUrl, parseRoomInput } from '../utils/urlParams';
+import {
+  getRoomCodeFromUrl,
+  clearRoomFromUrl,
+  parseRoomInput,
+  setAutoJoinIntent,
+  getAutoJoinIntent,
+  clearAutoJoinIntent
+} from '../utils/urlParams';
 
 const DEBUG_ROOM_CODE = formatRoomCode('debug_room', 'debug_password');
 
@@ -61,7 +68,7 @@ export function HomePage() {
     if (roomFromUrl) {
       setUrlRoomCode(roomFromUrl);
       setRoomCode(roomFromUrl);
-      // Clear from URL to keep it clean
+      setAutoJoinIntent(roomFromUrl); // Store intent for auto-join after profile setup
       clearRoomFromUrl();
     }
   }, []);
@@ -81,35 +88,61 @@ export function HomePage() {
     img.src = BG_IMAGE_URL;
   }, []);
 
+  // Core join logic extracted for reuse by both form submit and auto-join
+  const performJoin = useCallback(
+    async (code: string) => {
+      if (!code.trim() || !profile?.displayName) return;
+
+      setIsJoining(true);
+      try {
+        const trimmedCode = code.trim();
+        // In browser mode, always join as participant (never as host)
+        const isRejoiningAsHost =
+          !browserMode && lastSession?.roomCode === trimmedCode && lastSession?.wasHost;
+
+        // Request media access first
+        await requestStream();
+
+        if (isRejoiningAsHost) {
+          // Rejoin as host - use createSession with the same room code
+          await createSession(profile.displayName, trimmedCode);
+        } else {
+          // Join as participant
+          await joinSession(trimmedCode, profile.displayName);
+        }
+
+        saveLastSession(trimmedCode, isRejoiningAsHost);
+        navigate(`/session/${encodeURIComponent(trimmedCode)}`);
+      } catch (err) {
+        console.error('Failed to join session:', err);
+      } finally {
+        setIsJoining(false);
+      }
+    },
+    [
+      profile?.displayName,
+      browserMode,
+      lastSession?.roomCode,
+      lastSession?.wasHost,
+      requestStream,
+      createSession,
+      joinSession,
+      navigate
+    ]
+  );
+
+  // Auto-join when profile is ready and there's a pending auto-join intent
+  useEffect(() => {
+    const autoJoinCode = getAutoJoinIntent();
+    if (autoJoinCode && profile?.displayName && !isJoining && !isCreating) {
+      clearAutoJoinIntent(); // Clear immediately to prevent loops
+      performJoin(autoJoinCode);
+    }
+  }, [profile?.displayName, isJoining, isCreating, performJoin]);
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roomCode.trim() || !profile?.displayName) return;
-
-    setIsJoining(true);
-    try {
-      const code = roomCode.trim();
-      // In browser mode, always join as participant (never as host)
-      const isRejoiningAsHost =
-        !browserMode && lastSession?.roomCode === code && lastSession?.wasHost;
-
-      // Request media access first
-      await requestStream();
-
-      if (isRejoiningAsHost) {
-        // Rejoin as host - use createSession with the same room code
-        await createSession(profile.displayName, code);
-      } else {
-        // Join as participant
-        await joinSession(code, profile.displayName);
-      }
-
-      saveLastSession(code, isRejoiningAsHost);
-      navigate(`/session/${encodeURIComponent(code)}`);
-    } catch (err) {
-      console.error('Failed to join session:', err);
-    } finally {
-      setIsJoining(false);
-    }
+    await performJoin(roomCode);
   };
 
   const handleCreate = async () => {
