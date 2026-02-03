@@ -543,11 +543,11 @@ test.describe('Multi-User Timeline Export', () => {
     await host.page.click(selectors.home.createRoomButton);
     await host.page.waitForSelector(selectors.session.recordButton, { timeout: 30000 });
 
-    // Extract session ID from URL
+    // Extract session ID from URL (must decode since it's URL-encoded)
     const hostUrl = host.page.url();
     const sessionIdMatch = hostUrl.match(/\/session\/([^/]+)/);
     expect(sessionIdMatch).toBeTruthy();
-    const sessionId = sessionIdMatch![1];
+    const sessionId = decodeURIComponent(sessionIdMatch![1]);
     console.log('[Multi-User Export] Session created:', sessionId);
 
     // ==========================================
@@ -778,6 +778,14 @@ test.describe('Multi-User Timeline Export', () => {
     // STEP 10: Export and verify
     // ==========================================
     console.log('[Multi-User Export] Starting export...');
+
+    // Close any open popover that might be covering the export button
+    const closePopoverButton = host.page.locator('button:has-text("Close")');
+    if (await closePopoverButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await closePopoverButton.click();
+      await host.page.waitForTimeout(300);
+    }
+
     const exportButton = host.page.locator(selectors.nle.exportButton);
     await expect(exportButton).toBeEnabled({ timeout: 5000 });
     await exportButton.click();

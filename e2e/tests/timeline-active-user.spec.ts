@@ -32,6 +32,22 @@ test.describe('VDO Samurai E2E - Timeline Active User Segments', () => {
     console.log('[E2E] Launching participant instance...');
     participant = await launchApp('participant');
 
+    // Handle any dialogs (like beforeunload confirmations) automatically
+    host.page.on('dialog', async (dialog) => {
+      try {
+        await dialog.accept();
+      } catch {
+        // Dialog may already be handled
+      }
+    });
+    participant.page.on('dialog', async (dialog) => {
+      try {
+        await dialog.accept();
+      } catch {
+        // Dialog may already be handled
+      }
+    });
+
     // ==========================================
     // STEP 2: Complete profile setup for both
     // ==========================================
@@ -60,11 +76,11 @@ test.describe('VDO Samurai E2E - Timeline Active User Segments', () => {
     // Wait for session page to load
     await host.page.waitForSelector(selectors.session.recordButton, { timeout: 30000 });
 
-    // Extract session ID from URL
+    // Extract session ID from URL (must decode since it's URL-encoded)
     const hostUrl = host.page.url();
     const sessionIdMatch = hostUrl.match(/\/session\/([^/]+)/);
     expect(sessionIdMatch).toBeTruthy();
-    const sessionId = sessionIdMatch![1];
+    const sessionId = decodeURIComponent(sessionIdMatch![1]);
     console.log('[E2E] Session created:', sessionId);
 
     // ==========================================

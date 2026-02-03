@@ -11,7 +11,7 @@ import { selectors } from '../helpers/selectors';
  * 3. Can be dismissed manually via popover
  */
 
-// Helper type for transfer data
+// Helper type for transfer data (matches Transfer interface in transferStore.ts)
 interface MockTransfer {
   id: string;
   peerId: string;
@@ -21,6 +21,12 @@ interface MockTransfer {
   progress: number;
   status: 'pending' | 'active' | 'complete' | 'error';
   direction: 'send' | 'receive';
+  // Extended fields for broadcast status (used by TransferRacePopover)
+  role?: 'sender' | 'receiver' | 'observer';
+  senderId?: string;
+  senderName?: string;
+  receiverId?: string;
+  receiverName?: string;
 }
 
 test.describe('Transfer Indicator Persistence', () => {
@@ -135,7 +141,7 @@ test.describe('Transfer Indicator Persistence', () => {
     expect(initialState?.transferCount).toBe(0);
     expect(initialState?.hasHadTransfers).toBe(false);
 
-    // Inject an active transfer
+    // Inject an active transfer (with extended fields for popover support)
     const injected = await injectTransfers(page, [
       {
         id: 'test-transfer-1',
@@ -146,6 +152,11 @@ test.describe('Transfer Indicator Persistence', () => {
         progress: 0.5,
         status: 'active',
         direction: 'send',
+        role: 'sender',
+        senderId: 'self',
+        senderName: 'Test User',
+        receiverId: 'peer-123',
+        receiverName: 'Test Peer',
       },
     ]);
 
@@ -154,8 +165,15 @@ test.describe('Transfer Indicator Persistence', () => {
     // Indicator should be visible
     await expect(indicator).toBeVisible({ timeout: 5000 });
 
-    // Verify it shows progress after transfer is injected
-    await expect(page.locator('text=50%')).toBeVisible();
+    // Popover auto-opens when transfers start - close it first to verify button state
+    const closeButton = page.locator('button:has-text("Close")');
+    if (await closeButton.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await closeButton.click();
+      await page.waitForTimeout(300);
+    }
+
+    // Verify it shows progress after transfer is injected (50% shows as "50%")
+    await expect(indicator.locator('text=50%')).toBeVisible();
   });
 
   test('indicator persists after transfer completes - does not flash away', async () => {
@@ -175,6 +193,11 @@ test.describe('Transfer Indicator Persistence', () => {
         progress: 0.5,
         status: 'active',
         direction: 'send',
+        role: 'sender',
+        senderId: 'self',
+        senderName: 'Test User',
+        receiverId: 'peer-123',
+        receiverName: 'Test Peer',
       },
     ]);
 
@@ -191,6 +214,11 @@ test.describe('Transfer Indicator Persistence', () => {
         progress: 1,
         status: 'complete',
         direction: 'send',
+        role: 'sender',
+        senderId: 'self',
+        senderName: 'Test User',
+        receiverId: 'peer-123',
+        receiverName: 'Test Peer',
       },
     ]);
 
@@ -225,6 +253,11 @@ test.describe('Transfer Indicator Persistence', () => {
         progress: 1,
         status: 'complete',
         direction: 'send',
+        role: 'sender',
+        senderId: 'self',
+        senderName: 'Test User',
+        receiverId: 'peer-123',
+        receiverName: 'Test Peer',
       },
     ]);
 
@@ -265,6 +298,11 @@ test.describe('Transfer Indicator Persistence', () => {
         progress: 1,
         status: 'complete',
         direction: 'send',
+        role: 'sender',
+        senderId: 'self',
+        senderName: 'Test User',
+        receiverId: 'peer-123',
+        receiverName: 'Test Peer',
       },
     ]);
 
@@ -273,8 +311,8 @@ test.describe('Transfer Indicator Persistence', () => {
     // Click to open popover
     await indicator.click();
 
-    // Wait for popover to appear
-    await expect(page.locator('text=SAMURAI RACE')).toBeVisible();
+    // Wait for popover to appear (new UI shows "File transfer" heading)
+    await expect(page.locator('h3:has-text("File transfer")')).toBeVisible();
 
     // Click dismiss button
     await page.click('button:has-text("Dismiss")');
@@ -290,11 +328,12 @@ test.describe('Transfer Indicator Persistence', () => {
     // as the host can always access the race view. The key is that indicatorDismissed is set.
   });
 
-  test('popover displays samurai race theme', async () => {
+  test('popover displays file transfer UI', async () => {
     const { page } = app;
     await navigateToSession(page);
 
-    // Inject transfer
+    // Inject transfer with full fields required by TransferRacePopover
+    // The popover groups transfers by senderId and shows senderName
     await injectTransfers(page, [
       {
         id: 'test-transfer-1',
@@ -304,22 +343,30 @@ test.describe('Transfer Indicator Persistence', () => {
         size: 5 * 1024 * 1024,
         progress: 0.6,
         status: 'active',
-        direction: 'send',
+        direction: 'receive',
+        // Extended fields for racer display
+        role: 'receiver',
+        senderId: 'peer-123',
+        senderName: 'Ninja Warrior',
+        receiverId: 'self',
+        receiverName: 'Test User',
       },
     ]);
 
     const indicator = page.locator('button[aria-label="File transfers"]');
     await expect(indicator).toBeVisible({ timeout: 5000 });
 
-    // Open popover
-    await indicator.click();
+    // Open popover (may already be open due to auto-open)
+    if (!(await page.locator('h3:has-text("File transfer")').isVisible({ timeout: 500 }).catch(() => false))) {
+      await indicator.click();
+    }
 
-    // Verify samurai race theme elements
-    await expect(page.locator('text=SAMURAI RACE')).toBeVisible();
-    await expect(page.locator('text=File Transfer Battle')).toBeVisible();
+    // Verify file transfer UI elements
+    await expect(page.locator('h3:has-text("File transfer")')).toBeVisible();
+    await expect(page.locator('text=Keep browser open')).toBeVisible();
 
-    // Verify race track elements
-    await expect(page.locator('text=START')).toBeVisible();
+    // Verify racer row shows sender name (for received transfers, shows the sender)
+    await expect(page.locator('text=Ninja Warrior')).toBeVisible();
 
     // Close popover
     await page.click('button:has-text("Close")');
@@ -328,6 +375,6 @@ test.describe('Transfer Indicator Persistence', () => {
     await page.waitForTimeout(500);
 
     // Popover should be closed
-    await expect(page.locator('text=SAMURAI RACE')).toHaveCount(0);
+    await expect(page.locator('h3:has-text("File transfer")')).toHaveCount(0);
   });
 });

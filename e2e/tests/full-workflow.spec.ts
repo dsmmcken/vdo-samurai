@@ -281,6 +281,13 @@ test.describe('VDO Samurai E2E - Full Workflow', () => {
     // ==========================================
     console.log('[E2E] Starting video export...');
 
+    // Close any open popover that might be covering the export button
+    const closePopoverButton = host.page.locator('button:has-text("Close")');
+    if (await closePopoverButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await closePopoverButton.click();
+      await host.page.waitForTimeout(300);
+    }
+
     // Click export button
     await host.page.click(selectors.nle.exportButton);
 

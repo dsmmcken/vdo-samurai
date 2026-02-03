@@ -23,14 +23,16 @@ export function TransferIndicator() {
   const prevTransferCountRef = useRef(0);
   const location = useLocation();
   const isHomePage = location.pathname === '/';
+  const isSessionPage = location.pathname.startsWith('/session/');
 
   // Auto-open popover when transfers start (transition from 0 to > 0)
+  // Only auto-open on session page to avoid blocking other UI elements
   useEffect(() => {
-    if (prevTransferCountRef.current === 0 && transfers.length > 0) {
+    if (isSessionPage && prevTransferCountRef.current === 0 && transfers.length > 0) {
       usePopoverStore.getState().openPopover('transfer');
     }
     prevTransferCountRef.current = transfers.length;
-  }, [transfers.length]);
+  }, [transfers.length, isSessionPage]);
 
   // Show if we've ever had transfers and not dismissed
   // Also show for host when in a session (so they can see the race like participants)

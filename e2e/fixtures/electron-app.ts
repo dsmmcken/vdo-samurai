@@ -264,6 +264,15 @@ export async function launchApp(instanceId: string): Promise<AppInstance> {
  */
 export async function closeApp(instance: AppInstance): Promise<void> {
   try {
+    // Set up dialog handler to auto-accept any dialogs during close
+    instance.page.on('dialog', async (dialog) => {
+      try {
+        await dialog.accept();
+      } catch {
+        // Dialog may already be dismissed
+      }
+    });
+
     await instance.app.close();
   } catch (e) {
     console.error(`[E2E] Failed to close app ${instance.instanceId}:`, e);

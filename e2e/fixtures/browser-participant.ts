@@ -105,6 +105,18 @@ export async function launchBrowserParticipant(
 export async function closeBrowserParticipant(participant: BrowserParticipant): Promise<void> {
   console.log(`[BrowserParticipant] Closing ${participant.instanceId}`);
   try {
+    // Set up dialog handler to auto-accept any dialogs during close
+    participant.page.on('dialog', async (dialog) => {
+      try {
+        await dialog.accept();
+      } catch {
+        // Dialog may already be dismissed
+      }
+    });
+
+    // Navigate away from the app to trigger any beforeunload handlers cleanly
+    await participant.page.goto('about:blank').catch(() => {});
+
     await participant.context.close();
     await participant.browser.close();
   } catch (e) {
