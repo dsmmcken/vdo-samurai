@@ -5,7 +5,15 @@ import { usePeerManager } from './usePeerManager';
 import { ScreenRecorder } from '../utils/ScreenRecorder';
 import { isElectron } from '../utils/platform';
 
-export function useScreenShare() {
+export interface ScreenShareOptions {
+  /** Called when screen share starts during an active recording */
+  onScreenShareStartedDuringRecording?: (screenRecordingId: string) => void;
+  /** Called when screen share ends during an active recording */
+  onScreenShareEndedDuringRecording?: (screenRecordingId: string) => void;
+}
+
+export function useScreenShare(options: ScreenShareOptions = {}) {
+  const { onScreenShareStartedDuringRecording, onScreenShareEndedDuringRecording } = options;
   const [isSharing, setIsSharing] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,6 +22,8 @@ export function useScreenShare() {
   const { isRecording, setScreenRecordingId, setLocalScreenBlob } = useRecordingStore();
   const streamRef = useRef<MediaStream | null>(null);
   const screenRecorderRef = useRef<ScreenRecorder | null>(null);
+  // Store the active screen recording ID for callback when screen share ends
+  const activeScreenRecordingIdRef = useRef<string | null>(null);
 
   // Get peer manager methods for stream management
   const { addLocalStream, removeLocalStream } = usePeerManager();
@@ -87,6 +97,11 @@ export function useScreenShare() {
           try {
             const screenId = await screenRecorder.start(stream);
             setScreenRecordingId(screenId);
+            activeScreenRecordingIdRef.current = screenId;
+
+            // Broadcast screen clip start to peers
+            onScreenShareStartedDuringRecording?.(screenId);
+
             console.log(
               '[useScreenShare] Started screen recording during active session:',
               screenId
@@ -104,6 +119,13 @@ export function useScreenShare() {
             const recorder = getScreenRecorder();
             if (recorder.isRecording()) {
               try {
+                // Broadcast screen clip end to peers before stopping
+                const screenId = activeScreenRecordingIdRef.current;
+                if (screenId) {
+                  onScreenShareEndedDuringRecording?.(screenId);
+                  activeScreenRecordingIdRef.current = null;
+                }
+
                 const screenBlob = await recorder.stop();
                 setLocalScreenBlob(screenBlob);
                 console.log(
@@ -145,7 +167,9 @@ export function useScreenShare() {
       removeLocalStream,
       getScreenRecorder,
       startBrowserScreenShare,
-      startElectronScreenShare
+      startElectronScreenShare,
+      onScreenShareStartedDuringRecording,
+      onScreenShareEndedDuringRecording
     ]
   );
 
@@ -168,6 +192,13 @@ export function useScreenShare() {
     const screenRecorder = getScreenRecorder();
     if (screenRecorder.isRecording()) {
       try {
+        // Broadcast screen clip end to peers before stopping
+        const screenId = activeScreenRecordingIdRef.current;
+        if (screenId) {
+          onScreenShareEndedDuringRecording?.(screenId);
+          activeScreenRecordingIdRef.current = null;
+        }
+
         const screenBlob = await screenRecorder.stop();
         setLocalScreenBlob(screenBlob);
         console.log('[useScreenShare] Stopped screen recording, blob size:', screenBlob.size);
@@ -184,7 +215,7 @@ export function useScreenShare() {
     setLocalScreenStream(null);
     setIsSharing(false);
     streamRef.current = null;
-  }, [setLocalScreenStream, setLocalScreenBlob, removeLocalStream, getScreenRecorder]);
+  }, [setLocalScreenStream, setLocalScreenBlob, removeLocalStream, getScreenRecorder, onScreenShareEndedDuringRecording]);
 
   // Cleanup on unmount
   useEffect(() => {

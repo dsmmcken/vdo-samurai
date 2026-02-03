@@ -1,7 +1,17 @@
-import { useScreenShare } from '../../hooks/useScreenShare';
+import { useScreenShare, type ScreenShareOptions } from '../../hooks/useScreenShare';
 import { ScreenSourcePicker } from './ScreenSourcePicker';
 
-export function ScreenShareButton() {
+interface ScreenShareButtonProps {
+  /** Called when screen share starts during an active recording */
+  onScreenShareStartedDuringRecording?: ScreenShareOptions['onScreenShareStartedDuringRecording'];
+  /** Called when screen share ends during an active recording */
+  onScreenShareEndedDuringRecording?: ScreenShareOptions['onScreenShareEndedDuringRecording'];
+}
+
+export function ScreenShareButton({
+  onScreenShareStartedDuringRecording,
+  onScreenShareEndedDuringRecording
+}: ScreenShareButtonProps = {}) {
   const {
     isSharing,
     showPicker,
@@ -10,7 +20,10 @@ export function ScreenShareButton() {
     stopSharing,
     cancelPicker,
     error
-  } = useScreenShare();
+  } = useScreenShare({
+    onScreenShareStartedDuringRecording,
+    onScreenShareEndedDuringRecording
+  });
 
   const handleClick = async () => {
     if (isSharing) {

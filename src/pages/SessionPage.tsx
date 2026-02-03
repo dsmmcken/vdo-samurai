@@ -57,8 +57,14 @@ export function SessionPage() {
   const { peers } = usePeerStore();
   const { receivedRecordings } = useTransferStore();
   const { createSession, joinSession } = useWebRTC();
-  const { requestStream, toggleVideo, toggleVideoFull, toggleAudio, getAudioOnlyStream } =
-    useMediaStream();
+  const {
+    requestStream,
+    toggleVideo,
+    toggleVideoFull,
+    toggleAudio,
+    getAudioOnlyStream,
+    setOnVideoTrackEnded
+  } = useMediaStream();
   const { broadcastVideoState } = useTrystero();
   const { profile } = useUserStore();
   const reconnectAttemptedRef = useRef(false);
@@ -129,8 +135,19 @@ export function SessionPage() {
     }
   }, [isConnected, localStream, requestStream]);
 
-  const { isRecording, countdown, startRecording, stopRecording, onVideoEnabled, onVideoDisabled } =
-    useRecording();
+  const {
+    isRecording,
+    countdown,
+    startRecording,
+    stopRecording,
+    onVideoEnabled,
+    onVideoDisabled,
+    onScreenShareStarted,
+    onScreenShareEnded
+  } = useRecording({
+    setOnVideoTrackEnded,
+    getAudioOnlyStream
+  });
   const { sendMultipleToAllPeers } = useFileTransfer();
   const { addPendingTransfer, markCompleted } = usePendingTransfers();
 
@@ -644,7 +661,10 @@ export function SessionPage() {
 
             {/* Screen share - hidden on small mobile screens */}
             <div className="hidden sm:block">
-              <ScreenShareButton />
+              <ScreenShareButton
+                onScreenShareStartedDuringRecording={onScreenShareStarted}
+                onScreenShareEndedDuringRecording={onScreenShareEnded}
+              />
             </div>
 
             {/* Record button (host only) */}

@@ -15,9 +15,17 @@ interface RecordingMessage {
   globalClockStart?: number;
 }
 
+export interface RecordingHookOptions {
+  /** Setter for video track ended callback (from useMediaStream) */
+  setOnVideoTrackEnded?: (callback: (() => Promise<void>) | null) => void;
+  /** Function to get an audio-only stream (from useMediaStream) */
+  getAudioOnlyStream?: () => MediaStream | null;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function useRecording() {
+export function useRecording(options: RecordingHookOptions = {}) {
+  const { setOnVideoTrackEnded, getAudioOnlyStream: getAudioOnlyStreamOption } = options;
   const { room } = useTrystero();
   const { localRecordingStream, localScreenStream, isHost } = useSessionStore();
   const {
@@ -329,6 +337,91 @@ export function useRecording() {
     handleStopRecordingRef.current = handleStopRecording;
   }, [handleStopRecording]);
 
+  // Register/unregister track ended callback based on recording state
+  // When recording, handle unexpected track ending by transitioning to audio-only
+  useEffect(() => {
+    if (!setOnVideoTrackEnded) return;
+
+    if (isRecording) {
+      // Register callback to handle unexpected track endings during recording
+      const handleTrackEnded = async () => {
+        console.log('[useRecording] Video track ended unexpectedly during recording');
+
+        // Get audio-only stream if available
+        const audioStream = getAudioOnlyStreamOption?.();
+        if (!audioStream) {
+          console.warn('[useRecording] No audio stream available for fallback');
+          return;
+        }
+
+        const clipRecorder = getClipRecorder();
+
+        // Stop current video clip
+        const videoClipId = clipRecorder.getActiveVideoClipId();
+        if (videoClipId) {
+          try {
+            const { globalEndTime, blob } = await clipRecorder.stopClip(videoClipId);
+            const currentLocalClips = useRecordingStore.getState().localClips;
+            const clip = currentLocalClips.find((c) => c.recordingId === videoClipId);
+            const storeClipId = clip?.id || videoClipId;
+
+            stopClip(storeClipId, globalEndTime);
+            finalizeClip(storeClipId, blob);
+            broadcastClipInfo(
+              videoClipId,
+              'camera',
+              clip?.globalStartTime || 0,
+              globalEndTime,
+              'stopped'
+            );
+
+            console.log('[useRecording] Stopped video clip due to track end:', videoClipId);
+          } catch (err) {
+            console.error('[useRecording] Failed to stop video clip on track end:', err);
+          }
+        }
+
+        // Start audio-only clip to fill the gap
+        try {
+          const { clipId, globalStartTime } = await clipRecorder.startAudioOnlyClip(audioStream);
+
+          startClip({
+            recordingId: clipId,
+            peerId: selfId,
+            sourceType: 'audio-only',
+            globalStartTime,
+            globalEndTime: null,
+            status: 'recording'
+          });
+
+          broadcastClipInfo(clipId, 'audio-only', globalStartTime, null, 'started');
+          activeAudioClipIdRef.current = clipId;
+          console.log('[useRecording] Started audio-only clip after track end:', clipId);
+        } catch (err) {
+          console.error('[useRecording] Failed to start audio-only clip after track end:', err);
+        }
+      };
+
+      setOnVideoTrackEnded(handleTrackEnded);
+    } else {
+      // Unregister when not recording
+      setOnVideoTrackEnded(null);
+    }
+
+    return () => {
+      setOnVideoTrackEnded(null);
+    };
+  }, [
+    isRecording,
+    setOnVideoTrackEnded,
+    getAudioOnlyStreamOption,
+    getClipRecorder,
+    startClip,
+    stopClip,
+    finalizeClip,
+    broadcastClipInfo
+  ]);
+
   /**
    * Start recording (host only)
    * Initiates countdown and synchronizes all peers
@@ -501,6 +594,63 @@ export function useRecording() {
   );
 
   /**
+   * Called when screen share starts during recording.
+   * Registers the screen clip and broadcasts to peers.
+   */
+  const onScreenShareStarted = useCallback(
+    (screenRecordingId: string) => {
+      if (!isRecording) return;
+
+      const clipRecorder = getClipRecorder();
+      const globalStartTime = clipRecorder.getGlobalTime();
+
+      // Register screen clip in store
+      startClip({
+        recordingId: screenRecordingId,
+        peerId: selfId,
+        sourceType: 'screen',
+        globalStartTime,
+        globalEndTime: null,
+        status: 'recording'
+      });
+
+      // Broadcast to peers
+      broadcastClipInfo(screenRecordingId, 'screen', globalStartTime, null, 'started');
+      console.log('[useRecording] Screen share started during recording:', screenRecordingId);
+    },
+    [isRecording, getClipRecorder, startClip, broadcastClipInfo]
+  );
+
+  /**
+   * Called when screen share ends during recording.
+   * Stops the screen clip and broadcasts to peers.
+   */
+  const onScreenShareEnded = useCallback(
+    (screenRecordingId: string) => {
+      if (!isRecording) return;
+
+      const clipRecorder = getClipRecorder();
+      const globalEndTime = clipRecorder.getGlobalTime();
+
+      // Find the clip and update it
+      const currentLocalClips = useRecordingStore.getState().localClips;
+      const clip = currentLocalClips.find((c) => c.recordingId === screenRecordingId);
+      if (clip) {
+        stopClip(clip.id, globalEndTime);
+        broadcastClipInfo(
+          screenRecordingId,
+          'screen',
+          clip.globalStartTime,
+          globalEndTime,
+          'stopped'
+        );
+        console.log('[useRecording] Screen share ended during recording:', screenRecordingId);
+      }
+    },
+    [isRecording, getClipRecorder, stopClip, broadcastClipInfo]
+  );
+
+  /**
    * Reset recording state
    */
   const resetRecording = useCallback(() => {
@@ -524,6 +674,8 @@ export function useRecording() {
     isHost,
     onVideoEnabled,
     onVideoDisabled,
+    onScreenShareStarted,
+    onScreenShareEnded,
     getScreenRecorderInstance
   };
 }
