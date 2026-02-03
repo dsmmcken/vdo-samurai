@@ -3,7 +3,7 @@
  *
  * Generates filter_complex for:
  * - Time-based switching between active users
- * - Screen + camera PiP compositing with rounded corners
+ * - Screen + camera PiP compositing with squircle mask
  * - Cross-fade transitions between segments
  * - Audio switching with crossfade
  */
@@ -21,9 +21,10 @@ if (ffmpegPath) {
 const CONFIG = {
   OUTPUT_WIDTH: 1920,
   OUTPUT_HEIGHT: 1080,
-  PIP_SCALE: 0.15,
+  PIP_SIZE: 160, // Square PiP size (cropped from camera)
   PIP_PADDING: 20,
-  PIP_CORNER_RADIUS: 10,
+  PIP_CORNER_RADIUS: 32, // Corner radius for squircle corners (~20% of size)
+  PIP_SQUIRCLE_EXPONENT: 4, // Superellipse exponent (4 = squircle, 2 = circular)
   TRANSITION_DURATION_S: 0.3,
   BACKGROUND_COLOR: 'black',
   VIDEO_BITRATE: '6M',
@@ -35,11 +36,9 @@ const CONFIG = {
   }
 } as const;
 
-// Calculate PiP dimensions
-const PIP_WIDTH = Math.round(CONFIG.OUTPUT_WIDTH * CONFIG.PIP_SCALE);
-const PIP_HEIGHT = Math.round(CONFIG.OUTPUT_HEIGHT * CONFIG.PIP_SCALE);
-const PIP_X = CONFIG.OUTPUT_WIDTH - PIP_WIDTH - CONFIG.PIP_PADDING;
-const PIP_Y = CONFIG.OUTPUT_HEIGHT - PIP_HEIGHT - CONFIG.PIP_PADDING;
+// Calculate PiP position (square dimensions from CONFIG.PIP_SIZE)
+const PIP_X = CONFIG.OUTPUT_WIDTH - CONFIG.PIP_SIZE - CONFIG.PIP_PADDING;
+const PIP_Y = CONFIG.OUTPUT_HEIGHT - CONFIG.PIP_SIZE - CONFIG.PIP_PADDING;
 
 export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only';
 
@@ -102,26 +101,37 @@ function parseTimemark(timemark: string): number {
 }
 
 /**
- * Build the alpha expression for rounded corners using geq
+ * Build the alpha expression for squircle corners using geq
+ * Uses superellipse formula in corner regions: (dx/r)^n + (dy/r)^n <= 1
+ * Sides remain straight, only corners are curved (like iOS app icons)
  * Returns just the expression string, not the full filter
  */
-function buildRoundedCornersAlphaExpr(width: number, height: number, radius: number): string {
+function buildSquircleAlphaExpr(
+  width: number,
+  height: number,
+  radius: number,
+  exponent: number = 4
+): string {
   const r = radius;
+  const n = exponent;
+  // Precompute r^n for the boundary check
+  const rn = Math.pow(r, n);
 
   // The geq filter applies per-pixel logic
-  // We check if a pixel is in a corner region and if so, apply circular cutoff
+  // We check if a pixel is in a corner region and if so, apply superellipse cutoff
   // Corner regions: (0,0), (W-r,0), (0,H-r), (W-r,H-r)
-  // Inside corner: check if distance from corner center > r
+  // Inside corner curve: pow(dx,n) + pow(dy,n) <= pow(r,n)
+  // Outside (transparent): pow(dx,n) + pow(dy,n) > pow(r,n)
 
   return [
     // Top-left corner
-    `if(lt(X,${r})*lt(Y,${r})*gt(hypot(${r}-X,${r}-Y),${r}),0,`,
+    `if(lt(X,${r})*lt(Y,${r})*gt(pow(${r}-X,${n})+pow(${r}-Y,${n}),${rn}),0,`,
     // Top-right corner
-    `if(gt(X,${width - r})*lt(Y,${r})*gt(hypot(X-${width - r},${r}-Y),${r}),0,`,
+    `if(gt(X,${width - r})*lt(Y,${r})*gt(pow(X-${width - r},${n})+pow(${r}-Y,${n}),${rn}),0,`,
     // Bottom-left corner
-    `if(lt(X,${r})*gt(Y,${height - r})*gt(hypot(${r}-X,Y-${height - r}),${r}),0,`,
+    `if(lt(X,${r})*gt(Y,${height - r})*gt(pow(${r}-X,${n})+pow(Y-${height - r},${n}),${rn}),0,`,
     // Bottom-right corner
-    `if(gt(X,${width - r})*gt(Y,${height - r})*gt(hypot(X-${width - r},Y-${height - r}),${r}),0,`,
+    `if(gt(X,${width - r})*gt(Y,${height - r})*gt(pow(X-${width - r},${n})+pow(Y-${height - r},${n}),${rn}),0,`,
     // Default: fully opaque
     `255))))`
   ].join('');
@@ -170,15 +180,17 @@ function buildTimelineFilterComplex(
           `setsar=1,trim=start=${screenTrimStartS}:duration=${segDurationS},setpts=PTS-STARTPTS,fps=${CONFIG.FRAMERATE}[screen${i}]`
       );
 
-      // Scale camera to PiP size, apply rounded corners, and trim - inline
-      const pipAlphaExpr = buildRoundedCornersAlphaExpr(
-        PIP_WIDTH,
-        PIP_HEIGHT,
-        CONFIG.PIP_CORNER_RADIUS
+      // Scale camera to square PiP size (center crop), apply squircle mask, and trim - inline
+      const pipSize = CONFIG.PIP_SIZE;
+      const pipAlphaExpr = buildSquircleAlphaExpr(
+        pipSize,
+        pipSize,
+        CONFIG.PIP_CORNER_RADIUS,
+        CONFIG.PIP_SQUIRCLE_EXPONENT
       );
       filters.push(
-        `[${camIdx}:v]scale=${PIP_WIDTH}:${PIP_HEIGHT}:force_original_aspect_ratio=decrease,` +
-          `pad=${PIP_WIDTH}:${PIP_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=${CONFIG.BACKGROUND_COLOR},` +
+        `[${camIdx}:v]scale=${pipSize}:${pipSize}:force_original_aspect_ratio=increase,` +
+          `crop=${pipSize}:${pipSize},` +
           `setsar=1,format=rgba,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='${pipAlphaExpr}',` +
           `trim=start=${camTrimStartS}:duration=${segDurationS},setpts=PTS-STARTPTS,fps=${CONFIG.FRAMERATE}[pip${i}]`
       );

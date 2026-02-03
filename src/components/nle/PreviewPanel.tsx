@@ -328,9 +328,12 @@ export function PreviewPanel() {
                 }}
               />
 
-              {/* Camera overlay - only shown when screen share is the main video */}
+              {/* Camera overlay - square with squircle mask, only shown when screen share is the main video */}
               {showCameraOverlay && currentCameraUrl && (
-                <div className="absolute bottom-4 right-4 w-48 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700 z-10">
+                <div
+                  className="absolute bottom-4 right-4 w-24 aspect-square overflow-hidden shadow-lg z-10"
+                  style={{ borderRadius: '22%' }}
+                >
                   <video
                     ref={cameraVideoRef}
                     src={currentCameraUrl}
