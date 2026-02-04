@@ -114,11 +114,7 @@ function RacerRow({ racer, position }: { racer: RacerData; position: number }) {
           className="absolute z-20 bottom-0 transition-all duration-500 ease-out"
           style={{ left: `${samuraiPos}%` }}
         >
-          <SamuraiSprite
-            animation={samuraiAnimation}
-            isYou={isYou}
-            className="drop-shadow-lg"
-          />
+          <SamuraiSprite animation={samuraiAnimation} isYou={isYou} className="drop-shadow-lg" />
         </div>
 
         {/* Progress percentage badge - anchored left */}

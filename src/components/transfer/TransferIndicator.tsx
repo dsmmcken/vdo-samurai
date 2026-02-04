@@ -78,7 +78,9 @@ export function TransferIndicator() {
         <div className={`flex items-center gap-1.5 ${getTextColor()}`}>
           {isActive ? (
             <>
-              <span className="font-mono tabular-nums">{String(Math.round(totalProgress * 100)).padStart(2, '0')}%</span>
+              <span className="font-mono tabular-nums">
+                {String(Math.round(totalProgress * 100)).padStart(2, '0')}%
+              </span>
               <span className="text-[10px] opacity-60 font-mono tabular-nums">
                 {formatBytes(transferredSize)}/{formatBytes(totalSize)}
               </span>

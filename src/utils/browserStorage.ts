@@ -60,11 +60,7 @@ function openDB(): Promise<IDBDatabase> {
 
 // ============ Recording Chunks ============
 
-export async function saveChunk(
-  recordingId: string,
-  chunk: Blob,
-  index: number
-): Promise<void> {
+export async function saveChunk(recordingId: string, chunk: Blob, index: number): Promise<void> {
   const db = await openDB();
   const key = `${recordingId}:${String(index).padStart(6, '0')}`;
 
@@ -84,10 +80,7 @@ export async function getChunks(recordingId: string): Promise<Blob[]> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(CHUNKS_STORE, 'readonly');
     const store = tx.objectStore(CHUNKS_STORE);
-    const request = store.openCursor(IDBKeyRange.bound(
-      `${recordingId}:`,
-      `${recordingId}:\uffff`
-    ));
+    const request = store.openCursor(IDBKeyRange.bound(`${recordingId}:`, `${recordingId}:\uffff`));
 
     const chunks: { key: string; blob: Blob }[] = [];
 
@@ -122,10 +115,7 @@ export async function deleteChunks(recordingId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(CHUNKS_STORE, 'readwrite');
     const store = tx.objectStore(CHUNKS_STORE);
-    const request = store.openCursor(IDBKeyRange.bound(
-      `${recordingId}:`,
-      `${recordingId}:\uffff`
-    ));
+    const request = store.openCursor(IDBKeyRange.bound(`${recordingId}:`, `${recordingId}:\uffff`));
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {

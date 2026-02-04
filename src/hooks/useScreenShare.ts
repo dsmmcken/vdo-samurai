@@ -215,7 +215,13 @@ export function useScreenShare(options: ScreenShareOptions = {}) {
     setLocalScreenStream(null);
     setIsSharing(false);
     streamRef.current = null;
-  }, [setLocalScreenStream, setLocalScreenBlob, removeLocalStream, getScreenRecorder, onScreenShareEndedDuringRecording]);
+  }, [
+    setLocalScreenStream,
+    setLocalScreenBlob,
+    removeLocalStream,
+    getScreenRecorder,
+    onScreenShareEndedDuringRecording
+  ]);
 
   // Cleanup on unmount
   useEffect(() => {

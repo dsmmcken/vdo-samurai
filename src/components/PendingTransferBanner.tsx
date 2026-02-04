@@ -62,10 +62,7 @@ export function PendingTransferBanner({
           </p>
 
           {Object.entries(sessionGroups).map(([sessionCode, sessionTransfers]) => (
-            <div
-              key={sessionCode}
-              className="bg-black/30 rounded-lg p-3 mb-2 last:mb-0"
-            >
+            <div key={sessionCode} className="bg-black/30 rounded-lg p-3 mb-2 last:mb-0">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-gray-400 font-mono">
                   Session: {sessionCode.split('?p=')[0].slice(0, 30)}...
@@ -77,10 +74,7 @@ export function PendingTransferBanner({
 
               <div className="space-y-1 mb-3">
                 {sessionTransfers.map((transfer) => (
-                  <div
-                    key={transfer.id}
-                    className="flex items-center justify-between text-sm"
-                  >
+                  <div key={transfer.id} className="flex items-center justify-between text-sm">
                     <span className="text-gray-300">
                       {transfer.type === 'camera' ? '📹' : '🖥️'} {transfer.type} recording
                     </span>

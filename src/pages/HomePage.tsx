@@ -53,12 +53,8 @@ export function HomePage() {
   const { profile } = useUserStore();
 
   // Pending transfers (browser only)
-  const {
-    pendingTransfers,
-    hasPendingTransfers,
-    downloadPendingTransfer,
-    removePendingTransfer
-  } = usePendingTransfers();
+  const { pendingTransfers, hasPendingTransfers, downloadPendingTransfer, removePendingTransfer } =
+    usePendingTransfers();
 
   const browserMode = isBrowser();
 
@@ -197,9 +193,7 @@ export function HomePage() {
         <h1 className="text-3xl font-bold text-black mb-2">VDO Samurai</h1>
 
         {browserMode && (
-          <p className="text-xs text-gray-600 mb-4 text-center">
-            Browser Participant Mode
-          </p>
+          <p className="text-xs text-gray-600 mb-4 text-center">Browser Participant Mode</p>
         )}
 
         {/* Pending transfer banner (browser only) */}

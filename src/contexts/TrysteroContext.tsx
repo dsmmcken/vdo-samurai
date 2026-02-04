@@ -373,8 +373,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         const activeTransfers = useTransferStore
           .getState()
           .transfers.filter(
-            (t) =>
-              t.role === 'sender' && (t.status === 'pending' || t.status === 'active')
+            (t) => t.role === 'sender' && (t.status === 'pending' || t.status === 'active')
           );
         activeTransfers.forEach((transfer) => {
           const statusMsg: TransferStatusData = {

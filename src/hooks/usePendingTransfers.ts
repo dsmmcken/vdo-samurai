@@ -129,25 +129,28 @@ export function usePendingTransfers(): UsePendingTransfersReturn {
     console.log(`[usePendingTransfers] Removed pending transfer: ${id}`);
   }, []);
 
-  const downloadPendingTransfer = useCallback((id: string) => {
-    const transfer = pendingTransfers.find((t) => t.id === id);
-    if (!transfer) {
-      console.error(`[usePendingTransfers] Transfer not found: ${id}`);
-      return;
-    }
+  const downloadPendingTransfer = useCallback(
+    (id: string) => {
+      const transfer = pendingTransfers.find((t) => t.id === id);
+      if (!transfer) {
+        console.error(`[usePendingTransfers] Transfer not found: ${id}`);
+        return;
+      }
 
-    // Create download link
-    const url = URL.createObjectURL(transfer.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = transfer.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      // Create download link
+      const url = URL.createObjectURL(transfer.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = transfer.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
-    console.log(`[usePendingTransfers] Downloaded: ${transfer.filename}`);
-  }, [pendingTransfers]);
+      console.log(`[usePendingTransfers] Downloaded: ${transfer.filename}`);
+    },
+    [pendingTransfers]
+  );
 
   return {
     pendingTransfers,

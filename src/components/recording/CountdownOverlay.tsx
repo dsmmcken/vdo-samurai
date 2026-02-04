@@ -62,10 +62,7 @@ function AnimatedNumber({ number, phase, onAnimationEnd }: AnimatedNumberProps) 
   }
 
   return (
-    <div
-      style={{ animation: getAnimation() }}
-      onAnimationEnd={onAnimationEnd}
-    >
+    <div style={{ animation: getAnimation() }} onAnimationEnd={onAnimationEnd}>
       <svg
         viewBox={data.viewBox}
         className="w-[480px] h-[480px]"
@@ -168,9 +165,7 @@ export function CountdownOverlay({ countdown }: CountdownOverlayProps) {
             onAnimationEnd={handleAnimationEnd}
           />
         )}
-        {phase !== 'hidden' && (
-          <p className="text-2xl text-gray-300 mt-4">Recording starting...</p>
-        )}
+        {phase !== 'hidden' && <p className="text-2xl text-gray-300 mt-4">Recording starting...</p>}
       </div>
     </div>
   );
