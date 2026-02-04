@@ -17,17 +17,15 @@ files:
   - "!**/*.{ts,tsx,map,md}"
   - "!{.prettierrc,.prettierignore,tsconfig*.json,vite.config.ts,electron.vite.config.ts}"
 
-extraResources:
-  - from: node_modules/ffmpeg-static
-    to: ffmpeg-static
-    filter:
-      - "ffmpeg"
-      - "ffmpeg.exe"
-
 asarUnpack:
-  - node_modules/ffmpeg-static/**/*
+  - resources/ffmpeg/**/*
 
 mac:
+  extraResources:
+    - from: resources/ffmpeg/ffmpeg-darwin-${arch}
+      to: ffmpeg/ffmpeg
+    - from: resources/ffmpeg/ffprobe-darwin-${arch}
+      to: ffmpeg/ffprobe
   category: public.app-category.video
   target:
     - target: dmg
@@ -58,6 +56,11 @@ dmg:
     height: 380
 
 win:
+  extraResources:
+    - from: resources/ffmpeg/ffmpeg.exe
+      to: ffmpeg/ffmpeg.exe
+    - from: resources/ffmpeg/ffprobe.exe
+      to: ffmpeg/ffprobe.exe
   target:
     - target: nsis
       arch:
@@ -76,6 +79,11 @@ nsis:
   createStartMenuShortcut: true
 
 linux:
+  extraResources:
+    - from: resources/ffmpeg/ffmpeg-linux-x64
+      to: ffmpeg/ffmpeg
+    - from: resources/ffmpeg/ffprobe-linux-x64
+      to: ffmpeg/ffprobe
   target:
     - target: AppImage
       arch:

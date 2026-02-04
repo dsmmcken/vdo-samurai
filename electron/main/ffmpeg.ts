@@ -1,15 +1,15 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static';
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
+import { getFFmpegPaths } from './ffmpeg-paths';
 
-// Configure fluent-ffmpeg to use the bundled ffmpeg binary
-if (ffmpegPath) {
-  ffmpeg.setFfmpegPath(ffmpegPath);
-}
+// Configure fluent-ffmpeg to use the platform-appropriate binaries
+const { ffmpeg: ffmpegPath, ffprobe: ffprobePath } = getFFmpegPaths();
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
 
 // Configuration
 const COMPOSITE_CONFIG = {

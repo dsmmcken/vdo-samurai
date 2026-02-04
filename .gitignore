@@ -24,6 +24,9 @@ playwright-report/
 # Generated mock videos (too large for git)
 e2e/test-assets/videos/*.mp4
 
+# Downloaded ffmpeg binaries (too large for git, run npm install to download)
+resources/ffmpeg/
+
 # Claude Code settings
 .claude/
 
