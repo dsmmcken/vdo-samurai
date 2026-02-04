@@ -143,6 +143,17 @@ export function TimelineClip({
 
       {/* Clip content */}
       <div className="absolute inset-0 flex items-center px-2 overflow-hidden">
+        {/* Speed dial indicator */}
+        {clip.sourceType === 'speeddial' && (
+          <svg
+            className="w-3 h-3 mr-1 flex-shrink-0 text-white/80"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+            aria-label="Speed dial clip"
+          >
+            <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
+          </svg>
+        )}
         <span className="text-xs font-medium text-white truncate drop-shadow-sm">
           {clip.peerName}
         </span>

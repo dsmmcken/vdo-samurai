@@ -7,6 +7,14 @@ export interface EditPoint {
   type: 'focus-change' | 'marker';
 }
 
+export interface SpeedDialPlaybackRecord {
+  clipId: string;
+  clipName: string;
+  clipPath: string;
+  globalStartTime: number;
+  globalEndTime: number | null;
+}
+
 interface RecordingState {
   // Session state
   isRecording: boolean;
@@ -35,6 +43,9 @@ interface RecordingState {
   // Screen recording (unchanged from original)
   screenRecordingId: string | null;
   localScreenBlob: Blob | null;
+
+  // Speed dial playbacks
+  speedDialPlaybacks: SpeedDialPlaybackRecord[];
 
   // Actions
   setIsRecording: (recording: boolean) => void;
@@ -67,6 +78,17 @@ interface RecordingState {
   clearEditPoints: () => void;
   setLocalBlob: (blob: Blob | null) => void;
   setLocalScreenBlob: (blob: Blob | null) => void;
+
+  // Speed dial actions
+  startSpeedDialPlayback: (
+    clipId: string,
+    clipName: string,
+    clipPath: string,
+    globalStartTime: number
+  ) => void;
+  stopSpeedDialPlayback: (clipId: string, globalEndTime: number) => void;
+  clearSpeedDialPlaybacks: () => void;
+
   reset: () => void;
 }
 
@@ -88,7 +110,8 @@ const initialState = {
   screenRecordingId: null,
   editPoints: [] as EditPoint[],
   localBlob: null,
-  localScreenBlob: null
+  localScreenBlob: null,
+  speedDialPlaybacks: [] as SpeedDialPlaybackRecord[]
 };
 
 let clipCounter = 0;
@@ -175,6 +198,25 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   clearEditPoints: () => set({ editPoints: [] }),
   setLocalBlob: (localBlob) => set({ localBlob }),
   setLocalScreenBlob: (localScreenBlob) => set({ localScreenBlob }),
+
+  // Speed dial playback tracking
+  startSpeedDialPlayback: (clipId, clipName, clipPath, globalStartTime) =>
+    set((state) => ({
+      speedDialPlaybacks: [
+        ...state.speedDialPlaybacks,
+        { clipId, clipName, clipPath, globalStartTime, globalEndTime: null }
+      ]
+    })),
+
+  stopSpeedDialPlayback: (clipId, globalEndTime) =>
+    set((state) => ({
+      speedDialPlaybacks: state.speedDialPlaybacks.map((p) =>
+        p.clipId === clipId && p.globalEndTime === null ? { ...p, globalEndTime } : p
+      )
+    })),
+
+  clearSpeedDialPlaybacks: () => set({ speedDialPlaybacks: [] }),
+
   reset: () => {
     clipCounter = 0;
     set(initialState);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useSpeedDialStore } from '../store/speedDialStore';
 import { useSessionStore } from '../store/sessionStore';
 import { usePeerManager } from './usePeerManager';
+import { useFocus } from './useFocus';
 import { SpeedDialPlayer } from '../services/SpeedDialPlayer';
 import type { SpeedDialClip } from '../types/speeddial';
 
@@ -34,6 +35,7 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
 
   const { setLocalScreenStream } = useSessionStore();
   const { addLocalStream, removeLocalStream } = usePeerManager();
+  const { changeFocus } = useFocus();
 
   const playerRef = useRef<SpeedDialPlayer | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -119,6 +121,10 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
         // Add to P2P as screen type (will be transmitted to all peers)
         addLocalStream(stream, { type: 'screen' });
 
+        // Focus participants on us (host) when speed dial starts
+        // null means focus on self/host, which will show the screen stream
+        changeFocus(null);
+
         // Update store state
         startPlayback(clip.id);
 
@@ -140,6 +146,7 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
       addLocalStream,
       removeLocalStream,
       setLocalScreenStream,
+      changeFocus,
       startPlayback,
       onPlaybackStartedDuringRecording,
       onPlaybackEndedDuringRecording

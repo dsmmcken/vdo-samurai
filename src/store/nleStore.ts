@@ -10,10 +10,14 @@ export interface NLEClip {
   trimStart: number; // trim from beginning (ms)
   trimEnd: number; // trim from end (ms)
   color: string; // Tailwind color name
-  sourceType: 'camera' | 'screen' | 'audio-only'; // Type of recording source
+  sourceType: 'camera' | 'screen' | 'audio-only' | 'speeddial'; // Type of recording source
   globalStartTime?: number; // Global start time from clip-based recording
   globalEndTime?: number; // Global end time from clip-based recording
   recordingId?: string; // Reference to the recording blob
+
+  // Speed dial specific fields
+  speedDialClipId?: string; // Original speed dial clip ID
+  speedDialClipPath?: string; // Path to speed dial source file
 }
 
 export type NLEMode = 'session' | 'editing';

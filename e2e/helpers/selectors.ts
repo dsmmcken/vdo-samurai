@@ -30,6 +30,19 @@ export const selectors = {
 
     // Screen share
     screenShareButton: 'button[aria-label*="screen"]',
+
+    // Speed Dial
+    speedDialButton: 'button[aria-label="Open Speed Dial"]',
+  },
+
+  // Speed Dial Panel
+  speedDial: {
+    panel: '[role="dialog"][aria-label="Speed Dial"]',
+    closeButton: '[role="dialog"][aria-label="Speed Dial"] button[aria-label="Close panel"]',
+    importButton: 'button:has-text("Import Clip")',
+    emptyMessage: 'text=No clips yet',
+    volumeSlider: 'input[type="range"]',
+    clipItem: (name: string) => `[data-testid="speed-dial-clip"][data-name="${name}"]`,
   },
 
   // Recording Complete Popover

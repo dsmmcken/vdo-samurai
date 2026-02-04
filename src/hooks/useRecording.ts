@@ -51,6 +51,9 @@ export function useRecording(options: RecordingHookOptions = {}) {
     addPeerClip,
     updatePeerClip,
     clearClips,
+    startSpeedDialPlayback,
+    stopSpeedDialPlayback,
+    clearSpeedDialPlaybacks,
     reset
   } = useRecordingStore();
 
@@ -651,14 +654,49 @@ export function useRecording(options: RecordingHookOptions = {}) {
   );
 
   /**
+   * Called when speed dial playback starts during recording.
+   * Tracks the playback for timeline inclusion.
+   */
+  const onSpeedDialStarted = useCallback(
+    (clipId: string, clipName: string, clipPath: string) => {
+      if (!isRecording) return;
+
+      const clipRecorder = getClipRecorder();
+      const globalStartTime = clipRecorder.getGlobalTime();
+
+      startSpeedDialPlayback(clipId, clipName, clipPath, globalStartTime);
+      console.log('[useRecording] Speed dial started during recording:', clipId);
+    },
+    [isRecording, getClipRecorder, startSpeedDialPlayback]
+  );
+
+  /**
+   * Called when speed dial playback ends during recording.
+   * Finalizes the playback record with end time.
+   */
+  const onSpeedDialEnded = useCallback(
+    (clipId: string) => {
+      if (!isRecording) return;
+
+      const clipRecorder = getClipRecorder();
+      const globalEndTime = clipRecorder.getGlobalTime();
+
+      stopSpeedDialPlayback(clipId, globalEndTime);
+      console.log('[useRecording] Speed dial ended during recording:', clipId);
+    },
+    [isRecording, getClipRecorder, stopSpeedDialPlayback]
+  );
+
+  /**
    * Reset recording state
    */
   const resetRecording = useCallback(() => {
     clipRecorderRef.current?.cleanup();
     screenRecorderRef.current?.cleanup();
     clearClips();
+    clearSpeedDialPlaybacks();
     reset();
-  }, [clearClips, reset]);
+  }, [clearClips, clearSpeedDialPlaybacks, reset]);
 
   // Expose screen recorder for useScreenShare
   const getScreenRecorderInstance = useCallback(() => getScreenRecorder(), [getScreenRecorder]);
@@ -676,6 +714,8 @@ export function useRecording(options: RecordingHookOptions = {}) {
     onVideoDisabled,
     onScreenShareStarted,
     onScreenShareEnded,
+    onSpeedDialStarted,
+    onSpeedDialEnded,
     getScreenRecorderInstance
   };
 }

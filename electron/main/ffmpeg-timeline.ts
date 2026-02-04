@@ -40,7 +40,7 @@ const CONFIG = {
 const PIP_X = CONFIG.OUTPUT_WIDTH - CONFIG.PIP_SIZE - CONFIG.PIP_PADDING;
 const PIP_Y = CONFIG.OUTPUT_HEIGHT - CONFIG.PIP_SIZE - CONFIG.PIP_PADDING;
 
-export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only';
+export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial';
 
 export interface ExportSourceRef {
   sourceIndex: number;
@@ -57,6 +57,7 @@ export interface ExportSegment {
   layout: ExportLayout;
   camera?: ExportSourceRef;
   screen?: ExportSourceRef;
+  speeddial?: ExportSourceRef;
 }
 
 export interface TimelineExportOptions {
@@ -226,6 +227,23 @@ function buildTimelineFilterComplex(
       segmentAudioFilters.push(
         `[${screenIdx}:a]atrim=start=${screenTrimStartS}:duration=${segDurationS},asetpts=PTS-STARTPTS[${segLabel}_a]`
       );
+    } else if (seg.layout === 'speeddial' && seg.speeddial) {
+      // Speed dial video fullscreen with trim - inline all processing
+      // Scale to fit output, letterbox if needed (maintain aspect ratio)
+      const sdIdx = seg.speeddial.sourceIndex;
+      const sdTrimStartS = seg.speeddial.trimStartMs / 1000;
+
+      filters.push(
+        `[${sdIdx}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,` +
+          `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${CONFIG.BACKGROUND_COLOR},` +
+          `setsar=1,trim=start=${sdTrimStartS}:duration=${segDurationS},setpts=PTS-STARTPTS,` +
+          `fps=${CONFIG.FRAMERATE}[${segLabel}]`
+      );
+
+      // Speed dial audio - note: we'll handle the no-audio case in buildFilterWithAudioFallback
+      segmentAudioFilters.push(
+        `[${sdIdx}:a]atrim=start=${sdTrimStartS}:duration=${segDurationS},asetpts=PTS-STARTPTS[${segLabel}_a]`
+      );
     } else {
       // Fallback: black frame with silent audio (shouldn't happen normally)
       filters.push(
@@ -370,6 +388,9 @@ function buildFilterWithAudioFallback(
     } else if (seg.layout === 'screen-only' && seg.screen) {
       audioSourceIdx = seg.screen.sourceIndex;
       trimStartS = seg.screen.trimStartMs / 1000;
+    } else if (seg.layout === 'speeddial' && seg.speeddial) {
+      audioSourceIdx = seg.speeddial.sourceIndex;
+      trimStartS = seg.speeddial.trimStartMs / 1000;
     }
 
     // If the source has no audio, we need to add silent audio

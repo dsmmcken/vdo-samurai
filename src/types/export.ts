@@ -2,7 +2,7 @@
  * Types for timeline-aware video export
  */
 
-export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only';
+export type ExportLayout = 'screen-pip' | 'camera-only' | 'screen-only' | 'speeddial';
 
 export interface ExportSourceRef {
   sourceIndex: number; // Index in the input files array
@@ -19,15 +19,16 @@ export interface ExportSegment {
   layout: ExportLayout;
   camera?: ExportSourceRef;
   screen?: ExportSourceRef;
+  speeddial?: ExportSourceRef; // Speed dial source reference
 }
 
 export interface ExportSource {
   id: string;
   peerId: string | null;
   peerName: string;
-  sourceType: 'camera' | 'screen';
-  blob: Blob;
-  filePath?: string; // Set after saving to temp file
+  sourceType: 'camera' | 'screen' | 'speeddial';
+  blob?: Blob; // Optional for speeddial (already a file)
+  filePath?: string; // Set after saving to temp file, or directly for speeddial
 }
 
 export interface ExportPlan {

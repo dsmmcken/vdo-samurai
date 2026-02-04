@@ -107,6 +107,41 @@ function buildExportPlan(
     const clipDurationMs = clip.endTime - clip.startTime - clip.trimStart - clip.trimEnd;
     if (clipDurationMs <= 0) continue;
 
+    // Handle speed dial clips
+    if (clip.sourceType === 'speeddial' && clip.speedDialClipPath) {
+      // Add speed dial as a source if not already added
+      const sdSourceId = `speeddial-${clip.speedDialClipId}`;
+      if (!sourceIndexMap.has(sdSourceId)) {
+        sourceIndexMap.set(sdSourceId, sources.length);
+        sources.push({
+          id: sdSourceId,
+          peerId: null,
+          peerName: clip.peerName,
+          sourceType: 'speeddial',
+          filePath: clip.speedDialClipPath // Already a file, no blob needed
+        });
+      }
+
+      const sdIndex = sourceIndexMap.get(sdSourceId)!;
+
+      segments.push({
+        id: clip.id,
+        startTimeMs: currentOutputTime,
+        endTimeMs: currentOutputTime + clipDurationMs,
+        peerId: null,
+        peerName: clip.peerName,
+        layout: 'speeddial',
+        speeddial: {
+          sourceIndex: sdIndex,
+          trimStartMs: clip.trimStart,
+          trimEndMs: clip.trimEnd
+        }
+      });
+
+      currentOutputTime += clipDurationMs;
+      continue;
+    }
+
     // Determine peer key prefix
     const peerKeyPrefix = clip.peerId ?? 'local';
 
@@ -381,16 +416,25 @@ export function useComposite() {
 
         setProgress(0.05, 'Saving video files...');
 
-        // Save all source blobs to temp files
+        // Save all source blobs to temp files (speeddial sources already have file paths)
         const tempPaths: string[] = [];
         for (let i = 0; i < plan.sources.length; i++) {
           const source = plan.sources[i];
-          const buffer = await source.blob.arrayBuffer();
-          const tempPath = await window.electronAPI.storage.saveTempFile(
-            `timeline-source-${i}.webm`,
-            buffer
-          );
-          tempPaths.push(tempPath);
+
+          if (source.sourceType === 'speeddial' && source.filePath) {
+            // Speed dial sources are already files - use path directly
+            tempPaths.push(source.filePath);
+          } else if (source.blob) {
+            // Regular sources need blob saved to temp
+            const buffer = await source.blob.arrayBuffer();
+            const tempPath = await window.electronAPI.storage.saveTempFile(
+              `timeline-source-${i}.webm`,
+              buffer
+            );
+            tempPaths.push(tempPath);
+          } else {
+            throw new Error(`Source ${source.id} has no blob or file path`);
+          }
         }
 
         // Get output path

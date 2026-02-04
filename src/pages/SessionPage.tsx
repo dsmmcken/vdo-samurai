@@ -21,6 +21,7 @@ import { RecordButton } from '../components/recording/RecordButton';
 import { CountdownOverlay } from '../components/recording/CountdownOverlay';
 import { NLEEditor } from '../components/nle';
 import { useUserStore } from '../store/userStore';
+import { useSpeedDialStore } from '../store/speedDialStore';
 import { getColorForName } from '../utils/colorHash';
 import { isBrowser } from '../utils/platform';
 
@@ -145,7 +146,9 @@ export function SessionPage() {
     onVideoEnabled,
     onVideoDisabled,
     onScreenShareStarted,
-    onScreenShareEnded
+    onScreenShareEnded,
+    onSpeedDialStarted,
+    onSpeedDialEnded
   } = useRecording({
     setOnVideoTrackEnded,
     getAudioOnlyStream
@@ -154,6 +157,27 @@ export function SessionPage() {
   const { addPendingTransfer, markCompleted } = usePendingTransfers();
 
   const browserMode = isBrowser();
+
+  // Speed dial clip data for recording callbacks
+  const speedDialClips = useSpeedDialStore((s) => s.clips);
+
+  // Handlers that bridge speed dial callbacks with full clip info
+  const handleSpeedDialStart = useCallback(
+    (clipId: string) => {
+      const clip = speedDialClips.find((c) => c.id === clipId);
+      if (clip) {
+        onSpeedDialStarted(clipId, clip.name, clip.path);
+      }
+    },
+    [speedDialClips, onSpeedDialStarted]
+  );
+
+  const handleSpeedDialEnd = useCallback(
+    (clipId: string) => {
+      onSpeedDialEnded(clipId);
+    },
+    [onSpeedDialEnded]
+  );
 
   // Initialize edit points tracking
   useEditPoints();
@@ -402,7 +426,46 @@ export function SessionPage() {
         color: getColorForName(profile?.displayName || 'You'),
         sourceType: 'camera'
       });
+      clipOrder++;
     }
+
+    // Add speed dial playbacks to timeline
+    const speedDialPlaybacks = useRecordingStore.getState().speedDialPlaybacks;
+    for (const playback of speedDialPlaybacks) {
+      // Skip if didn't finish (no end time)
+      if (!playback.globalEndTime) continue;
+
+      const duration = playback.globalEndTime - playback.globalStartTime;
+      if (duration <= 0) continue;
+
+      clips.push({
+        id: `speeddial-${clipOrder}`,
+        peerId: null, // Speed dial is local
+        peerName: `SD: ${playback.clipName}`,
+        startTime: playback.globalStartTime,
+        endTime: playback.globalEndTime,
+        globalStartTime: playback.globalStartTime,
+        globalEndTime: playback.globalEndTime,
+        order: clipOrder,
+        trimStart: 0,
+        trimEnd: 0,
+        color: getColorForName(`SD: ${playback.clipName}`),
+        sourceType: 'speeddial',
+        speedDialClipId: playback.clipId,
+        speedDialClipPath: playback.clipPath
+      });
+      clipOrder++;
+    }
+
+    // Sort all clips by globalStartTime and reassign order
+    clips.sort((a, b) => {
+      const aTime = a.globalStartTime ?? a.startTime;
+      const bTime = b.globalStartTime ?? b.startTime;
+      return aTime - bTime;
+    });
+    clips.forEach((clip, i) => {
+      clip.order = i;
+    });
 
     initializeClips(clips);
   }, [
@@ -700,7 +763,12 @@ export function SessionPage() {
         </MainDisplay>
 
         {/* Speed Dial Panel (host only, Electron only) */}
-        {isHost && isElectron() && <SpeedDialPanel />}
+        {isHost && isElectron() && (
+          <SpeedDialPanel
+            onPlaybackStartedDuringRecording={handleSpeedDialStart}
+            onPlaybackEndedDuringRecording={handleSpeedDialEnd}
+          />
+        )}
       </div>
 
       {/* Participant tiles - fixed height row */}
