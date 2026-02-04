@@ -16,22 +16,22 @@ interface BinaryPaths {
 // Binary filenames per platform (development mode uses full names)
 const BINARIES_DEV: Record<string, Record<string, { ffmpeg: string; ffprobe: string }>> = {
   win32: {
-    x64: { ffmpeg: 'ffmpeg.exe', ffprobe: 'ffprobe.exe' },
+    x64: { ffmpeg: 'ffmpeg.exe', ffprobe: 'ffprobe.exe' }
   },
   linux: {
-    x64: { ffmpeg: 'ffmpeg-linux-x64', ffprobe: 'ffprobe-linux-x64' },
+    x64: { ffmpeg: 'ffmpeg-linux-x64', ffprobe: 'ffprobe-linux-x64' }
   },
   darwin: {
     x64: { ffmpeg: 'ffmpeg-darwin-x64', ffprobe: 'ffprobe-darwin-x64' },
-    arm64: { ffmpeg: 'ffmpeg-darwin-arm64', ffprobe: 'ffprobe-darwin-arm64' },
-  },
+    arm64: { ffmpeg: 'ffmpeg-darwin-arm64', ffprobe: 'ffprobe-darwin-arm64' }
+  }
 };
 
 // In packaged builds, electron-builder renames to consistent names
 const BINARIES_PROD: Record<string, { ffmpeg: string; ffprobe: string }> = {
   win32: { ffmpeg: 'ffmpeg.exe', ffprobe: 'ffprobe.exe' },
   linux: { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' },
-  darwin: { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' },
+  darwin: { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' }
 };
 
 function getResourcesPath(): string {
