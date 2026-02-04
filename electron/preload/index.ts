@@ -90,6 +90,33 @@ interface ScreenSourcesResult {
   error?: string;
 }
 
+// Speed Dial types
+interface SpeedDialClipInfo {
+  path: string;
+  name: string;
+  duration: number;
+}
+
+interface SpeedDialImportResult {
+  success: boolean;
+  clip?: SpeedDialClipInfo;
+  error?: string;
+}
+
+interface SpeedDialThumbnailResult {
+  success: boolean;
+  thumbnailPath?: string;
+  error?: string;
+}
+
+interface SpeedDialVideoInfo {
+  success: boolean;
+  duration?: number;
+  width?: number;
+  height?: number;
+  error?: string;
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -190,5 +217,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
 
   // App version
-  getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion')
+  getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+
+  // Speed Dial operations
+  speedDial: {
+    importClip: (): Promise<SpeedDialImportResult> => ipcRenderer.invoke('speeddial:importClip'),
+
+    readClip: (filePath: string): Promise<ArrayBuffer> =>
+      ipcRenderer.invoke('speeddial:readClip', filePath),
+
+    generateThumbnail: (videoPath: string): Promise<SpeedDialThumbnailResult> =>
+      ipcRenderer.invoke('speeddial:generateThumbnail', videoPath),
+
+    getVideoInfo: (videoPath: string): Promise<SpeedDialVideoInfo> =>
+      ipcRenderer.invoke('speeddial:getVideoInfo', videoPath),
+
+    checkFileExists: (filePath: string): Promise<boolean> =>
+      ipcRenderer.invoke('speeddial:checkFileExists', filePath),
+
+    getMediaServerPort: (): Promise<number> => ipcRenderer.invoke('speeddial:getMediaServerPort'),
+
+    getMediaServerToken: (): Promise<string> => ipcRenderer.invoke('speeddial:getMediaServerToken'),
+
+    // Clip registry for media:// protocol
+    registerClip: (filePath: string): Promise<string> =>
+      ipcRenderer.invoke('speeddial:registerClip', filePath),
+
+    unregisterClip: (clipId: string): Promise<void> =>
+      ipcRenderer.invoke('speeddial:unregisterClip', clipId)
+  }
 });

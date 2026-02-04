@@ -1,7 +1,9 @@
-import { app, BrowserWindow, shell, Menu, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, Menu, ipcMain, protocol, net } from 'electron';
 import { join } from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
 import { getMediaMockScript } from './media-mock';
+import { startMediaServer } from './media-server';
+import { getClipPath } from './clip-registry';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -13,6 +15,20 @@ const simulateMedia = process.env.SIMULATE_MEDIA === 'true';
 const instanceId = process.env.INSTANCE_ID;
 
 console.log('[main] Environment: SIMULATE_MEDIA=', simulateMedia, 'INSTANCE_ID=', instanceId);
+
+// Register custom protocol scheme before app is ready
+// This must be called before the 'ready' event
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media',
+    privileges: {
+      stream: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
+]);
 
 function createWindow(): void {
   // On macOS, use hiddenInset for native traffic lights
@@ -176,7 +192,57 @@ if (!gotTheLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    // Register custom protocol handler for Speed Dial video streaming
+    // Uses ID-based routing to avoid Windows path URL parsing issues
+    protocol.handle('media', async (request) => {
+      try {
+        // URL format: media://clip/<clipId>
+        // In this URL, 'clip' is the hostname and '/<clipId>' is the pathname
+        const url = new URL(request.url);
+        const host = url.host; // 'clip'
+        const clipId = url.pathname.slice(1); // Remove leading '/'
+
+        console.log('[media protocol] Request:', { url: request.url, host, clipId });
+
+        if (host !== 'clip' || !clipId) {
+          console.error('[media protocol] Invalid URL format:', request.url);
+          return new Response('Invalid URL format', { status: 400 });
+        }
+
+        const filePath = getClipPath(clipId);
+
+        if (!filePath) {
+          console.error('[media protocol] Clip not found:', clipId);
+          return new Response('Clip not found', { status: 404 });
+        }
+
+        console.log('[media protocol] Serving clip:', clipId, '→', filePath);
+
+        // Use net.fetch with file:// to stream the file with full range support
+        // On Windows, paths like C:\path need to be file:///C:/path
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const fileUrl = normalizedPath.startsWith('/')
+          ? `file://${normalizedPath}`
+          : `file:///${normalizedPath}`;
+
+        return net.fetch(fileUrl);
+      } catch (err) {
+        console.error('[media protocol] Error:', err);
+        return new Response('Internal error', { status: 500 });
+      }
+    });
+    console.log('[main] Media protocol handler registered');
+
+    // Start the local media server as fallback for Speed Dial video streaming
+    // This allows captureStream() to work because localhost is a secure context
+    try {
+      const port = await startMediaServer();
+      console.log('[main] Media server started on port:', port);
+    } catch (err) {
+      console.error('[main] Failed to start media server:', err);
+    }
+
     registerIpcHandlers();
     createWindow();
 

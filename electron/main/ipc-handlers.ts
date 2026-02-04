@@ -27,6 +27,15 @@ import {
   showSaveDialog,
   saveFile
 } from './storage';
+import {
+  importClip,
+  readClip,
+  generateThumbnail,
+  getVideoInfo as getSpeedDialVideoInfo,
+  checkFileExists
+} from './speeddial';
+import { getMediaServerPort, getMediaServerToken } from './media-server';
+import { registerClip, unregisterClip } from './clip-registry';
 
 export function registerIpcHandlers(): void {
   // Mock video file handler (for E2E tests and dev:dual mode)
@@ -178,5 +187,43 @@ export function registerIpcHandlers(): void {
   // App handlers
   ipcMain.handle('app:getVersion', () => {
     return process.env.npm_package_version || '1.0.0';
+  });
+
+  // Speed Dial handlers
+  ipcMain.handle('speeddial:importClip', async () => {
+    return importClip();
+  });
+
+  ipcMain.handle('speeddial:readClip', async (_event, filePath: string) => {
+    return readClip(filePath);
+  });
+
+  ipcMain.handle('speeddial:generateThumbnail', async (_event, videoPath: string) => {
+    return generateThumbnail(videoPath);
+  });
+
+  ipcMain.handle('speeddial:getVideoInfo', async (_event, videoPath: string) => {
+    return getSpeedDialVideoInfo(videoPath);
+  });
+
+  ipcMain.handle('speeddial:checkFileExists', async (_event, filePath: string) => {
+    return checkFileExists(filePath);
+  });
+
+  ipcMain.handle('speeddial:getMediaServerPort', () => {
+    return getMediaServerPort();
+  });
+
+  ipcMain.handle('speeddial:getMediaServerToken', () => {
+    return getMediaServerToken();
+  });
+
+  // Clip registry handlers for media:// protocol
+  ipcMain.handle('speeddial:registerClip', (_event, filePath: string) => {
+    return registerClip(filePath);
+  });
+
+  ipcMain.handle('speeddial:unregisterClip', (_event, clipId: string) => {
+    unregisterClip(clipId);
   });
 }

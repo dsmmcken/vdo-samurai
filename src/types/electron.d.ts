@@ -91,6 +91,46 @@ export interface ScreenSourcesResult {
   error?: string;
 }
 
+// Speed Dial types
+export interface SpeedDialClipInfo {
+  path: string;
+  name: string;
+  duration: number;
+}
+
+export interface SpeedDialImportResult {
+  success: boolean;
+  clip?: SpeedDialClipInfo;
+  error?: string;
+}
+
+export interface SpeedDialThumbnailResult {
+  success: boolean;
+  thumbnailPath?: string;
+  error?: string;
+}
+
+export interface SpeedDialVideoInfo {
+  success: boolean;
+  duration?: number;
+  width?: number;
+  height?: number;
+  error?: string;
+}
+
+export interface SpeedDialAPI {
+  importClip: () => Promise<SpeedDialImportResult>;
+  readClip: (filePath: string) => Promise<ArrayBuffer>;
+  generateThumbnail: (videoPath: string) => Promise<SpeedDialThumbnailResult>;
+  getVideoInfo: (videoPath: string) => Promise<SpeedDialVideoInfo>;
+  checkFileExists: (filePath: string) => Promise<boolean>;
+  getMediaServerPort: () => Promise<number>;
+  getMediaServerToken: () => Promise<string>;
+  // Clip registry for media:// protocol
+  registerClip: (filePath: string) => Promise<string>;
+  unregisterClip: (clipId: string) => Promise<void>;
+}
+
 export interface ElectronAPI {
   ffmpeg: {
     composite: (options: CompositeOptions) => Promise<CompositeResult>;
@@ -140,6 +180,7 @@ export interface ElectronAPI {
   };
   platform: NodeJS.Platform;
   getVersion: () => Promise<string>;
+  speedDial: SpeedDialAPI;
 }
 
 declare global {

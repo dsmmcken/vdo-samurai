@@ -9,6 +9,8 @@ import { useWebRTC } from '../hooks/useWebRTC';
 import { useMediaStream } from '../hooks/useMediaStream';
 import { useTrystero } from '../contexts/TrysteroContext';
 import { ScreenShareButton } from '../components/video/ScreenShareButton';
+import { SpeedDialButton, SpeedDialPanel } from '../components/speeddial';
+import { isElectron } from '../utils/platform';
 import { useRecording } from '../hooks/useRecording';
 import { useEditPoints } from '../hooks/useEditPoints';
 import { useFileTransfer } from '../hooks/useFileTransfer';
@@ -268,7 +270,16 @@ export function SessionPage() {
     }, 500); // Wait 500ms for screen blob to be set
 
     return () => clearTimeout(timeoutId);
-  }, [localBlob, localScreenBlob, isHost, sendMultipleToAllPeers, browserMode, fullRoomCode, profile, addPendingTransfer]);
+  }, [
+    localBlob,
+    localScreenBlob,
+    isHost,
+    sendMultipleToAllPeers,
+    browserMode,
+    fullRoomCode,
+    profile,
+    addPendingTransfer
+  ]);
 
   // Reset the sent flag when recording starts
   useEffect(() => {
@@ -291,7 +302,9 @@ export function SessionPage() {
         const type = transfer.filename.includes('camera') ? 'camera' : 'screen';
         const pendingId = pendingTransferIdsRef.current.get(type);
         if (pendingId) {
-          console.log(`[SessionPage] P2P transfer completed, marking pending transfer done: ${pendingId}`);
+          console.log(
+            `[SessionPage] P2P transfer completed, marking pending transfer done: ${pendingId}`
+          );
           markCompleted(pendingId).catch((err) => {
             console.error('[SessionPage] Failed to mark pending transfer complete:', err);
           });
@@ -555,7 +568,7 @@ export function SessionPage() {
       <CountdownOverlay countdown={countdown} />
 
       {/* Main video display with overlaid controls */}
-      <div className="flex-1 min-h-0 p-2 sm:p-3 pb-1 video-container">
+      <div className="flex-1 min-h-0 p-2 sm:p-3 pb-1 video-container relative">
         <MainDisplay>
           {/* Controls - anchored to video via CSS anchor positioning */}
           <div
@@ -667,6 +680,13 @@ export function SessionPage() {
               />
             </div>
 
+            {/* Speed Dial button (host only, Electron only) */}
+            {isHost && isElectron() && (
+              <div className="hidden sm:block relative">
+                <SpeedDialButton />
+              </div>
+            )}
+
             {/* Record button (host only) */}
             <RecordButton
               ref={recordButtonRef}
@@ -678,6 +698,9 @@ export function SessionPage() {
             />
           </div>
         </MainDisplay>
+
+        {/* Speed Dial Panel (host only, Electron only) */}
+        {isHost && isElectron() && <SpeedDialPanel />}
       </div>
 
       {/* Participant tiles - fixed height row */}
