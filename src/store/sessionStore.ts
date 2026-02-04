@@ -4,6 +4,7 @@ interface SessionState {
   sessionId: string | null;
   sessionPassword: string | null; // Password for Trystero encryption (kept separate from sessionId)
   isHost: boolean;
+  hostTimestamp: number; // Timestamp of last host change for conflict resolution
   userName: string;
   localStream: MediaStream | null;
   localRecordingStream: MediaStream | null; // High-quality stream for local recording
@@ -20,6 +21,7 @@ interface SessionState {
   setSessionId: (id: string | null) => void;
   setSessionPassword: (password: string | null) => void;
   setIsHost: (isHost: boolean) => void;
+  setHostWithTimestamp: (isHost: boolean, timestamp: number) => void;
   setUserName: (name: string) => void;
   setLocalStream: (stream: MediaStream | null) => void;
   setLocalRecordingStream: (stream: MediaStream | null) => void;
@@ -37,6 +39,7 @@ const initialState = {
   sessionId: null,
   sessionPassword: null,
   isHost: false,
+  hostTimestamp: 0,
   userName: '',
   localStream: null,
   localRecordingStream: null,
@@ -57,6 +60,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   setSessionId: (sessionId) => set({ sessionId }),
   setSessionPassword: (sessionPassword) => set({ sessionPassword }),
   setIsHost: (isHost) => set({ isHost }),
+  setHostWithTimestamp: (isHost, timestamp) => set({ isHost, hostTimestamp: timestamp }),
   setUserName: (userName) => set({ userName }),
   setLocalStream: (localStream) => {
     console.log(

@@ -27,6 +27,7 @@ import { useRecordingStore } from '../store/recordingStore';
 import { useNLEStore } from '../store/nleStore';
 import { useCompositeStore } from '../store/compositeStore';
 import { useTransferStore, type TransferBroadcast } from '../store/transferStore';
+import { isElectron } from '../utils/platform';
 
 // Debug: Log relay socket status
 const logRelayStatus = () => {
@@ -57,6 +58,12 @@ interface PeerInfoData {
   type: string;
   name: string;
   isHost: boolean;
+  isElectron: boolean;
+}
+
+interface HostTransferData {
+  newHostPeerId: string;
+  timestamp: number;
 }
 
 interface ScreenShareStatusData {
@@ -124,6 +131,7 @@ interface TrysteroContextValue {
   broadcastSessionInfo: (internalSessionId: string) => void;
   broadcastTileOrder: (order: string[]) => void;
   broadcastTransferStatus: (status: TransferBroadcast) => void;
+  broadcastHostTransfer: (newHostPeerId: string) => void;
 }
 
 const TrysteroContext = createContext<TrysteroContextValue | null>(null);
@@ -172,6 +180,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     peersWithScreenShareAvailable: Set<string>;
     name: string;
     isHost: boolean;
+    hostTimestamp: number;
+    isElectron: boolean;
     focusedPeerId: string | null;
     focusTimestamp: number;
     tileOrder: string[];
@@ -183,6 +193,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     peersWithScreenShareAvailable: new Set(),
     name: 'Anonymous',
     isHost: false,
+    hostTimestamp: 0,
+    isElectron: isElectron(),
     focusedPeerId: null,
     focusTimestamp: 0,
     tileOrder: [],
@@ -200,6 +212,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendSessionInfoRequest: ((data: SessionInfoRequestData, peerId?: string) => void) | null;
     sendTileOrder: ((data: TileOrderData, peerId?: string) => void) | null;
     sendTransferStatus: ((data: TransferStatusData, peerId?: string) => void) | null;
+    sendHostTransfer: ((data: HostTransferData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
@@ -209,7 +222,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendSessionInfo: null,
     sendSessionInfoRequest: null,
     sendTileOrder: null,
-    sendTransferStatus: null
+    sendTransferStatus: null,
+    sendHostTransfer: null
   });
 
   // Setup peer handlers when room changes
@@ -241,6 +255,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendTileOrder, onTileOrder] = newRoom.makeAction<any>('tile-order');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendTransferStatus, onTransferStatus] = newRoom.makeAction<any>('xfer-status');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendHostTransfer, onHostTransfer] = newRoom.makeAction<any>('host-xfer');
 
       sendersRef.current = {
         sendPeerInfo,
@@ -251,7 +267,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendSessionInfo,
         sendSessionInfoRequest,
         sendTileOrder,
-        sendTransferStatus
+        sendTransferStatus,
+        sendHostTransfer
       };
 
       // Handle peer join
@@ -264,6 +281,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           screenStream: null,
           name: `User-${peerId.slice(0, 4)}`,
           isHost: false,
+          isElectron: false, // Will be updated when we receive peer-info
           videoEnabled: true, // Assume video is on until we hear otherwise
           audioEnabled: true, // Assume audio is on until we hear otherwise
           isScreenSharing: false
@@ -273,7 +291,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         const info: PeerInfoData = {
           type: 'peer-info',
           name: stateRef.current.name,
-          isHost: stateRef.current.isHost
+          isHost: stateRef.current.isHost,
+          isElectron: stateRef.current.isElectron
         };
         sendPeerInfo(info, peerId);
 
@@ -412,7 +431,11 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         if (typeof data === 'object' && data !== null) {
           const info = data as PeerInfoData;
           console.log('[TrysteroProvider] Received peer info from', peerId, ':', info);
-          updatePeer(peerId, { name: info.name, isHost: info.isHost });
+          updatePeer(peerId, {
+            name: info.name,
+            isHost: info.isHost,
+            isElectron: info.isElectron ?? false
+          });
         }
       });
 
@@ -614,6 +637,49 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      // Handle host transfer messages with timestamp-based conflict resolution
+      onHostTransfer((data: unknown) => {
+        if (typeof data === 'object' && data !== null) {
+          const hostTransferData = data as HostTransferData;
+          const incomingTimestamp = hostTransferData.timestamp || 0;
+
+          // Only apply if this host transfer is newer than our current one
+          if (incomingTimestamp > stateRef.current.hostTimestamp) {
+            const newHostPeerId = hostTransferData.newHostPeerId;
+            const amINewHost = newHostPeerId === selfId;
+
+            console.log(
+              '[TrysteroProvider] Host transfer to:',
+              newHostPeerId,
+              'I am new host:',
+              amINewHost,
+              'timestamp:',
+              incomingTimestamp
+            );
+
+            // Update local state
+            stateRef.current.isHost = amINewHost;
+            stateRef.current.hostTimestamp = incomingTimestamp;
+            useSessionStore.getState().setHostWithTimestamp(amINewHost, incomingTimestamp);
+
+            // Update all peers' isHost status
+            const peers = usePeerStore.getState().peers;
+            peers.forEach((peer) => {
+              updatePeer(peer.id, { isHost: peer.id === newHostPeerId });
+            });
+          } else {
+            console.log(
+              '[TrysteroProvider] Ignoring stale host transfer:',
+              hostTransferData.newHostPeerId,
+              'incoming:',
+              incomingTimestamp,
+              'current:',
+              stateRef.current.hostTimestamp
+            );
+          }
+        }
+      });
+
       // Handle incoming streams
       newRoom.onPeerStream((stream, peerId, metadata) => {
         console.log('[TrysteroProvider] Received stream from peer:', peerId, metadata);
@@ -728,6 +794,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       peersWithScreenShareAvailable: new Set(),
       name: 'Anonymous',
       isHost: false,
+      hostTimestamp: 0,
+      isElectron: isElectron(),
       focusedPeerId: null,
       focusTimestamp: 0,
       tileOrder: [],
@@ -742,7 +810,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendSessionInfo: null,
       sendSessionInfoRequest: null,
       sendTileOrder: null,
-      sendTransferStatus: null
+      sendTransferStatus: null,
+      sendHostTransfer: null
     };
   }, [clearPeers]);
 
@@ -928,6 +997,40 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Broadcast host transfer to all peers
+  const broadcastHostTransfer = useCallback((newHostPeerId: string) => {
+    const timestamp = Date.now();
+
+    // Determine if we are the new host
+    // newHostPeerId can be 'self' (meaning local user) or a peer ID
+    const actualNewHostPeerId = newHostPeerId === 'self' ? selfId : newHostPeerId;
+    const amINewHost = actualNewHostPeerId === selfId;
+
+    console.log(
+      '[TrysteroProvider] Broadcasting host transfer to:',
+      actualNewHostPeerId,
+      'I am new host:',
+      amINewHost
+    );
+
+    // Update local state
+    stateRef.current.isHost = amINewHost;
+    stateRef.current.hostTimestamp = timestamp;
+    useSessionStore.getState().setHostWithTimestamp(amINewHost, timestamp);
+
+    // Update all peers' isHost status
+    const peers = usePeerStore.getState().peers;
+    peers.forEach((peer) => {
+      usePeerStore.getState().updatePeer(peer.id, { isHost: peer.id === actualNewHostPeerId });
+    });
+
+    // Broadcast to all peers
+    if (sendersRef.current.sendHostTransfer) {
+      const data: HostTransferData = { newHostPeerId: actualNewHostPeerId, timestamp };
+      sendersRef.current.sendHostTransfer(data);
+    }
+  }, []);
+
   // Update name/isHost when they change (for sending to new peers)
   const updateUserInfo = useCallback((name: string, isHost: boolean) => {
     stateRef.current.name = name;
@@ -953,7 +1056,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         broadcastVideoState,
         broadcastSessionInfo,
         broadcastTileOrder,
-        broadcastTransferStatus
+        broadcastTransferStatus,
+        broadcastHostTransfer
       }}
     >
       <TrysteroProviderInner updateUserInfo={updateUserInfo}>{children}</TrysteroProviderInner>

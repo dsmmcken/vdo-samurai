@@ -8,6 +8,7 @@ interface ParticipantData {
   screenStream: MediaStream | null;
   name: string;
   isHost: boolean;
+  isElectron: boolean;
   videoEnabled: boolean;
   audioEnabled: boolean;
   isScreenSharing: boolean;
@@ -19,9 +20,16 @@ interface SortableTileProps {
   participant: ParticipantData;
   isFocused: boolean;
   onFocusClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
-export function SortableTile({ id, participant, isFocused, onFocusClick }: SortableTileProps) {
+export function SortableTile({
+  id,
+  participant,
+  isFocused,
+  onFocusClick,
+  onContextMenu
+}: SortableTileProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id
   });
@@ -36,7 +44,14 @@ export function SortableTile({ id, participant, isFocused, onFocusClick }: Sorta
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} role="listitem">
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      role="listitem"
+      onContextMenu={onContextMenu}
+    >
       <UserTile
         stream={participant.stream}
         screenStream={participant.screenStream}

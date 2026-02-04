@@ -8,6 +8,7 @@ export interface PeerInfoMessage {
   type: 'peer-info';
   name: string;
   isHost: boolean;
+  isElectron: boolean; // Whether peer is running in Electron (can become host)
 }
 
 export interface ScreenShareStatusMessage {
@@ -81,6 +82,12 @@ export interface TransferStatusMessage {
   timestamp: number;
 }
 
+export interface HostTransferMessage {
+  type: 'host-transfer';
+  newHostPeerId: string; // The peer ID who should become the new host
+  timestamp: number; // For conflict resolution (newer wins)
+}
+
 export type P2PMessage =
   | FocusChangeMessage
   | PeerInfoMessage
@@ -92,4 +99,5 @@ export type P2PMessage =
   | SessionInfoMessage
   | SessionInfoRequestMessage
   | TileOrderMessage
-  | TransferStatusMessage;
+  | TransferStatusMessage
+  | HostTransferMessage;

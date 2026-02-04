@@ -40,6 +40,7 @@ npm run test:e2e:debug   # Run in debug mode
 - Trystero handles signaling via WebTorrent trackers (no central server)
 - `PeerManager` manages WebRTC connections and streams
 - Config in `services/p2p/config.ts` defines tracker URLs and STUN servers
+- **IMPORTANT**: Trystero action names have a 12-byte limit. Use short names like `'host-xfer'` instead of `'host-transfer'`
 
 ### IPC Channels
 Key Electron IPC handlers in `electron/main/ipc-handlers.ts`:
