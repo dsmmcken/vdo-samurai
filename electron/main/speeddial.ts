@@ -126,16 +126,20 @@ async function transcodeToH264(
  * Automatically transcodes to H.264 if the codec isn't Chrome-compatible
  */
 export async function importClip(): Promise<SpeedDialImportResult> {
-  const window = BrowserWindow.getFocusedWindow();
+  const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
 
-  const result = await dialog.showOpenDialog(window!, {
+  const dialogOptions = {
     title: 'Import Speed Dial Clip',
-    properties: ['openFile'],
+    properties: ['openFile' as const],
     filters: [
       { name: 'Video Files', extensions: ['mp4', 'webm', 'mov', 'avi', 'mkv'] },
       { name: 'All Files', extensions: ['*'] }
     ]
-  });
+  };
+
+  const result = window
+    ? await dialog.showOpenDialog(window, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
 
   if (result.canceled || result.filePaths.length === 0) {
     return { success: false, error: 'cancelled' };

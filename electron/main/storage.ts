@@ -184,7 +184,7 @@ export async function readFile(filePath: string): Promise<ArrayBuffer> {
 export async function showSaveDialog(
   defaultName: string
 ): Promise<{ canceled: boolean; filePath?: string }> {
-  const window = BrowserWindow.getFocusedWindow();
+  const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
   const extension = defaultName.split('.').pop() || 'webm';
 
   const filters = [];
@@ -195,10 +195,14 @@ export async function showSaveDialog(
   }
   filters.push({ name: 'All Files', extensions: ['*'] });
 
-  const result = await dialog.showSaveDialog(window!, {
+  const dialogOptions = {
     defaultPath: join(app.getPath('downloads'), defaultName),
     filters
-  });
+  };
+
+  const result = window
+    ? await dialog.showSaveDialog(window, dialogOptions)
+    : await dialog.showSaveDialog(dialogOptions);
 
   return {
     canceled: result.canceled,

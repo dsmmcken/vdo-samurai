@@ -551,10 +551,11 @@ export function cancelCurrentProcess(): boolean {
 export async function getVideoInfo(
   inputPath: string
 ): Promise<{ duration: number; width: number; height: number }> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     ffmpeg.ffprobe(inputPath, (err, metadata) => {
       if (err) {
-        reject(err);
+        console.error('[FFmpeg] ffprobe error:', err);
+        resolve({ duration: 0, width: 1920, height: 1080 });
         return;
       }
 

@@ -1,5 +1,5 @@
 import { ipcMain, desktopCapturer, app } from 'electron';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { readFile as fsReadFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import {
@@ -201,11 +201,7 @@ export function registerIpcHandlers(): void {
       if (!info.success || info.duration === undefined) {
         return { success: false, error: info.error || 'Could not read video info' };
       }
-      const name =
-        filePath
-          .split('/')
-          .pop()
-          ?.replace(/\.[^.]+$/, '') || 'clip';
+      const name = basename(filePath).replace(/\.[^.]+$/, '') || 'clip';
       return {
         success: true,
         clip: {

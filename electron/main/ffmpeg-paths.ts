@@ -4,7 +4,7 @@
  */
 
 import { existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { app } from 'electron';
 import ffmpegStaticPath from 'ffmpeg-static';
 
@@ -87,7 +87,8 @@ function resolveBinaryPaths(): BinaryPaths {
 
     // Try to find ffprobe from @ffprobe-installer
     try {
-      // Dynamic import to avoid the require.resolve error at module load time
+      // Dynamic require to avoid the require.resolve error at module load time
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
       if (ffprobeInstaller.path && existsSync(ffprobeInstaller.path)) {
         return { ffmpeg: ffmpegStaticPath, ffprobe: ffprobeInstaller.path };
