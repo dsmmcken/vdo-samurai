@@ -181,10 +181,14 @@ function buildExportPlan(
     };
 
     // Add source references
+    // trimStartMs is the seek position within the source file:
+    // clip.startTime is the offset within the source blob, clip.trimStart is user-applied trim
+    const sourceSeekMs = clip.startTime + clip.trimStart;
+
     if (cameraIndex !== undefined) {
       segment.camera = {
         sourceIndex: cameraIndex,
-        trimStartMs: clip.trimStart,
+        trimStartMs: sourceSeekMs,
         trimEndMs: clip.trimEnd
       };
     }
@@ -192,7 +196,7 @@ function buildExportPlan(
     if (screenIndex !== undefined) {
       segment.screen = {
         sourceIndex: screenIndex,
-        trimStartMs: clip.trimStart,
+        trimStartMs: sourceSeekMs,
         trimEndMs: clip.trimEnd
       };
     }

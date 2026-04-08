@@ -140,7 +140,9 @@ export const useNLEStore = create<NLEState>((set, get) => ({
         ...clip,
         id: `${clip.id}-a`,
         endTime: actualSplitTime,
-        trimEnd: 0
+        trimEnd: 0,
+        // Update globalEndTime so sorting/ordering remains correct after split
+        ...(clip.globalEndTime != null ? { globalEndTime: actualSplitTime } : {})
       };
 
       const clip2: NLEClip = {
@@ -148,7 +150,9 @@ export const useNLEStore = create<NLEState>((set, get) => ({
         id: `${clip.id}-b`,
         startTime: actualSplitTime,
         trimStart: 0,
-        order: clip.order + 1
+        order: clip.order + 1,
+        // Update globalStartTime so sorting/ordering remains correct after split
+        ...(clip.globalStartTime != null ? { globalStartTime: actualSplitTime } : {})
       };
 
       // Insert the new clips and remove the old one
