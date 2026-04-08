@@ -1,13 +1,15 @@
 export interface Peer {
   id: string;
-  stream: MediaStream | null;
-  screenStream: MediaStream | null;
+  stream: MediaStream | null; // Camera stream
+  screenStream: MediaStream | null; // Screen share stream
+  speedDialStream: MediaStream | null; // Speed dial stream
   name: string;
   isHost: boolean;
   isElectron: boolean; // Whether peer is running in Electron (can become host)
   videoEnabled: boolean; // Whether peer's video is currently on
   audioEnabled: boolean; // Whether peer's audio is currently on
   isScreenSharing: boolean; // Whether peer has screen sharing enabled (may not be active streamer)
+  isPlayingSpeedDial: boolean; // Whether peer is playing a speed dial clip
 }
 
 export interface SessionInfo {

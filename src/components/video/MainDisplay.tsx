@@ -8,68 +8,36 @@ interface MainDisplayProps {
 }
 
 export function MainDisplay({ children }: MainDisplayProps) {
-  const { focusedPeerId, localStream, localScreenStream } = useSessionStore();
+  const { focusedPeerId, localStream, localScreenStream, localSpeedDialStream } = useSessionStore();
   const { peers } = usePeerStore();
 
   const focusedPeer = peers.find((p) => p.id === focusedPeerId);
 
-  // Debug: log which streams are available
-  const focusedPeerHasStream = focusedPeer?.stream !== null;
-  const focusedPeerHasScreenStream = focusedPeer?.screenStream !== null;
-  console.log(
-    '[MainDisplay] localStream:',
-    !!localStream,
-    'localScreenStream:',
-    !!localScreenStream,
-    'focusedPeerId:',
-    focusedPeerId,
-    'focusedPeer.stream:',
-    focusedPeerHasStream,
-    'focusedPeer.screenStream:',
-    focusedPeerHasScreenStream
-  );
-
   // Determine which stream to show
+  // Display priority: speedDialStream > screenStream > stream
   let displayStream: MediaStream | null = null;
   let displayName = 'You';
+  let isSpeedDial = false;
   let isScreenShare = false;
 
   if (focusedPeer) {
-    displayStream = focusedPeer.screenStream || focusedPeer.stream;
+    // Priority: speedDialStream > screenStream > stream
+    displayStream = focusedPeer.speedDialStream || focusedPeer.screenStream || focusedPeer.stream;
     displayName = focusedPeer.name;
-    isScreenShare = focusedPeer.screenStream !== null;
+    isSpeedDial = focusedPeer.speedDialStream !== null;
+    isScreenShare = !isSpeedDial && focusedPeer.screenStream !== null;
   } else {
-    displayStream = localScreenStream || localStream;
-    isScreenShare = localScreenStream !== null;
+    // Local display priority: speedDialStream > screenStream > stream
+    displayStream = localSpeedDialStream || localScreenStream || localStream;
+    isSpeedDial = localSpeedDialStream !== null;
+    isScreenShare = !isSpeedDial && localScreenStream !== null;
   }
-
-  // Debug: log stream info
-  const displayStreamInfo = displayStream
-    ? {
-        id: displayStream.id,
-        active: displayStream.active,
-        videoTracks: displayStream.getVideoTracks().length,
-        videoEnabled: displayStream.getVideoTracks()[0]?.enabled,
-        videoMuted: displayStream.getVideoTracks()[0]?.muted,
-        videoReadyState: displayStream.getVideoTracks()[0]?.readyState
-      }
-    : null;
-  console.log(
-    '[MainDisplay] displayStream:',
-    !!displayStream,
-    'displayName:',
-    displayName,
-    'isScreenShare:',
-    isScreenShare,
-    'streamInfo:',
-    JSON.stringify(displayStreamInfo)
-  );
 
   return (
     <div
       className="video-cell relative bg-black"
       role="region"
-      aria-label={`Main video display showing ${displayName}${isScreenShare ? ' screen share' : ''}`}
+      aria-label={`Main video display showing ${displayName}${isSpeedDial ? ' speed dial' : isScreenShare ? ' screen share' : ''}`}
     >
       {displayStream ? (
         <>

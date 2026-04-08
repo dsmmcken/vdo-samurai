@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSpeedDialStore } from '../store/speedDialStore';
 import { useSessionStore } from '../store/sessionStore';
-import { usePeerManager } from './usePeerManager';
+import { useTrystero } from '../contexts/TrysteroContext';
 import { useFocus } from './useFocus';
 import { SpeedDialPlayer } from '../services/SpeedDialPlayer';
 import type { SpeedDialClip } from '../types/speeddial';
@@ -33,13 +33,17 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
     getClipByIndex
   } = useSpeedDialStore();
 
-  const { setLocalScreenStream } = useSessionStore();
-  const { addLocalStream, removeLocalStream } = usePeerManager();
+  const { setLocalSpeedDialStream } = useSessionStore();
+  const { addSpeedDialStream, removeSpeedDialStream, broadcastSpeedDialStatus } = useTrystero();
   const { changeFocus } = useFocus();
 
   const playerRef = useRef<SpeedDialPlayer | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const activeClipIdRef = useRef<string | null>(null);
+
+  // Ref to access the latest callback during cleanup without adding it to effect deps
+  const onPlaybackEndedRef = useRef(onPlaybackEndedDuringRecording);
+  onPlaybackEndedRef.current = onPlaybackEndedDuringRecording;
 
   // Create player instance lazily
   const getPlayer = useCallback(() => {
@@ -60,17 +64,26 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
 
     // Clean up stream from P2P
     if (streamRef.current) {
-      removeLocalStream(streamRef.current, true);
+      removeSpeedDialStream(streamRef.current);
       streamRef.current = null;
     }
 
-    // Clear local screen stream display
-    setLocalScreenStream(null);
+    // Clear local speed dial stream display
+    setLocalSpeedDialStream(null);
+
+    // Broadcast that speed dial stopped
+    broadcastSpeedDialStatus(false);
 
     // Update store state
     stopPlayback();
     activeClipIdRef.current = null;
-  }, [removeLocalStream, setLocalScreenStream, stopPlayback, onPlaybackEndedDuringRecording]);
+  }, [
+    removeSpeedDialStream,
+    setLocalSpeedDialStream,
+    broadcastSpeedDialStatus,
+    stopPlayback,
+    onPlaybackEndedDuringRecording
+  ]);
 
   // Play a specific clip
   const playClip = useCallback(
@@ -82,7 +95,8 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
         if (activeClipIdRef.current) {
           onPlaybackEndedDuringRecording?.(activeClipIdRef.current);
         }
-        removeLocalStream(streamRef.current, true);
+        removeSpeedDialStream(streamRef.current);
+        broadcastSpeedDialStatus(false);
         streamRef.current = null;
         player.stop();
       }
@@ -114,15 +128,21 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
           active: stream.active
         });
 
-        // Display locally as screen stream
-        setLocalScreenStream(stream);
-        console.log('[useSpeedDial] Set localScreenStream');
+        // Order matters for reliable stream classification!
+        // 1. Tell peers first (sets fallback flag before stream arrives)
+        broadcastSpeedDialStatus(true);
+        console.log('[useSpeedDial] Broadcasted speed dial status: true');
 
-        // Add to P2P as screen type (will be transmitted to all peers)
-        addLocalStream(stream, { type: 'screen' });
+        // 2. Add stream to P2P as speeddial type
+        addSpeedDialStream(stream);
+        console.log('[useSpeedDial] Added speed dial stream to P2P');
 
-        // Focus participants on us (host) when speed dial starts
-        // null means focus on self/host, which will show the screen stream
+        // 3. Update local state for display
+        setLocalSpeedDialStream(stream);
+        console.log('[useSpeedDial] Set localSpeedDialStream');
+
+        // 4. Focus participants on us (host) when speed dial starts
+        // null means focus on self/host, which will show the speed dial stream
         changeFocus(null);
 
         // Update store state
@@ -143,9 +163,10 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
       isPlaying,
       volume,
       handlePlaybackEnd,
-      addLocalStream,
-      removeLocalStream,
-      setLocalScreenStream,
+      addSpeedDialStream,
+      removeSpeedDialStream,
+      broadcastSpeedDialStatus,
+      setLocalSpeedDialStream,
       changeFocus,
       startPlayback,
       onPlaybackStartedDuringRecording,
@@ -180,17 +201,26 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
 
     // Remove stream from P2P
     if (streamRef.current) {
-      removeLocalStream(streamRef.current, true);
+      removeSpeedDialStream(streamRef.current);
       streamRef.current = null;
     }
 
     // Clear local display
-    setLocalScreenStream(null);
+    setLocalSpeedDialStream(null);
+
+    // Broadcast that speed dial stopped
+    broadcastSpeedDialStatus(false);
 
     // Update store
     stopPlayback();
     activeClipIdRef.current = null;
-  }, [removeLocalStream, setLocalScreenStream, stopPlayback, onPlaybackEndedDuringRecording]);
+  }, [
+    removeSpeedDialStream,
+    setLocalSpeedDialStream,
+    broadcastSpeedDialStatus,
+    stopPlayback,
+    onPlaybackEndedDuringRecording
+  ]);
 
   // Import a new clip
   const importNewClip = useCallback(async () => {
@@ -235,9 +265,28 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
     }
   }, [volume]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - must remove stream from P2P and notify peers
+  // This handles cases like host transfer where the panel unmounts while playing
   useEffect(() => {
     return () => {
+      // Notify recording that speed dial playback ended (if active during recording)
+      // Uses ref to access the latest callback without adding it to effect deps
+      if (activeClipIdRef.current) {
+        onPlaybackEndedRef.current?.(activeClipIdRef.current);
+        activeClipIdRef.current = null;
+      }
+
+      // Remove speed dial stream from P2P before destroying player
+      if (streamRef.current) {
+        removeSpeedDialStream(streamRef.current);
+      }
+
+      // Notify peers that speed dial stopped
+      broadcastSpeedDialStatus(false);
+
+      // Clear local display state
+      setLocalSpeedDialStream(null);
+
       if (playerRef.current) {
         playerRef.current.destroy();
         playerRef.current = null;
@@ -247,7 +296,9 @@ export function useSpeedDial(options: UseSpeedDialOptions = {}) {
         streamRef.current = null;
       }
     };
-  }, []);
+    // These deps are all referentially stable (useCallback with [] deps or Zustand actions)
+    // onPlaybackEndedRef is accessed via ref, so it doesn't need to be in the dep array
+  }, [removeSpeedDialStream, broadcastSpeedDialStatus, setLocalSpeedDialStream]);
 
   return {
     // State

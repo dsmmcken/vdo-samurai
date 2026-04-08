@@ -88,6 +88,12 @@ export interface HostTransferMessage {
   timestamp: number; // For conflict resolution (newer wins)
 }
 
+export interface SpeedDialStatusMessage {
+  type: 'sd-status'; // 9 bytes, under 12-byte Trystero limit
+  isPlaying: boolean;
+  peerId: string;
+}
+
 export type P2PMessage =
   | FocusChangeMessage
   | PeerInfoMessage
@@ -100,4 +106,5 @@ export type P2PMessage =
   | SessionInfoRequestMessage
   | TileOrderMessage
   | TransferStatusMessage
-  | HostTransferMessage;
+  | HostTransferMessage
+  | SpeedDialStatusMessage;

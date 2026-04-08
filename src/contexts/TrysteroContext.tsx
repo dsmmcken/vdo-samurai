@@ -67,6 +67,12 @@ interface HostTransferData {
   timestamp: number;
 }
 
+interface SpeedDialStatusData {
+  type: string;
+  isPlaying: boolean;
+  peerId: string;
+}
+
 interface ScreenShareStatusData {
   type: string;
   isSharing: boolean;
@@ -133,6 +139,10 @@ interface TrysteroContextValue {
   broadcastTileOrder: (order: string[]) => void;
   broadcastTransferStatus: (status: TransferBroadcast) => void;
   broadcastHostTransfer: (newHostPeerId: string) => void;
+  // Speed dial functions
+  addSpeedDialStream: (stream: MediaStream) => void;
+  removeSpeedDialStream: (stream: MediaStream) => void;
+  broadcastSpeedDialStatus: (isPlaying: boolean) => void;
 }
 
 const TrysteroContext = createContext<TrysteroContextValue | null>(null);
@@ -183,8 +193,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef<{
     localCameraStream: MediaStream | null; // Camera stream for re-adding to new peers
     localScreenStream: MediaStream | null;
+    localSpeedDialStream: MediaStream | null; // Speed dial stream for re-adding to new peers
     activeScreenSharePeerId: string | null;
     peersWithScreenShareAvailable: Set<string>;
+    peersWithSpeedDialActive: Set<string>; // Peers currently playing speed dial
     name: string;
     isHost: boolean;
     hostTimestamp: number;
@@ -196,8 +208,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
   }>({
     localCameraStream: null,
     localScreenStream: null,
+    localSpeedDialStream: null,
     activeScreenSharePeerId: null,
     peersWithScreenShareAvailable: new Set(),
+    peersWithSpeedDialActive: new Set(),
     name: 'Anonymous',
     isHost: false,
     hostTimestamp: 0,
@@ -220,6 +234,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendTileOrder: ((data: TileOrderData, peerId?: string) => void) | null;
     sendTransferStatus: ((data: TransferStatusData, peerId?: string) => void) | null;
     sendHostTransfer: ((data: HostTransferData, peerId?: string) => void) | null;
+    sendSpeedDialStatus: ((data: SpeedDialStatusData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
@@ -230,7 +245,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendSessionInfoRequest: null,
     sendTileOrder: null,
     sendTransferStatus: null,
-    sendHostTransfer: null
+    sendHostTransfer: null,
+    sendSpeedDialStatus: null
   });
 
   // Setup peer handlers when room changes
@@ -264,6 +280,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendTransferStatus, onTransferStatus] = newRoom.makeAction<any>('xfer-status');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendHostTransfer, onHostTransfer] = newRoom.makeAction<any>('host-xfer');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendSpeedDialStatus, onSpeedDialStatus] = newRoom.makeAction<any>('sd-status');
 
       sendersRef.current = {
         sendPeerInfo,
@@ -275,7 +293,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendSessionInfoRequest,
         sendTileOrder,
         sendTransferStatus,
-        sendHostTransfer
+        sendHostTransfer,
+        sendSpeedDialStatus
       };
 
       // Handle peer join
@@ -289,12 +308,14 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           id: peerId,
           stream: null,
           screenStream: null,
+          speedDialStream: null,
           name: `User-${peerId.slice(0, 4)}`,
           isHost: false,
           isElectron: false, // Will be updated when we receive peer-info
           videoEnabled: true, // Assume video is on until we hear otherwise
           audioEnabled: true, // Assume audio is on until we hear otherwise
-          isScreenSharing: false
+          isScreenSharing: false,
+          isPlayingSpeedDial: false
         });
 
         // Send our info to the new peer
@@ -336,6 +357,20 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         if (stateRef.current.localScreenStream && newRoom) {
           console.log('[TrysteroProvider] Re-adding screen stream for new peer:', peerId);
           newRoom.addStream(stateRef.current.localScreenStream, peerId, { type: 'screen' });
+        }
+
+        // Re-add speed dial stream for the new peer
+        if (stateRef.current.localSpeedDialStream && newRoom) {
+          console.log('[TrysteroProvider] Re-adding speed dial stream for new peer:', peerId);
+          // Send speed dial status FIRST so peer knows to expect speeddial stream
+          const sdStatusMsg: SpeedDialStatusData = {
+            type: 'sd-status',
+            isPlaying: true,
+            peerId: selfId
+          };
+          sendSpeedDialStatus(sdStatusMsg, peerId);
+          // Then add the stream
+          newRoom.addStream(stateRef.current.localSpeedDialStream, peerId, { type: 'speeddial' });
         }
 
         // Send our internal session ID to the new peer (if we have one)
@@ -428,11 +463,22 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         console.log('[TrysteroProvider] Peer left:', peerId);
         removePeer(peerId);
         stateRef.current.peersWithScreenShareAvailable.delete(peerId);
+        stateRef.current.peersWithSpeedDialActive.delete(peerId);
 
         // If the leaving peer was the active screen sharer, clear it
         if (stateRef.current.activeScreenSharePeerId === peerId) {
           stateRef.current.activeScreenSharePeerId = null;
           setActiveScreenSharePeerId(null);
+        }
+
+        // If the leaving peer was focused, reset focus to local user (null)
+        // This prevents stale focusedPeerId from causing no tile to show the focus
+        // indicator, and avoids syncing a nonexistent peer ID to newly joining peers.
+        if (stateRef.current.focusedPeerId === peerId) {
+          const timestamp = Date.now();
+          stateRef.current.focusedPeerId = null;
+          stateRef.current.focusTimestamp = timestamp;
+          storeFunctionsRef.current.setFocusedPeerId(null, timestamp);
         }
       });
 
@@ -650,6 +696,23 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      // Handle speed dial status messages
+      onSpeedDialStatus((data: unknown, peerId: string) => {
+        if (typeof data === 'object' && data !== null) {
+          const status = data as SpeedDialStatusData;
+          console.log('[TrysteroProvider] Speed dial status from', peerId, ':', status);
+          updatePeer(peerId, { isPlayingSpeedDial: status.isPlaying });
+          if (status.isPlaying) {
+            stateRef.current.peersWithSpeedDialActive.add(peerId);
+          } else {
+            stateRef.current.peersWithSpeedDialActive.delete(peerId);
+            // Clear the peer's speedDialStream so MainDisplay falls back
+            updatePeer(peerId, { speedDialStream: null });
+            console.log('[TrysteroProvider] Cleared speedDialStream for peer:', peerId);
+          }
+        }
+      });
+
       // Handle host transfer messages with timestamp-based conflict resolution
       onHostTransfer((data: unknown) => {
         if (typeof data === 'object' && data !== null) {
@@ -726,29 +789,43 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
 
         // Check metadata first - if explicit type is provided, trust it
         const hasExplicitType = metaType !== undefined;
+        const isSpeedDialFromMetadata = metaType === 'speeddial';
         const isScreenFromMetadata = metaType === 'screen';
         const isCameraFromMetadata = metaType === 'camera';
 
-        // Fallback: if NO metadata type is provided, use screen share status as a signal.
+        // Fallback: if NO metadata type is provided, use status messages as a signal.
         // Trystero sometimes doesn't preserve metadata for dynamically added streams.
+        const peerHasSpeedDialActive = stateRef.current.peersWithSpeedDialActive.has(peerId);
         const peerHasScreenShareAnnounced =
           stateRef.current.peersWithScreenShareAvailable.has(peerId);
         const currentPeer = usePeerStore.getState().peers.find((p) => p.id === peerId);
         const peerAlreadyHasCameraStream = currentPeer?.stream !== null;
 
-        // Determine if this is a screen stream:
-        // 1. Explicit metadata says it's a screen -> screenStream
-        // 2. Explicit metadata says it's a camera -> stream (camera)
-        // 3. NO metadata AND peer has announced screen share AND peer already has camera
-        //    -> assume this new stream is the screen share
-        // 4. Otherwise -> stream (camera)
-        let isScreen: boolean;
+        // Determine stream type - priority:
+        // 1. Explicit 'speeddial' metadata -> speedDialStream
+        // 2. Explicit 'screen' metadata -> screenStream
+        // 3. Explicit 'camera' metadata -> stream (camera)
+        // 4. NO metadata + peer has sd-status active -> speedDialStream (fallback)
+        // 5. NO metadata + peer has screen share announced -> screenStream (fallback)
+        // 6. Otherwise -> stream (camera)
+        let streamType: 'camera' | 'screen' | 'speeddial' = 'camera';
+
         if (hasExplicitType) {
           // Trust explicit metadata
-          isScreen = isScreenFromMetadata;
+          if (isSpeedDialFromMetadata) {
+            streamType = 'speeddial';
+          } else if (isScreenFromMetadata) {
+            streamType = 'screen';
+          } else if (isCameraFromMetadata) {
+            streamType = 'camera';
+          }
         } else {
-          // No metadata - use fallback logic
-          isScreen = peerHasScreenShareAnnounced && peerAlreadyHasCameraStream;
+          // No metadata - use fallback logic based on status messages
+          if (peerHasSpeedDialActive && peerAlreadyHasCameraStream) {
+            streamType = 'speeddial';
+          } else if (peerHasScreenShareAnnounced && peerAlreadyHasCameraStream) {
+            streamType = 'screen';
+          }
         }
 
         console.log(
@@ -756,19 +833,27 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           JSON.stringify({
             hasExplicitType,
             metaType,
+            isSpeedDialFromMetadata,
             isScreenFromMetadata,
             isCameraFromMetadata,
+            peerHasSpeedDialActive,
             peerHasScreenShareAnnounced,
             peerAlreadyHasCameraStream,
-            isScreen,
-            storingAs: isScreen ? 'screenStream' : 'stream'
+            streamType
           })
         );
 
-        if (isScreen) {
-          updatePeer(peerId, { screenStream: stream });
-        } else {
-          updatePeer(peerId, { stream });
+        // Store stream in appropriate property
+        switch (streamType) {
+          case 'speeddial':
+            updatePeer(peerId, { speedDialStream: stream });
+            break;
+          case 'screen':
+            updatePeer(peerId, { screenStream: stream });
+            break;
+          default:
+            updatePeer(peerId, { stream });
+            break;
         }
       });
 
@@ -884,8 +969,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     stateRef.current = {
       localCameraStream: null,
       localScreenStream: null,
+      localSpeedDialStream: null,
       activeScreenSharePeerId: null,
       peersWithScreenShareAvailable: new Set(),
+      peersWithSpeedDialActive: new Set(),
       name: 'Anonymous',
       isHost: false,
       hostTimestamp: 0,
@@ -905,7 +992,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendSessionInfoRequest: null,
       sendTileOrder: null,
       sendTransferStatus: null,
-      sendHostTransfer: null
+      sendHostTransfer: null,
+      sendSpeedDialStatus: null
     };
   }, [clearPeers]);
 
@@ -1005,6 +1093,9 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         if (stateRef.current.activeScreenSharePeerId === selfId) {
           setActiveScreenShareRef.current(null);
         }
+      } else {
+        // Clear camera stream ref so it won't be re-added to newly joining peers
+        stateRef.current.localCameraStream = null;
       }
 
       roomRef.current.removeStream(stream);
@@ -1125,6 +1216,41 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Broadcast speed dial status
+  const broadcastSpeedDialStatus = useCallback((isPlaying: boolean) => {
+    if (sendersRef.current.sendSpeedDialStatus) {
+      const data: SpeedDialStatusData = {
+        type: 'sd-status',
+        isPlaying,
+        peerId: selfId
+      };
+      sendersRef.current.sendSpeedDialStatus(data);
+      console.log('[TrysteroProvider] Broadcasting speed dial status:', isPlaying);
+    }
+  }, []);
+
+  // Add speed dial stream to P2P
+  const addSpeedDialStream = useCallback((stream: MediaStream) => {
+    if (!roomRef.current) {
+      console.warn('[TrysteroProvider] Cannot add speed dial stream - no room');
+      return;
+    }
+    console.log('[TrysteroProvider] Adding speed dial stream to P2P');
+    stateRef.current.localSpeedDialStream = stream;
+    roomRef.current.addStream(stream, undefined, { type: 'speeddial' });
+  }, []);
+
+  // Remove speed dial stream from P2P
+  const removeSpeedDialStream = useCallback((stream: MediaStream) => {
+    if (!roomRef.current) {
+      console.warn('[TrysteroProvider] Cannot remove speed dial stream - no room');
+      return;
+    }
+    console.log('[TrysteroProvider] Removing speed dial stream from P2P');
+    stateRef.current.localSpeedDialStream = null;
+    roomRef.current.removeStream(stream);
+  }, []);
+
   // Update name/isHost when they change (for sending to new peers)
   const updateUserInfo = useCallback((name: string, isHost: boolean) => {
     stateRef.current.name = name;
@@ -1151,7 +1277,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         broadcastSessionInfo,
         broadcastTileOrder,
         broadcastTransferStatus,
-        broadcastHostTransfer
+        broadcastHostTransfer,
+        addSpeedDialStream,
+        removeSpeedDialStream,
+        broadcastSpeedDialStatus
       }}
     >
       <TrysteroProviderInner updateUserInfo={updateUserInfo}>{children}</TrysteroProviderInner>

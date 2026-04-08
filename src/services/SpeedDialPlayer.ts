@@ -11,6 +11,7 @@ export class SpeedDialPlayer {
   private videoElement: HTMLVideoElement | null = null;
   private audioContext: AudioContext | null = null;
   private gainNode: GainNode | null = null;
+  private sourceNode: MediaElementAudioSourceNode | null = null;
   private mediaStream: MediaStream | null = null;
   private onPlaybackEndCallback: PlaybackEndCallback | null = null;
   private isDestroyed = false;
@@ -212,6 +213,16 @@ export class SpeedDialPlayer {
     });
 
     // Set up audio processing for volume control
+    // Disconnect any existing source node to prevent InvalidStateError
+    // when play() is called multiple times without stop() in between
+    if (this.sourceNode) {
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+    if (this.audioContext) {
+      this.audioContext.close().catch(() => {});
+    }
+
     this.audioContext = new AudioContext();
     this.gainNode = this.audioContext.createGain();
 
@@ -219,8 +230,10 @@ export class SpeedDialPlayer {
     const audioDestination = this.audioContext.createMediaStreamDestination();
 
     // Connect video element audio to gain node
-    const sourceNode = this.audioContext.createMediaElementSource(this.videoElement);
-    sourceNode.connect(this.gainNode);
+    // Note: createMediaElementSource() can only be called once per element per AudioContext.
+    // We store the node so cleanup() can disconnect it properly.
+    this.sourceNode = this.audioContext.createMediaElementSource(this.videoElement);
+    this.sourceNode.connect(this.gainNode);
     this.gainNode.connect(audioDestination);
 
     // Also connect to speakers so the host can hear it
@@ -335,6 +348,12 @@ export class SpeedDialPlayer {
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((track) => track.stop());
       this.mediaStream = null;
+    }
+
+    // Disconnect source node before closing audio context
+    if (this.sourceNode) {
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
     }
 
     // Close audio context
