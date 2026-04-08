@@ -19,6 +19,16 @@ export function VideoElement({ stream, muted = false, className = '' }: VideoEle
         console.warn('Video autoplay prevented:', err);
       });
     }
+
+    return () => {
+      // Release the media pipeline when the stream changes or the component unmounts.
+      // Without this, the browser may keep processing the old stream (e.g. decoding
+      // video frames, mixing audio) even after the element is removed from the DOM,
+      // which wastes CPU/memory and can cause audio to leak from stale streams.
+      if (video) {
+        video.srcObject = null;
+      }
+    };
   }, [stream]);
 
   if (!stream) {

@@ -31,6 +31,7 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onerror = () => {
       console.error('[BrowserStorage] Failed to open database:', request.error);
+      dbPromise = null; // Allow retry on next call
       reject(request.error);
     };
 
