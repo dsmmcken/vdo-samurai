@@ -47,6 +47,14 @@ export function useClockSync() {
   >(null);
   const pendingSyncResolveRef = useRef<((offset: number) => void) | null>(null);
 
+  // Use a ref for isHost so that message handlers always read the current value.
+  // Without this, a host transfer would leave handlers with a stale isHost closure,
+  // causing the new host to silently drop clock-sync requests.
+  const isHostRef = useRef(isHost);
+  useEffect(() => {
+    isHostRef.current = isHost;
+  }, [isHost]);
+
   // Initialize clock sync actions
   useEffect(() => {
     if (!room || initializedRef.current) return;
@@ -62,7 +70,7 @@ export function useClockSync() {
 
     // Host handles sync requests
     onSyncRequest((data: unknown, peerId: string) => {
-      if (!isHost) return;
+      if (!isHostRef.current) return;
 
       const request = data as ClockSyncRequestMessage;
       if (request.type !== 'clock-sync-request') return;
@@ -81,7 +89,7 @@ export function useClockSync() {
 
     // Non-host handles sync responses
     onSyncResponse((data: unknown) => {
-      if (isHost) return;
+      if (isHostRef.current) return;
 
       const response = data as ClockSyncResponseMessage;
       if (response.type !== 'clock-sync-response') return;
@@ -110,7 +118,7 @@ export function useClockSync() {
       sendSyncRequestRef.current = null;
       sendSyncResponseRef.current = null;
     };
-  }, [room, isHost]);
+  }, [room]);
 
   /**
    * Send a single sync request and wait for response

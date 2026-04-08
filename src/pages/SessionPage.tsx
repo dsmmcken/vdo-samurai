@@ -55,10 +55,8 @@ export function SessionPage() {
     return sessionId || '';
   }, [sessionId, searchParams]);
   const { isConnected, isConnecting, isHost, localStream } = useSessionStore();
-  const { localBlob, localScreenBlob, editPoints, startTime, endTime } = useRecordingStore();
+  const { localBlob, localScreenBlob } = useRecordingStore();
   const { mode, setMode, initializeClips } = useNLEStore();
-  const { peers } = usePeerStore();
-  const { receivedRecordings } = useTransferStore();
   const { createSession, joinSession } = useWebRTC();
   const {
     requestStream,
@@ -339,7 +337,19 @@ export function SessionPage() {
   }, [transfers, browserMode, markCompleted]);
 
   // Initialize clips from editPoints for NLE editor
+  // Read volatile store state at call time (via getState()) to avoid recreating
+  // this callback on every edit point addition during recording.
   const initializeNLEClips = useCallback(() => {
+    const {
+      editPoints,
+      startTime,
+      endTime,
+      localBlob: currentLocalBlob
+    } = useRecordingStore.getState();
+    const { peers: currentPeers } = usePeerStore.getState();
+    const { receivedRecordings: currentReceivedRecordings } = useTransferStore.getState();
+    const currentProfile = useUserStore.getState().profile;
+
     if (!startTime) return;
 
     // Calculate recording duration - use endTime if available, otherwise estimate from timestamps
@@ -370,7 +380,7 @@ export function SessionPage() {
         // IMPORTANT: Always use focusedPeerId directly, even if peer has disconnected
         // This ensures received recordings can be matched by peerId
         let peerId: string | null = null;
-        let peerName = profile?.displayName || 'You';
+        let peerName = currentProfile?.displayName || 'You';
 
         if (point.focusedPeerId) {
           // Always use the focusedPeerId - this is critical for matching with received recordings
@@ -378,12 +388,12 @@ export function SessionPage() {
 
           // Try to find the peer name from multiple sources
           // 1. First check if peer is still connected
-          const connectedPeer = peers.find((p) => p.id === point.focusedPeerId);
+          const connectedPeer = currentPeers.find((p) => p.id === point.focusedPeerId);
           if (connectedPeer) {
             peerName = connectedPeer.name;
           } else {
             // 2. Fall back to name from received recordings
-            const receivedRecording = receivedRecordings.find(
+            const receivedRecording = currentReceivedRecordings.find(
               (r) => r.peerId === point.focusedPeerId
             );
             if (receivedRecording) {
@@ -413,17 +423,17 @@ export function SessionPage() {
     }
 
     // If no clips were created from edit points, create a single clip for local recording
-    if (clips.length === 0 && localBlob && recordingDuration > 0) {
+    if (clips.length === 0 && currentLocalBlob && recordingDuration > 0) {
       clips.push({
         id: 'clip-0',
         peerId: null,
-        peerName: profile?.displayName || 'You',
+        peerName: currentProfile?.displayName || 'You',
         startTime: 0,
         endTime: recordingDuration,
         order: 0,
         trimStart: 0,
         trimEnd: 0,
-        color: getColorForName(profile?.displayName || 'You'),
+        color: getColorForName(currentProfile?.displayName || 'You'),
         sourceType: 'camera'
       });
       clipOrder++;
@@ -468,16 +478,7 @@ export function SessionPage() {
     });
 
     initializeClips(clips);
-  }, [
-    editPoints,
-    startTime,
-    endTime,
-    peers,
-    receivedRecordings,
-    profile,
-    localBlob,
-    initializeClips
-  ]);
+  }, [initializeClips]);
 
   // When recording stops and host has a blob, go straight to editor
   // Only if we actually recorded in this session (wasRecordingRef is true)
@@ -508,7 +509,9 @@ export function SessionPage() {
           }
         });
         setVideoEnabled(enabled);
-        broadcastVideoState(enabled, audioEnabled);
+        // Read audioEnabled fresh — user may have toggled audio during the await
+        const currentAudioTrack = useSessionStore.getState().localStream?.getAudioTracks()[0];
+        broadcastVideoState(enabled, currentAudioTrack?.enabled ?? audioEnabled);
       } else {
         // Video OFF -> ON: Stop audio-only clip, start video clip
         const enabled = await toggleVideoFull({
@@ -517,7 +520,8 @@ export function SessionPage() {
           }
         });
         setVideoEnabled(enabled);
-        broadcastVideoState(enabled, audioEnabled);
+        const currentAudioTrack = useSessionStore.getState().localStream?.getAudioTracks()[0];
+        broadcastVideoState(enabled, currentAudioTrack?.enabled ?? audioEnabled);
       }
     } else {
       // Not recording: simple mute toggle (legacy behavior)
@@ -536,12 +540,6 @@ export function SessionPage() {
     getAudioOnlyStream,
     broadcastVideoState
   ]);
-
-  const handleToggleAudio = useCallback(() => {
-    const enabled = toggleAudio();
-    setAudioEnabled(enabled);
-    broadcastVideoState(videoEnabled, enabled);
-  }, [toggleAudio, videoEnabled, broadcastVideoState]);
 
   // If not connected and we have a session ID, auto-reconnect is in progress
   if (!isConnected && !isConnecting && sessionId) {
@@ -686,7 +684,11 @@ export function SessionPage() {
 
             {/* Audio toggle */}
             <button
-              onClick={handleToggleAudio}
+              onClick={() => {
+                const enabled = toggleAudio();
+                setAudioEnabled(enabled);
+                broadcastVideoState(videoEnabled, enabled);
+              }}
               className={`p-2 sm:p-3 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black ${
                 audioEnabled
                   ? 'bg-black/50 hover:bg-black/70 text-white'

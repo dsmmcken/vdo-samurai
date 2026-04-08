@@ -40,98 +40,120 @@ export function useMediaStream() {
   // Track cleanup handlers for 'ended' event listeners
   const trackEndedCleanupRef = useRef<(() => void) | null>(null);
 
+  // Track audio mute state independently — do NOT rely on audioTrack.enabled
+  // because cloned tracks in some Electron/Chromium versions don't reliably
+  // toggle their enabled state.
+  const audioMutedRef = useRef(false);
+
+  // Guard against concurrent requestStream calls (ref survives across renders)
+  const pendingRequestRef = useRef<Promise<MediaStream> | null>(null);
+
   const requestStream = useCallback(async () => {
     console.log('[useMediaStream] requestStream called, existing localStream:', !!localStream);
     if (localStream) return localStream;
 
+    // If a request is already in progress, return the same promise to avoid
+    // acquiring duplicate camera/mic streams and leaking the first pair.
+    if (pendingRequestRef.current) {
+      console.log('[useMediaStream] requestStream already in progress, deduplicating');
+      return pendingRequestRef.current;
+    }
+
     setIsRequesting(true);
     setError(null);
 
-    try {
-      // First, get the high-quality recording stream to identify the camera device
-      console.log(
-        '[useMediaStream] Requesting HQ recording stream with constraints:',
-        HIGH_QUALITY_CONSTRAINTS
-      );
-      const hqStream = await navigator.mediaDevices.getUserMedia({
-        video: HIGH_QUALITY_CONSTRAINTS.video,
-        audio: HIGH_QUALITY_CONSTRAINTS.audio
-      });
-      console.log(
-        '[useMediaStream] Got HQ stream:',
-        hqStream,
-        'video tracks:',
-        hqStream.getVideoTracks()
-      );
+    const doRequest = async (): Promise<MediaStream> => {
+      try {
+        // First, get the high-quality recording stream to identify the camera device
+        console.log(
+          '[useMediaStream] Requesting HQ recording stream with constraints:',
+          HIGH_QUALITY_CONSTRAINTS
+        );
+        const hqStream = await navigator.mediaDevices.getUserMedia({
+          video: HIGH_QUALITY_CONSTRAINTS.video,
+          audio: HIGH_QUALITY_CONSTRAINTS.audio
+        });
+        console.log(
+          '[useMediaStream] Got HQ stream:',
+          hqStream,
+          'video tracks:',
+          hqStream.getVideoTracks()
+        );
 
-      // Get the device ID from the HQ stream to ensure we use the same camera
-      const videoTrack = hqStream.getVideoTracks()[0];
-      const deviceId = videoTrack?.getSettings().deviceId;
-      cameraDeviceIdRef.current = deviceId || null;
+        // Get the device ID from the HQ stream to ensure we use the same camera
+        const videoTrack = hqStream.getVideoTracks()[0];
+        const deviceId = videoTrack?.getSettings().deviceId;
+        cameraDeviceIdRef.current = deviceId || null;
 
-      // Create low-quality stream for streaming to peers, using same camera
-      console.log('[useMediaStream] Requesting LQ streaming stream with device:', deviceId);
-      const streamingConstraints = {
-        video: {
-          ...MAIN_CONSTRAINTS.video,
-          deviceId: deviceId ? { exact: deviceId } : undefined
-        },
-        audio: false // We'll clone audio from HQ stream
-      };
+        // Create low-quality stream for streaming to peers, using same camera
+        console.log('[useMediaStream] Requesting LQ streaming stream with device:', deviceId);
+        const streamingConstraints = {
+          video: {
+            ...MAIN_CONSTRAINTS.video,
+            deviceId: deviceId ? { exact: deviceId } : undefined
+          },
+          audio: false // We'll clone audio from HQ stream
+        };
 
-      const lqStream = await navigator.mediaDevices.getUserMedia(streamingConstraints);
+        const lqStream = await navigator.mediaDevices.getUserMedia(streamingConstraints);
 
-      // Clone audio track from HQ stream to LQ stream
-      const audioTrack = hqStream.getAudioTracks()[0];
-      if (audioTrack) {
-        lqStream.addTrack(audioTrack.clone());
-      }
+        // Clone audio track from HQ stream to LQ stream
+        const audioTrack = hqStream.getAudioTracks()[0];
+        if (audioTrack) {
+          lqStream.addTrack(audioTrack.clone());
+        }
 
-      console.log(
-        '[useMediaStream] Got LQ stream:',
-        lqStream,
-        'video tracks:',
-        lqStream.getVideoTracks()
-      );
+        console.log(
+          '[useMediaStream] Got LQ stream:',
+          lqStream,
+          'video tracks:',
+          lqStream.getVideoTracks()
+        );
 
-      setLocalRecordingStream(hqStream);
-      setLocalStream(lqStream);
+        setLocalRecordingStream(hqStream);
+        setLocalStream(lqStream);
 
-      // Set up 'ended' event listeners on video tracks for unexpected terminations
-      const setupTrackEndedListeners = () => {
-        const hqVideoTrack = hqStream.getVideoTracks()[0];
+        // Set up 'ended' event listeners on video tracks for unexpected terminations
+        const setupTrackEndedListeners = () => {
+          const hqVideoTrack = hqStream.getVideoTracks()[0];
 
-        const handleTrackEnded = async () => {
-          console.log('[useMediaStream] Video track ended unexpectedly');
-          if (onVideoTrackEndedRef.current) {
-            try {
-              await onVideoTrackEndedRef.current();
-            } catch (err) {
-              console.error('[useMediaStream] Error in onVideoTrackEnded callback:', err);
+          const handleTrackEnded = async () => {
+            console.log('[useMediaStream] Video track ended unexpectedly');
+            if (onVideoTrackEndedRef.current) {
+              try {
+                await onVideoTrackEndedRef.current();
+              } catch (err) {
+                console.error('[useMediaStream] Error in onVideoTrackEnded callback:', err);
+              }
             }
-          }
+          };
+
+          // Add listener to HQ track (only need one since HQ/LQ share the same physical device)
+          hqVideoTrack?.addEventListener('ended', handleTrackEnded);
+
+          // Store cleanup function
+          trackEndedCleanupRef.current = () => {
+            hqVideoTrack?.removeEventListener('ended', handleTrackEnded);
+          };
         };
 
-        // Add listener to HQ track (only need one since HQ/LQ share the same physical device)
-        hqVideoTrack?.addEventListener('ended', handleTrackEnded);
+        setupTrackEndedListeners();
 
-        // Store cleanup function
-        trackEndedCleanupRef.current = () => {
-          hqVideoTrack?.removeEventListener('ended', handleTrackEnded);
-        };
-      };
+        return lqStream;
+      } catch (err) {
+        console.error('[useMediaStream] getUserMedia error:', err);
+        const message = err instanceof Error ? err.message : 'Failed to access camera/microphone';
+        setError(message);
+        throw err;
+      } finally {
+        setIsRequesting(false);
+        pendingRequestRef.current = null;
+      }
+    };
 
-      setupTrackEndedListeners();
-
-      return lqStream;
-    } catch (err) {
-      console.error('[useMediaStream] getUserMedia error:', err);
-      const message = err instanceof Error ? err.message : 'Failed to access camera/microphone';
-      setError(message);
-      throw err;
-    } finally {
-      setIsRequesting(false);
-    }
+    const promise = doRequest();
+    pendingRequestRef.current = promise;
+    return promise;
   }, [localStream, setLocalStream, setLocalRecordingStream]);
 
   const stopStream = useCallback(() => {
@@ -140,6 +162,9 @@ export function useMediaStream() {
       trackEndedCleanupRef.current();
       trackEndedCleanupRef.current = null;
     }
+
+    // Reset audio mute state
+    audioMutedRef.current = false;
 
     if (localStream) {
       localStream.getTracks().forEach((track) => track.stop());
@@ -344,28 +369,43 @@ export function useMediaStream() {
    * Check if audio is currently enabled
    */
   const isAudioEnabled = useCallback((): boolean => {
-    const audioTrack = localStream?.getAudioTracks()[0];
-    return audioTrack?.enabled ?? false;
-  }, [localStream]);
+    return !audioMutedRef.current;
+  }, []);
 
   const toggleAudio = useCallback(() => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        const newEnabled = !audioTrack.enabled;
-        audioTrack.enabled = newEnabled;
-        // Also toggle the recording stream audio track
-        if (localRecordingStream) {
-          const recordingAudioTrack = localRecordingStream.getAudioTracks()[0];
-          if (recordingAudioTrack) {
-            recordingAudioTrack.enabled = newEnabled;
-          }
-        }
-        return newEnabled;
-      }
+    // Read fresh state from store to avoid stale closures
+    const currentStream = useSessionStore.getState().localStream;
+    const currentRecordingStream = useSessionStore.getState().localRecordingStream;
+
+    if (!currentStream) {
+      console.warn('[useMediaStream] toggleAudio: no localStream');
+      return false;
     }
-    return false;
-  }, [localStream, localRecordingStream]);
+
+    // Use our own ref to track mute state — do NOT read from audioTrack.enabled
+    // because cloned tracks may not reliably toggle in some Electron/Chromium versions
+    const wasMuted = audioMutedRef.current;
+    const newEnabled = wasMuted; // was muted → now enabled, was enabled → now muted
+    audioMutedRef.current = !wasMuted;
+
+    // Apply to all audio tracks on both streams
+    currentStream.getAudioTracks().forEach((t) => {
+      t.enabled = newEnabled;
+    });
+    if (currentRecordingStream) {
+      currentRecordingStream.getAudioTracks().forEach((t) => {
+        t.enabled = newEnabled;
+      });
+    }
+
+    console.log('[useMediaStream] toggleAudio:', {
+      wasMuted,
+      newEnabled,
+      trackCount: currentStream.getAudioTracks().length,
+      trackEnabled: currentStream.getAudioTracks()[0]?.enabled
+    });
+    return newEnabled;
+  }, []);
 
   /**
    * Set a callback to be invoked when the video track ends unexpectedly.

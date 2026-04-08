@@ -185,7 +185,8 @@ export function useFileTransfer() {
 
       protocol.onComplete((transferId, blob, filename) => {
         updateQueuedTransfer(transferId, { status: 'complete', progress: 1 });
-        const peer = peers.find((p) => p.id === peerId);
+        const currentPeers = usePeerStore.getState().peers;
+        const peer = currentPeers.find((p) => p.id === peerId);
         const recordingType = parseRecordingType(filename || '');
         addReceivedRecording({
           peerId,
@@ -202,7 +203,7 @@ export function useFileTransfer() {
 
       protocolsRef.current.set(peerId, protocol);
     },
-    [peers, addReceivedRecording, updateQueuedTransfer]
+    [addReceivedRecording, updateQueuedTransfer]
   );
 
   const removePeer = useCallback((peerId: string) => {

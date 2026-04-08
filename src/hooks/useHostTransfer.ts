@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useTrystero } from '../contexts/TrysteroContext';
 import { usePeerStore } from '../store/peerStore';
+import { useSessionStore } from '../store/sessionStore';
 import { isElectron } from '../utils/platform';
 
 interface CanMakeHostResult {
@@ -11,6 +12,7 @@ interface CanMakeHostResult {
 export function useHostTransfer() {
   const { broadcastHostTransfer } = useTrystero();
   const { peers } = usePeerStore();
+  const { isHost: isLocalHost } = useSessionStore();
 
   // Check if we can make a specific participant the host
   const canMakeHost = useCallback(
@@ -20,8 +22,11 @@ export function useHostTransfer() {
         return { allowed: false, reason: 'Only desktop app users can transfer host' };
       }
 
-      // If target is 'self', always allowed (self can become host)
+      // If target is 'self', check if already host
       if (targetParticipantId === 'self') {
+        if (isLocalHost) {
+          return { allowed: false, reason: 'Already the host' };
+        }
         return { allowed: true };
       }
 
@@ -43,7 +48,7 @@ export function useHostTransfer() {
 
       return { allowed: true };
     },
-    [peers]
+    [peers, isLocalHost]
   );
 
   // Make a participant the host

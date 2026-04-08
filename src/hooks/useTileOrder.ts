@@ -46,7 +46,10 @@ export function useTileOrder(): UseTileOrderReturn {
     return [SELF_ID, ...Array.from(currentPeerIds)];
   }, [tileOrder, currentPeerIds]);
 
-  // Handle peer joins/leaves - update tile order to include/exclude them
+  // Handle peer joins/leaves - persist tile order to the store.
+  // Computes the new order from tileOrder (store) + currentPeerIds directly,
+  // avoiding a dependency on orderedParticipantIds which would create a
+  // re-render cascade (effect writes tileOrder -> memo recomputes -> effect re-runs).
   useEffect(() => {
     const prevIds = prevPeerIdsRef.current;
 
@@ -58,17 +61,21 @@ export function useTileOrder(): UseTileOrderReturn {
 
     // Update order if there are changes
     if (joinedPeers.length > 0 || leftPeers.length > 0) {
-      // Filter out left peers from current order
-      const newOrder = orderedParticipantIds.filter(
-        (id) => id === SELF_ID || currentPeerIds.has(id)
-      );
+      const allIds = new Set([SELF_ID, ...Array.from(currentPeerIds)]);
 
-      // Add new peers at the end (they should already be included via orderedParticipantIds memo,
-      // but we explicitly ensure they're there)
-      for (const peerId of joinedPeers) {
-        if (!newOrder.includes(peerId)) {
-          newOrder.push(peerId);
+      let newOrder: string[];
+      if (tileOrder.length > 0) {
+        // Start with existing order, filter out IDs that are no longer present
+        newOrder = tileOrder.filter((id) => allIds.has(id));
+        // Add any IDs not yet in the order (newly joined peers + self if missing)
+        for (const id of Array.from(allIds)) {
+          if (!newOrder.includes(id)) {
+            newOrder.push(id);
+          }
         }
+      } else {
+        // No stored order - use default: self first, then peers
+        newOrder = [SELF_ID, ...Array.from(currentPeerIds)];
       }
 
       // Only update if actually changed
@@ -80,7 +87,7 @@ export function useTileOrder(): UseTileOrderReturn {
 
     // Update ref for next comparison
     prevPeerIdsRef.current = new Set(currentPeerIds);
-  }, [currentPeerIds, orderedParticipantIds, tileOrder, setTileOrder]);
+  }, [currentPeerIds, tileOrder, setTileOrder]);
 
   // Reorder and broadcast
   const reorder = useCallback(

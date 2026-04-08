@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToastStore, type ToastMessage } from './toastStore';
 
 function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: () => void }) {
   const [isExiting, setIsExiting] = useState(false);
   const duration = toast.duration ?? 4000;
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsExiting(true);
-      setTimeout(onDismiss, 200);
+      setTimeout(() => onDismissRef.current(), 200);
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [duration, onDismiss]);
+  }, [duration]);
 
   const handleDismiss = () => {
     setIsExiting(true);

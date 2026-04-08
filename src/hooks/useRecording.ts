@@ -34,7 +34,6 @@ export function useRecording(options: RecordingHookOptions = {}) {
     startTime,
     globalClockStart,
     clockOffset,
-    localClips,
     setIsRecording,
     setCountdown,
     setStartTime,
@@ -485,8 +484,10 @@ export function useRecording(options: RecordingHookOptions = {}) {
     if (audioClipId) {
       try {
         const { globalEndTime, blob } = await clipRecorder.stopClip(audioClipId);
+        // Get fresh localClips from store to avoid stale closure
+        const currentLocalClips = useRecordingStore.getState().localClips;
         // Find by recordingId (audioClipId is the recorder's ID)
-        const clip = localClips.find((c) => c.recordingId === audioClipId);
+        const clip = currentLocalClips.find((c) => c.recordingId === audioClipId);
         const storeClipId = clip?.id || audioClipId;
 
         stopClip(storeClipId, globalEndTime);
@@ -527,7 +528,6 @@ export function useRecording(options: RecordingHookOptions = {}) {
   }, [
     isRecording,
     localRecordingStream,
-    localClips,
     getClipRecorder,
     startClip,
     stopClip,
@@ -550,8 +550,10 @@ export function useRecording(options: RecordingHookOptions = {}) {
       if (videoClipId) {
         try {
           const { globalEndTime, blob } = await clipRecorder.stopClip(videoClipId);
+          // Get fresh localClips from store to avoid stale closure
+          const currentLocalClips = useRecordingStore.getState().localClips;
           // Find by recordingId (videoClipId is the recorder's ID)
-          const clip = localClips.find((c) => c.recordingId === videoClipId);
+          const clip = currentLocalClips.find((c) => c.recordingId === videoClipId);
           const storeClipId = clip?.id || videoClipId;
 
           stopClip(storeClipId, globalEndTime);
@@ -593,7 +595,7 @@ export function useRecording(options: RecordingHookOptions = {}) {
         }
       }
     },
-    [isRecording, localClips, getClipRecorder, startClip, stopClip, finalizeClip, broadcastClipInfo]
+    [isRecording, getClipRecorder, startClip, stopClip, finalizeClip, broadcastClipInfo]
   );
 
   /**
