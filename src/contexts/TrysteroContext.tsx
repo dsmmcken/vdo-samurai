@@ -34,11 +34,12 @@ const logRelayStatus = () => {
   const sockets = getRelaySockets();
   console.log(
     '[TrysteroProvider] Nostr relay sockets:',
-    Object.entries(sockets).map(([key, socket]) => ({
+    Object.entries(sockets).map(([key, socket]: [string, unknown]) => ({
       key,
-      readyState: socket?.readyState,
+      readyState: (socket as WebSocket)?.readyState,
       readyStateText:
-        ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][socket?.readyState ?? -1] || 'UNKNOWN'
+        ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][(socket as WebSocket)?.readyState ?? -1] ||
+        'UNKNOWN'
     }))
   );
 };
@@ -746,10 +747,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       });
 
       const joinErrorPeers = new Set<string>();
-      const newRoom = joinRoom(
-        { appId: APP_ID, rtcConfig: RTC_CONFIG, password },
-        newSessionId,
-        ({ error, peerId }) => {
+      const newRoom = joinRoom({ appId: APP_ID, rtcConfig: RTC_CONFIG, password }, newSessionId, {
+        onJoinError: ({ error, peerId }) => {
           console.error(
             '[TrysteroProvider] Join error (wrong password?):',
             error,
@@ -762,7 +761,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
             addJoinError('Could not connect to peer — the room code or password may be incorrect.');
           }
         }
-      );
+      });
 
       // Initialize focus and tile order state with timestamps so we can sync to new peers.
       // Use timestamp = 1 as a "default but valid" value - it passes the > 0 check for sync,
