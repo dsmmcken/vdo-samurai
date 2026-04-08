@@ -2,8 +2,8 @@
  * URL parameter utilities for browser-based session joining
  */
 
-// GitHub Pages deployment URL
-export const GITHUB_PAGES_URL = 'https://dsmmcken.github.io/vdo-samurai';
+// Host URL for shareable links - set via VITE_HOST_URL in .env / .env.development
+export const HOST_URL: string = import.meta.env.VITE_HOST_URL;
 
 /**
  * Extract room code from URL query parameters

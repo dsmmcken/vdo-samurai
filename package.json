@@ -9,7 +9,7 @@
     "dev:server": "vite",
     "dev:electron": "electron-vite build && NODE_ENV=development electron .",
     "dev:win": "./scripts/dev-win-electron.sh",
-    "dev:dual": "electron-vite build && node scripts/dev-dual.js",
+    "dev:dual": "node scripts/dev-dual.js",
     "dev:web": "vite --config vite.config.web.ts",
     "build": "electron-vite build",
     "build:web": "vite build --config vite.config.web.ts",

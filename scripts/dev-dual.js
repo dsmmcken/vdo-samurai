@@ -9,7 +9,7 @@
  */
 
 import { spawn, execSync } from 'child_process';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -17,26 +17,11 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
 
-const ELECTRON_PATH = join(projectRoot, 'node_modules', '.bin', 'electron');
-const MAIN_ENTRY = join(projectRoot, 'out', 'main', 'index.js');
-
 // Vite dev server port (from vite.config.web.ts)
 const VITE_DEV_PORT = 5173;
 
 const processes = [];
 const tempDirs = [];
-
-/**
- * Build the Electron app if needed
- */
-function ensureElectronBuilt() {
-  if (!existsSync(MAIN_ENTRY)) {
-    console.log('[dev-dual] Electron app not built. Running npm run build...');
-    execSync('npm run build', { cwd: projectRoot, stdio: 'inherit' });
-  } else {
-    console.log('[dev-dual] Electron app built at:', MAIN_ENTRY);
-  }
-}
 
 /**
  * Create a unique temp directory for user data
@@ -55,9 +40,13 @@ function killExistingViteServer() {
   try {
     // Find and kill process on port 5173
     if (process.platform === 'win32') {
-      execSync(`netstat -ano | findstr :${VITE_DEV_PORT} | findstr LISTENING`, { encoding: 'utf8' });
+      execSync(`netstat -ano | findstr :${VITE_DEV_PORT} | findstr LISTENING`, {
+        encoding: 'utf8'
+      });
       // If found, kill it
-      const output = execSync(`netstat -ano | findstr :${VITE_DEV_PORT} | findstr LISTENING`, { encoding: 'utf8' });
+      const output = execSync(`netstat -ano | findstr :${VITE_DEV_PORT} | findstr LISTENING`, {
+        encoding: 'utf8'
+      });
       const pid = output.trim().split(/\s+/).pop();
       if (pid) {
         execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });
@@ -86,7 +75,7 @@ function startViteDevServer() {
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const viteProcess = spawn(npmCmd, ['run', 'dev:web'], {
       cwd: projectRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     processes.push({ process: viteProcess, id: 'vite-dev-server' });
@@ -136,17 +125,24 @@ function startViteDevServer() {
 }
 
 /**
- * Launch the Electron host instance
+ * Launch the Electron host via electron-vite dev (with HMR)
  */
 function launchElectronHost() {
   const userDataDir = createTempDir('host');
 
-  console.log('[dev-dual] Starting Electron host...');
+  console.log('[dev-dual] Starting Electron host via electron-vite dev...');
   console.log(`[dev-dual]   User data: ${userDataDir}`);
 
+  const npmCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
   const electronProcess = spawn(
-    ELECTRON_PATH,
-    [MAIN_ENTRY, `--user-data-dir=${userDataDir}`, '--remote-debugging-port=9222'],
+    npmCmd,
+    [
+      'electron-vite',
+      'dev',
+      '--',
+      `--user-data-dir=${userDataDir}`,
+      '--remote-debugging-port=9222'
+    ],
     {
       cwd: projectRoot,
       stdio: 'inherit',
@@ -154,8 +150,8 @@ function launchElectronHost() {
         ...process.env,
         SIMULATE_MEDIA: 'true',
         INSTANCE_ID: 'host',
-        WINDOW_OFFSET: '0',
-      },
+        WINDOW_OFFSET: '0'
+      }
     }
   );
 
@@ -199,7 +195,7 @@ function openBrowserParticipant() {
   const browserProcess = spawn(command, args, {
     cwd: projectRoot,
     stdio: 'ignore',
-    detached: true,
+    detached: true
   });
 
   browserProcess.unref();
@@ -255,9 +251,6 @@ console.log('[dev-dual]   - Electron host with simulated media');
 console.log('[dev-dual]   - Browser participant via Vite dev server (hot reload!)');
 console.log('[dev-dual] Press Ctrl+C to stop.\n');
 
-// Ensure Electron build exists
-ensureElectronBuilt();
-
 // Kill any existing Vite server on the port
 killExistingViteServer();
 
@@ -281,7 +274,9 @@ console.log('\n[dev-dual] Both instances launched!');
 console.log('[dev-dual] Instructions:');
 console.log('[dev-dual]   1. In Electron (Host): Complete profile setup and create a session');
 console.log('[dev-dual]   2. Copy the session code from the URL or share dialog');
-console.log('[dev-dual]   3. In Browser (Participant): Complete profile setup and join with the code');
+console.log(
+  '[dev-dual]   3. In Browser (Participant): Complete profile setup and join with the code'
+);
 console.log('[dev-dual]   4. Test P2P features: screen share, recording, file transfer');
 console.log('[dev-dual]');
 console.log('[dev-dual] Browser has hot reload - changes to src/ will auto-refresh!');
