@@ -230,7 +230,7 @@ export async function launchApp(instanceId: string): Promise<AppInstance> {
   const headless = process.env.HEADLESS === 'true' || process.env.CI === 'true';
 
   const app = await electron.launch({
-    args: [ELECTRON_MAIN, `--user-data-dir=${userDataDir}`],
+    args: [ELECTRON_MAIN, `--user-data-dir=${userDataDir}`, '--no-sandbox'],
     env: {
       ...process.env,
       NODE_ENV: 'production',

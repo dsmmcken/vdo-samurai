@@ -134,31 +134,12 @@ export async function closeBrowserParticipant(participant: BrowserParticipant): 
     // Try to close browser
     const browserResult = await withTimeout(participant.browser.close(), 3000, 'browser.close');
 
-    // If either timed out, force kill the browser process
     if (contextResult.timedOut || browserResult.timedOut) {
-      console.log(`[BrowserParticipant] Force killing browser process for ${participant.instanceId}`);
-      try {
-        // Get the browser process and kill it
-        const browserProcess = participant.browser.process();
-        if (browserProcess && !browserProcess.killed) {
-          browserProcess.kill('SIGKILL');
-        }
-      } catch (killError) {
-        console.warn(`[BrowserParticipant] Could not force kill: ${killError}`);
-      }
+      console.warn(`[BrowserParticipant] Graceful close timed out for ${participant.instanceId}`);
     }
 
     console.log(`[BrowserParticipant] ${participant.instanceId} closed`);
   } catch (e) {
     console.error(`[BrowserParticipant] Failed to close ${participant.instanceId}:`, e);
-    // Try to force kill on any error
-    try {
-      const browserProcess = participant.browser.process();
-      if (browserProcess && !browserProcess.killed) {
-        browserProcess.kill('SIGKILL');
-      }
-    } catch {
-      // Ignore kill errors
-    }
   }
 }
