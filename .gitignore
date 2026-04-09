@@ -20,6 +20,7 @@ out
 # E2E test outputs
 e2e/test-results/
 e2e/test-recordings/
+test-results/
 playwright-report/
 
 # Generated mock videos (too large for git)
