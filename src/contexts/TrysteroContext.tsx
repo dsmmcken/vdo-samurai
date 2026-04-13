@@ -98,6 +98,11 @@ interface SpeedDialStatusData {
   peerId: string;
 }
 
+interface MeshHealthData {
+  type: string;
+  peers: string[]; // Connected peer IDs the sender has
+}
+
 interface ScreenShareStatusData {
   type: string;
   isSharing: boolean;
@@ -230,6 +235,14 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     focusTimestamp: number;
     tileOrder: string[];
     tileOrderTimestamp: number;
+    // Mesh health / auto-rejoin state
+    password: string | null;
+    currentSessionId: string | null;
+    meshGapDetectedAt: Map<string, number>; // peerId -> first-detection timestamp
+    meshHealthInterval: ReturnType<typeof setInterval> | null;
+    lastRejoinTime: number;
+    rejoinCount: number;
+    isRejoining: boolean;
   }>({
     localCameraStream: null,
     localScreenStream: null,
@@ -244,7 +257,14 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     focusedPeerId: null,
     focusTimestamp: 0,
     tileOrder: [],
-    tileOrderTimestamp: 0
+    tileOrderTimestamp: 0,
+    password: null,
+    currentSessionId: null,
+    meshGapDetectedAt: new Map(),
+    meshHealthInterval: null,
+    lastRejoinTime: 0,
+    rejoinCount: 0,
+    isRejoining: false
   });
 
   // Action senders
@@ -260,6 +280,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendTransferStatus: ((data: TransferStatusData, peerId?: string) => void) | null;
     sendHostTransfer: ((data: HostTransferData, peerId?: string) => void) | null;
     sendSpeedDialStatus: ((data: SpeedDialStatusData, peerId?: string) => void) | null;
+    sendMeshHealth: ((data: MeshHealthData, peerId?: string) => void) | null;
   }>({
     sendPeerInfo: null,
     sendScreenShareStatus: null,
@@ -271,8 +292,12 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     sendTileOrder: null,
     sendTransferStatus: null,
     sendHostTransfer: null,
-    sendSpeedDialStatus: null
+    sendSpeedDialStatus: null,
+    sendMeshHealth: null
   });
+
+  // Ref for mesh recovery function — set after joinSession is defined
+  const attemptMeshRecoveryRef = useRef<() => void>(() => {});
 
   // Setup peer handlers when room changes
   const setupPeerHandlers = useCallback(
@@ -307,6 +332,17 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       const [sendHostTransfer, onHostTransfer] = newRoom.makeAction<any>('host-xfer');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [sendSpeedDialStatus, onSpeedDialStatus] = newRoom.makeAction<any>('sd-status');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [sendMeshHealth, onMeshHealth] = newRoom.makeAction<any>('mesh-hlth');
+
+      // Helper: broadcast our connected peer list to all peers
+      const broadcastMeshHealth = () => {
+        if (!roomRef.current) return;
+        const peerIds = Object.keys(roomRef.current.getPeers());
+        if (peerIds.length === 0) return;
+        const data: MeshHealthData = { type: 'mesh-hlth', peers: peerIds };
+        sendMeshHealth(data);
+      };
 
       sendersRef.current = {
         sendPeerInfo,
@@ -319,7 +355,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         sendTileOrder,
         sendTransferStatus,
         sendHostTransfer,
-        sendSpeedDialStatus
+        sendSpeedDialStatus,
+        sendMeshHealth
       };
 
       // Handle peer join
@@ -481,6 +518,12 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
           console.log('[TrysteroProvider] Sending active transfer to new peer:', peerId, statusMsg);
           sendTransferStatus(statusMsg, peerId);
         });
+
+        // Broadcast mesh health after a delay to let Trystero's natural signaling complete
+        // 8s covers warmup (~2.1s) + one full announce cycle (~5.3s)
+        setTimeout(() => {
+          broadcastMeshHealth();
+        }, 8000);
       });
 
       // Handle peer leave
@@ -489,6 +532,7 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         removePeer(peerId);
         stateRef.current.peersWithScreenShareAvailable.delete(peerId);
         stateRef.current.peersWithSpeedDialActive.delete(peerId);
+        stateRef.current.meshGapDetectedAt.delete(peerId);
 
         // If the leaving peer was the active screen sharer, clear it
         if (stateRef.current.activeScreenSharePeerId === peerId) {
@@ -781,6 +825,78 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      // Handle mesh health gossip — detect missing peer connections
+      onMeshHealth((data: unknown, senderPeerId: string) => {
+        if (typeof data !== 'object' || data === null) return;
+        const healthData = data as MeshHealthData;
+
+        // Skip if we're currently rejoining
+        if (stateRef.current.isRejoining) return;
+
+        // Get our actual connected peers from Trystero (ground truth)
+        const ourPeerIds = roomRef.current ? Object.keys(roomRef.current.getPeers()) : [];
+        const ourPeerSet = new Set(ourPeerIds);
+
+        // Find peers the sender has that we don't
+        const missingPeers: string[] = [];
+        for (const peerId of healthData.peers) {
+          if (peerId === selfId) continue;
+          if (peerId === senderPeerId) continue;
+          if (ourPeerSet.has(peerId)) continue;
+          missingPeers.push(peerId);
+        }
+
+        if (missingPeers.length === 0) {
+          // Mesh is healthy — clear gap tracking
+          stateRef.current.meshGapDetectedAt.clear();
+          return;
+        }
+
+        console.log(
+          '[TrysteroProvider] Mesh gap detected! Missing peers:',
+          missingPeers,
+          'Our peers:',
+          ourPeerIds,
+          'Sender peers:',
+          healthData.peers
+        );
+
+        const now = Date.now();
+
+        // Track first-detection time for each missing peer
+        for (const peerId of missingPeers) {
+          if (!stateRef.current.meshGapDetectedAt.has(peerId)) {
+            stateRef.current.meshGapDetectedAt.set(peerId, now);
+          }
+        }
+
+        // Clean up gaps that have resolved
+        for (const [peerId] of stateRef.current.meshGapDetectedAt) {
+          if (ourPeerSet.has(peerId)) {
+            stateRef.current.meshGapDetectedAt.delete(peerId);
+          }
+        }
+
+        // Check if any gap has persisted beyond the 20s grace period
+        const GRACE_PERIOD_MS = 20000;
+        const hasPersistentGap = [...stateRef.current.meshGapDetectedAt.values()].some(
+          (detectedAt) => now - detectedAt > GRACE_PERIOD_MS
+        );
+
+        if (hasPersistentGap) {
+          console.log('[TrysteroProvider] Persistent mesh gap — attempting recovery');
+          attemptMeshRecoveryRef.current();
+        }
+      });
+
+      // Start periodic mesh health broadcasting (every 15s)
+      if (stateRef.current.meshHealthInterval) {
+        clearInterval(stateRef.current.meshHealthInterval);
+      }
+      stateRef.current.meshHealthInterval = setInterval(() => {
+        broadcastMeshHealth();
+      }, 15000);
+
       // Handle incoming streams
       newRoom.onPeerStream((stream, peerId, metadata) => {
         const meta = metadata as { type?: string } | undefined;
@@ -913,6 +1029,11 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
         clearPeers();
       }
 
+      // Store credentials for potential mesh recovery rejoin
+      stateRef.current.password = password;
+      stateRef.current.currentSessionId = newSessionId;
+      stateRef.current.meshGapDetectedAt.clear();
+
       console.log('[TrysteroProvider] Joining room:', newSessionId, 'selfId:', selfId);
       console.log('[TrysteroProvider] Config:', { appId: APP_ID, roomId: newSessionId });
 
@@ -1004,6 +1125,77 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     [clearPeers, setupPeerHandlers, addJoinError]
   );
 
+  // Mesh recovery: leave and rejoin when persistent gaps are detected
+  const attemptMeshRecovery = useCallback(() => {
+    const now = Date.now();
+    const MAX_REJOIN_ATTEMPTS = 3;
+    const REJOIN_COOLDOWN_MS = 30000;
+
+    if (stateRef.current.rejoinCount >= MAX_REJOIN_ATTEMPTS) {
+      console.log('[TrysteroProvider] Max mesh recovery attempts reached, skipping');
+      return;
+    }
+
+    if (now - stateRef.current.lastRejoinTime < REJOIN_COOLDOWN_MS) {
+      console.log('[TrysteroProvider] Mesh recovery cooldown active, skipping');
+      return;
+    }
+
+    if (stateRef.current.isRejoining) {
+      console.log('[TrysteroProvider] Already rejoining, skipping');
+      return;
+    }
+
+    const currentSessionId = stateRef.current.currentSessionId;
+    const currentPassword = stateRef.current.password;
+    if (!currentSessionId || !currentPassword) {
+      console.log('[TrysteroProvider] Missing session info for rejoin');
+      return;
+    }
+
+    // Deterministic jitter from selfId to stagger simultaneous rejoins across peers
+    const jitterMs = parseInt(selfId.slice(0, 4), 36) % 5000;
+    console.log(`[TrysteroProvider] Scheduling mesh recovery rejoin in ${jitterMs}ms`);
+
+    stateRef.current.isRejoining = true;
+
+    setTimeout(() => {
+      // Re-check: gap may have resolved during jitter delay
+      if (!roomRef.current) {
+        stateRef.current.isRejoining = false;
+        return;
+      }
+      const currentPeers = new Set(Object.keys(roomRef.current.getPeers()));
+      const stillHasGap = [...stateRef.current.meshGapDetectedAt.keys()].some(
+        (peerId) => !currentPeers.has(peerId)
+      );
+
+      if (!stillHasGap) {
+        console.log('[TrysteroProvider] Mesh gap resolved before rejoin, cancelling');
+        stateRef.current.isRejoining = false;
+        stateRef.current.meshGapDetectedAt.clear();
+        return;
+      }
+
+      console.log('[TrysteroProvider] Executing mesh recovery rejoin');
+      stateRef.current.lastRejoinTime = Date.now();
+      stateRef.current.rejoinCount++;
+      stateRef.current.meshGapDetectedAt.clear();
+
+      joinSession(currentSessionId, currentPassword);
+
+      // Keep isRejoining true during stabilization to suppress gap detection
+      setTimeout(() => {
+        stateRef.current.isRejoining = false;
+      }, 10000);
+    }, jitterMs);
+  }, [joinSession]);
+
+  // Keep the recovery ref in sync so setupPeerHandlers can call it
+  useEffect(() => {
+    attemptMeshRecoveryRef.current = attemptMeshRecovery;
+  }, [attemptMeshRecovery]);
+
   const leaveSession = useCallback(() => {
     console.log('[TrysteroProvider] Leaving session');
     roomRef.current?.leave();
@@ -1013,6 +1205,10 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
     if (debugIntervalRef.current) {
       clearInterval(debugIntervalRef.current);
       debugIntervalRef.current = null;
+    }
+    // Clear mesh health interval
+    if (stateRef.current.meshHealthInterval) {
+      clearInterval(stateRef.current.meshHealthInterval);
     }
     setRoom(null);
     setSessionId(null);
@@ -1031,7 +1227,15 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       focusedPeerId: null,
       focusTimestamp: 0,
       tileOrder: [],
-      tileOrderTimestamp: 0
+      tileOrderTimestamp: 0,
+      password: null,
+      currentSessionId: null,
+      meshGapDetectedAt: new Map(),
+      meshHealthInterval: null,
+      // Persist rejoin limits across leave/join to prevent infinite loops
+      lastRejoinTime: stateRef.current.lastRejoinTime,
+      rejoinCount: stateRef.current.rejoinCount,
+      isRejoining: false
     };
     sendersRef.current = {
       sendPeerInfo: null,
@@ -1044,7 +1248,8 @@ export function TrysteroProvider({ children }: { children: ReactNode }) {
       sendTileOrder: null,
       sendTransferStatus: null,
       sendHostTransfer: null,
-      sendSpeedDialStatus: null
+      sendSpeedDialStatus: null,
+      sendMeshHealth: null
     };
   }, [clearPeers]);
 
