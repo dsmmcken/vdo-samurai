@@ -17,6 +17,22 @@ await sleep(1500);
 // Stand-in for getDisplayMedia: an animated 1920x1080 canvas.
 const fakeScreen = () => {
   navigator.mediaDevices.getDisplayMedia = async () => {
+    if (localStorage.getItem('samurai:test:stillScreen')) {
+      // A screen nobody touches: drawn once, so capture delivers almost no frames.
+      const c = document.createElement('canvas');
+      c.width = 1920;
+      c.height = 1080;
+      const g = c.getContext('2d');
+      g.fillStyle = '#5b2a86';
+      g.fillRect(0, 0, 1920, 1080);
+      g.fillStyle = '#fff';
+      g.font = 'bold 120px sans-serif';
+      g.fillText('STILL SCREEN', 400, 560);
+      const stream = c.captureStream(30);
+      // Like a real screen: one paint after capture starts, then nothing changes.
+      setTimeout(() => g.fillRect(0, 0, 1, 1), 200);
+      return stream;
+    }
     const c = document.createElement('canvas');
     c.width = 1920;
     c.height = 1080;
@@ -113,6 +129,7 @@ try {
     // FAIL_AUDIO=1: the director's capture recorder loses its audio encoder ~5 s
     // into the take; the room must switch to the backup recorder and keep audio.
     if (process.env.FAIL_AUDIO && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:failAudioAfter', '500'));
+    if (process.env.DIRECTOR_SCREEN && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:stillScreen', '1'));
     await page.goto(i === 2 ? urlNoPw : url);
     if (i === 2) await page.getByLabel('Room password').fill(pw);
     if (i === 0) await page.screenshot({ path: 'test-results/lobby.png' });
@@ -253,6 +270,20 @@ try {
   await cam.waitForSelector('.toast');
 
   await sleep(4000); // director cam
+  if (process.env.DIRECTOR_SCREEN) {
+    // The director shares their own screen mid-take and flips the stage to it
+    // with the Camera | Screen toggle, then back.
+    await dir.getByRole('button', { name: 'Share screen' }).click();
+    await dir.waitForSelector('.segmented');
+    const t0 = Date.now();
+    await dir.locator('.segmented button', { hasText: 'Screen' }).click();
+    await dir.waitForSelector('.stage .pip');
+    log('director screen on stage');
+    await sleep(4000);
+    await dir.locator('.segmented button', { hasText: 'Camera' }).click();
+    log('director back to camera after', Date.now() - t0, 'ms');
+    await sleep(1000);
+  }
   await dir.locator('.tile', { hasText: 'Sam Screen' }).click(); // Sam's screen
   await sam.waitForFunction(() => !!document.querySelector('.stage .pip'), null, { timeout: 10000 });
   log('Sam screen on stage everywhere');
@@ -264,7 +295,7 @@ try {
   await sleep(3000);
   await dir.locator('.tile.end-tile').click();
   await sleep(3000);
-  await dir.getByRole('button', { name: 'Stop' }).click();
+  await dir.getByRole('button', { name: 'Stop', exact: true }).click();
   log('stopped');
   if (process.env.RELOAD_DIRECTOR) {
     // The director drops out while guests upload, then comes back.
@@ -284,7 +315,7 @@ try {
 
   for (const p of [sam, cam]) await p.waitForSelector('.safe', { timeout: 120000 });
   log('both guests told it is safe to close');
-  await dir.waitForSelector('a:has-text("Download MP4")', { timeout: 600000 });
+  await dir.waitForSelector('a:has-text("Download MP4")', { timeout: Number(process.env.RENDER_TIMEOUT || 600000) });
   log('render done');
 
   const b64 = await dir.evaluate(async () => {
@@ -298,9 +329,20 @@ try {
   fs.writeFileSync('test-results/final.mp4', Buffer.from(b64, 'base64'));
   log('saved test-results/final.mp4');
   await checkAlignment(dir);
-  if (process.env.FAIL_AUDIO || process.env.REPORT) {
+  if (process.env.FAIL_AUDIO || process.env.REPORT || process.env.DIRECTOR_SCREEN) {
     const dm = await dir.evaluate(() => window.samurai.dm);
     log('director report:\n  ' + dm.reports[dm.take.director].join('\n  '));
+    if (process.env.DIRECTOR_SCREEN) {
+      const ev = dm.stageLog.find((e) => e.stage.kind === 'peer' && e.stage.id === dm.take.director && e.stage.view === 'screen');
+      const starts = Object.values(dm.files).map((f) => f.offset / 1000);
+      const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
+      for (const dt of [0.5, 2, 3.5]) {
+        const T = ev.t / 1000 + dt - t0;
+        const px = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', 'crop=10:10:100:900,scale=1:1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-']);
+        log(`director screen segment +${dt}s: pixel rgb(${[...px].join(',')}) ->`, px[2] > 100 && px[1] < 80 ? 'STILL SCREEN' : 'not the screen');
+      }
+    }
+    log('stage log:', JSON.stringify(dm.stageLog.map((e) => [Math.round(e.t), e.stage.kind === 'end' ? 'end' : dm.profiles[e.stage.id]?.name + ':' + e.stage.view])));
     log('director files:', Object.values(dm.files).filter((f) => f.peer === dm.take.director).map((f) => `${f.name} ${f.kind} ${f.timing} ${(f.size / 1e6).toFixed(1)}MB @${Math.round(f.offset)}ms`).join(' | '));
   }
 
@@ -333,7 +375,8 @@ try {
       .evaluate(() => {
         const r = window.samurai;
         const m = r.mesh;
-        return { me: r.me, links: [...m.links.values()].filter((l) => !l.open).map((l) => [l.peer, l.pc.connectionState, l.pc.signalingState, l.trace.filter((x) => x !== 'tx cand via bootstrap').join(' | ')]) };
+        const snap = r.getSnapshot();
+        return { me: r.me, render: snap.render, race: snap.race, dm: snap.directorTake && { announced: snap.directorTake.announced, expected: snap.directorTake.expected, rendered: snap.directorTake.rendered, files: Object.values(snap.directorTake.files).map((f) => `${f.name} ${f.kind} done=${f.done} ${f.received}/${f.size} @${Math.round(f.offset)}`), reports: snap.directorTake.reports }, myReport: snap.myReport, links: [...m.links.values()].filter((l) => !l.open).map((l) => [l.peer, l.pc.connectionState, l.pc.signalingState, l.trace.filter((x) => x !== 'tx cand via bootstrap').join(' | ')]) };
       })
       .catch((e) => e.message);
     console.log(`peer ${i}`, JSON.stringify(dump, null, 1));
@@ -353,7 +396,8 @@ async function checkAlignment(dir) {
   const file = 'test-results/final.mp4';
 
   // Video: frames from the middle of the screen segment.
-  const screenEv = dm.stageLog.find((e) => e.stage.kind === 'peer' && e.stage.view === 'screen');
+  // Sam's screen carries the barcode (the director's test screen, when shared, is a still image).
+  const screenEv = dm.stageLog.find((e) => e.stage.kind === 'peer' && e.stage.view === 'screen' && dm.profiles[e.stage.id]?.name === 'Sam Screen');
   const errs = [];
   for (const dt of [1, 1.5, 2, 2.5]) {
     const T = screenEv.t / 1000 + dt - t0;

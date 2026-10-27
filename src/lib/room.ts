@@ -662,9 +662,13 @@ export class Room {
     const m = this.mine.get(rec.takeId);
     try {
       const r = await rec.stop();
-      await rec.started;
       const f = m?.files.find((x) => x.name === rec.name);
-      if (f && m) {
+      if (m && f && r.size === 0) {
+        // Nothing was captured (e.g. a screen that never sent a frame): drop it.
+        m.files = m.files.filter((x) => x !== f);
+        this.note(rec.takeId, `${rec.kind}: no frames captured, file dropped`);
+        await fs.writeJson(rec.takeId, 'mine.json', m);
+      } else if (f && m) {
         const take = this.active?.take ?? m.take;
         f.size = r.size;
         f.offset = this.toTake(take, r.videoZero);

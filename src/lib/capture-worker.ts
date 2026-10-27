@@ -68,7 +68,7 @@ async function record(job: Start) {
   if (audio) output.addAudioTrack(audio);
   await output.start();
   // Counters for the recording report.
-  const stats = { framesIn: 0, framesOut: 0, audioIn: 0, audioOut: 0, audioGaps: 0, audioDriftMs: 0 };
+  const stats = { framesIn: 0, framesOut: 0, framesRepeated: 0, audioIn: 0, audioOut: 0, audioGaps: 0, audioDriftMs: 0 };
   post({ t: 'info', message: `encoders: video ${video ? 'avc 5 Mbps' : 'none'}, audio ${audio ? audioCodec : 'none'}` });
 
   // Timing, kept deliberately simple: we never trust absolute timestamps from
@@ -102,19 +102,19 @@ async function record(job: Start) {
   };
 
   const pumps: Promise<void>[] = [];
+  // Screen capture only delivers a frame when something changes, so a still
+  // screen can produce two frames in a whole take. Hold the last frame and
+  // re-write it every half second while nothing new arrives (and once more at
+  // the end), so the file covers the whole time the screen was shared.
+  let finishVideo: (() => Promise<void>) | null = null;
   if (job.video && video) {
     let last = -1;
-    pumps.push(
-      read(job.video, async (frame) => {
-        if (stats.framesIn++ === 0) {
-          post({ t: 'info', message: `video in: ${frame.displayWidth}x${frame.displayHeight} ${frame.format ?? '?'}` });
-          post({ t: 'started' });
-        }
-        firstFrameUs ??= frame.timestamp;
-        const ts = (frame.timestamp - firstFrameUs) / 1e6;
-        const z = wallNow() - ts * 1000;
-        if (videoZero === null || z < videoZero) videoZero = z;
-        if (ts < 0 || ts <= last) return; // out of order
+    let held: VideoFrame | null = null;
+    let heldAt = 0;
+    let chain = Promise.resolve();
+    const add = (frame: VideoFrame, ts: number) =>
+      (chain = chain.then(async () => {
+        if (fatal || ts <= last) return frame.close();
         last = ts;
         const s = new VideoSample(frame, { timestamp: ts });
         try {
@@ -126,6 +126,38 @@ async function record(job: Start) {
         } finally {
           s.close();
         }
+      }));
+    const repeatHeld = () => {
+      if (!held || videoZero === null) return;
+      stats.framesRepeated++;
+      heldAt = wallNow();
+      return add(held.clone(), (heldAt - videoZero) / 1000);
+    };
+    const timer = setInterval(() => {
+      if (!stopping && held && wallNow() - heldAt > 500) repeatHeld();
+    }, 250);
+    finishVideo = async () => {
+      clearInterval(timer);
+      await repeatHeld(); // carry the picture right up to the stop
+      await chain;
+      held?.close();
+      held = null;
+    };
+    pumps.push(
+      read(job.video, async (frame) => {
+        if (stats.framesIn++ === 0) {
+          post({ t: 'info', message: `video in: ${frame.displayWidth}x${frame.displayHeight} ${frame.format ?? '?'}` });
+          post({ t: 'started' });
+        }
+        firstFrameUs ??= frame.timestamp;
+        const ts = (frame.timestamp - firstFrameUs) / 1e6;
+        const z = wallNow() - ts * 1000;
+        if (videoZero === null || z < videoZero) videoZero = z;
+        if (ts < 0) return;
+        held?.close();
+        held = frame.clone();
+        heldAt = wallNow();
+        await add(frame.clone(), ts);
       }),
     );
   }
@@ -221,6 +253,7 @@ async function record(job: Start) {
   await stopped;
   await Promise.allSettled(pumps);
   await flushAudio?.(); // a take shorter than a second never settled its anchor
+  await finishVideo?.();
   if (fatal) {
     // Keep what's on disk (fragmented MP4 stays readable) and report the failure.
     await output.cancel().catch(() => {});

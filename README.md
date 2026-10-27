@@ -41,6 +41,7 @@ npm run build        # static site in dist/
 - `RELOAD_DIRECTOR=1` reloads the director right after Stop, to exercise upload resume.
 - `STATS=1` prints what each person sends live.
 - `CHROME=/path/to/chrome` picks the browser binary.
+- `DIRECTOR_SCREEN=1` has the director share a still screen mid-take and flip the stage to it, then checks the final cut shows it.
 - `FAIL_AUDIO=1` makes the director's audio encoder fail mid-take, to exercise the switch to the backup recorder; `REPORT=1` prints the director's recording report.
 - The fake camera, screen and mic encode the wall clock (a barcode in the picture, beeps on every 7th second), and the test prints how far each lands from where it should be in the final cut.
 

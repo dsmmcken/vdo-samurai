@@ -118,12 +118,13 @@ class CaptureRecorder implements Recorder {
           reject(new Error(m.error));
         }
         if (m.t === 'done') {
+          resolveStarted(calledAt); // a recorder that never got a frame still finishes cleanly
           const zero = m.zeroWall ?? calledAt;
           this.videoEnd = m.videoEnd;
           this.audioEnd = m.audioEnd;
           const st = m.stats;
           events.info?.(
-            `done: ${(m.size / 1e6).toFixed(1)} MB, video ${m.videoEnd?.toFixed(1) ?? '–'} s (${st.framesOut}/${st.framesIn} frames), ` +
+            `done: ${(m.size / 1e6).toFixed(1)} MB, video ${m.videoEnd?.toFixed(1) ?? '–'} s (${st.framesOut} frames written: ${st.framesIn} captured + ${st.framesRepeated} held repeats), ` +
               `audio ${m.audioEnd?.toFixed(1) ?? '–'} s (${st.audioOut}/${st.audioIn} chunks, ${st.audioGaps} gaps, audio lateness at the end ${st.audioDriftMs} ms)`,
           );
           if (a && m.videoEnd && (m.audioEnd ?? 0) < m.videoEnd - 1.5) events.warn?.(`audio stops ${Math.round(m.videoEnd - (m.audioEnd ?? 0))} s before the video`);
