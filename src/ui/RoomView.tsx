@@ -5,7 +5,7 @@ import type { PeerId } from '../lib/types';
 import { fmtClock } from '../lib/util';
 import { AfterTake } from './AfterTake';
 import { Countdown } from './Countdown';
-import { Copy, Dot, Info, Leave, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
+import { Cam, CamOff, Copy, Dot, Info, Leave, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
 import { Popover } from './Popover';
 import { ProfileForm } from './ProfileForm';
 import { Stage } from './Stage';
@@ -29,13 +29,16 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
 
   return (
     <div className="room">
-      <Stage s={s}>
+      <Stage room={room} s={s}>
         <RecIndicator s={s} />
         {!s.director && !s.take && <div className="glass hint">Nobody is directing yet. Click Claim director on your tile to take over.</div>}
 
         <div className="tray">
           <button className={`glass round ${s.micMuted ? 'off' : ''}`} onClick={() => room.toggleMic()} title={s.micMuted ? 'Unmute' : 'Mute'} aria-label={s.micMuted ? 'Unmute' : 'Mute'}>
             {s.micMuted ? <MicOff size={20} /> : <Mic size={20} />}
+          </button>
+          <button className={`glass round ${s.camOff ? 'off' : ''}`} onClick={() => room.toggleCam()} title={s.camOff ? 'Turn camera on' : 'Turn camera off'} aria-label={s.camOff ? 'Turn camera on' : 'Turn camera off'}>
+            {s.camOff ? <CamOff size={20} /> : <Cam size={20} />}
           </button>
           <button
             className={`glass round ${s.screen ? 'on' : ''}`}

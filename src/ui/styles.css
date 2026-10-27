@@ -405,17 +405,151 @@ button.chip:hover {
   padding: 16px;
   text-align: center;
 }
-/* Same corner overlay as the final cut: 156x195 of 1920x1080, 32px from both edges. */
+/* Same overlay as the final cut: 156x195 of 1920x1080, 32px from the corner,
+   no border, soft shadow. Corners are set with left/top so moves glide. */
 .pip {
+  --m: 1.667cqw;
+  --w: 8.125cqw;
+  --h: 10.156cqw;
   position: absolute;
-  right: 1.667cqw;
-  bottom: 1.667cqw;
-  width: 8.125cqw;
+  width: var(--w);
   aspect-ratio: 4 / 5;
   border-radius: 1.15cqw;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.7);
   background: var(--raised);
+  box-shadow: 0 0.6cqw 2.2cqw rgba(0, 0, 0, 0.5);
+  transition:
+    left 0.45s cubic-bezier(0.65, 0, 0.35, 1),
+    top 0.45s cubic-bezier(0.65, 0, 0.35, 1),
+    transform 0.15s,
+    box-shadow 0.15s;
+  touch-action: none;
+  z-index: 3;
+}
+.pip.c-tl,
+.pip-zone.c-tl {
+  left: var(--m);
+  top: var(--m);
+}
+.pip.c-tr,
+.pip-zone.c-tr {
+  left: calc(100cqw - var(--w) - var(--m));
+  top: var(--m);
+}
+.pip.c-bl,
+.pip-zone.c-bl {
+  left: var(--m);
+  top: calc(56.25cqw - var(--h) - var(--m));
+}
+.pip.c-br,
+.pip-zone.c-br {
+  left: calc(100cqw - var(--w) - var(--m));
+  top: calc(56.25cqw - var(--h) - var(--m));
+}
+.pip.movable {
+  cursor: grab;
+}
+.pip.dragging {
+  cursor: grabbing;
+  transition: transform 0.15s, box-shadow 0.15s;
+  transform: scale(1.06);
+  box-shadow: 0 1.2cqw 3.5cqw rgba(0, 0, 0, 0.6);
+}
+.pip-zone {
+  --m: 1.667cqw;
+  --w: 8.125cqw;
+  --h: 10.156cqw;
+  position: absolute;
+  width: var(--w);
+  height: var(--h);
+  border-radius: 1.15cqw;
+  border: 2px dashed rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+  z-index: 2;
+  transition: background 0.15s, border-color 0.15s;
+  animation: zone-in 0.18s ease-out;
+}
+.pip-zone.near {
+  border-color: var(--accent);
+  background: rgba(255, 183, 197, 0.16);
+}
+@keyframes zone-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+.avatar {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 40%, #2a2733, #15141b);
+  pointer-events: none; /* never blocks the tray, tiles or overlay */
+}
+.avatar span {
+  display: grid;
+  place-items: center;
+  width: min(44%, 120px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255, 183, 197, 0.14);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: clamp(14px, 4cqw, 44px);
+  letter-spacing: 0.02em;
+}
+.tile .avatar span {
+  font-size: 22px;
+}
+.screen-thumb {
+  display: block;
+  width: 52px;
+  height: 30px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 2px 8px rgba(0, 0, 0, 0.5);
+  cursor: zoom-in;
+}
+.screen-thumb.on {
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.screen-thumb video {
+  width: 100%;
+  height: 100%;
+}
+.screen-peek {
+  position: fixed;
+  z-index: 80;
+  width: 480px;
+  transform: translateY(-100%);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  animation: peek-in 0.15s ease-out;
+}
+.screen-peek video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.screen-peek span {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+@keyframes peek-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-100% + 6px));
+  }
 }
 .pip video {
   width: 100%;

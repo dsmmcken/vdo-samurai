@@ -288,11 +288,29 @@ try {
   await sam.waitForFunction(() => !!document.querySelector('.stage .pip'), null, { timeout: 10000 });
   log('Sam screen on stage everywhere');
   await sleep(1500);
+  // The director drags the camera overlay to the top-left corner.
+  const pip = await dir.locator('.pip').boundingBox();
+  const frame = await dir.locator('.stage-frame').boundingBox();
+  await dir.mouse.move(pip.x + pip.width / 2, pip.y + pip.height / 2);
+  await dir.mouse.down();
+  await dir.mouse.move(frame.x + frame.width * 0.4, frame.y + frame.height * 0.4, { steps: 8 });
+  await dir.screenshot({ path: 'test-results/pip-drag.png' });
+  await dir.mouse.move(frame.x + pip.width, frame.y + pip.height, { steps: 8 });
+  await dir.mouse.up();
+  await sam.waitForSelector('.pip.c-tl', { timeout: 5000 });
+  const cornerAt = Date.now();
+  log('overlay moved to top-left (synced to a guest)');
+  await sleep(1500);
   await dir.screenshot({ path: 'test-results/stage-director.png' });
   await sam.screenshot({ path: 'test-results/stage-guest.png' });
-  await sleep(4000);
+  await sleep(2500);
   await dir.locator('.tile', { hasText: 'Cam Only' }).click();
+  // Cam Only turns their camera off for their whole segment.
+  await cam.getByRole('button', { name: 'Turn camera off' }).click();
+  await dir.waitForSelector('.stage .avatar', { timeout: 5000 });
+  log('camera off shows initials on the stage');
   await sleep(3000);
+  await cam.getByRole('button', { name: 'Turn camera on' }).click();
   await dir.locator('.tile.end-tile').click();
   await sleep(3000);
   await dir.getByRole('button', { name: 'Stop', exact: true }).click();
@@ -329,6 +347,7 @@ try {
   fs.writeFileSync('test-results/final.mp4', Buffer.from(b64, 'base64'));
   log('saved test-results/final.mp4');
   await checkAlignment(dir);
+  await checkOverlayAndCamOff(dir);
   if (process.env.FAIL_AUDIO || process.env.REPORT || process.env.DIRECTOR_SCREEN) {
     const dm = await dir.evaluate(() => window.samurai.dm);
     log('director report:\n  ' + dm.reports[dm.take.director].join('\n  '));
@@ -436,4 +455,26 @@ async function checkAlignment(dir) {
     return Math.round(w - Math.round(w / 7000) * 7000);
   });
   log('audio beep alignment error (ms, + = late):', aerr.join(', ') || '(no beeps found)');
+}
+
+/** Reads pixels from the final cut: overlay corner during Sam's screen, initials while Cam Only's camera was off. */
+async function checkOverlayAndCamOff(dir) {
+  const dm = await dir.evaluate(() => window.samurai.dm);
+  const starts = Object.values(dm.files).map((f) => f.offset / 1000);
+  const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
+  const px = (T, x, y) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', `crop=8:8:${x}:${y},scale=1:1`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'])];
+  const isCam = ([r, g, b]) => Math.abs(r - 27) + Math.abs(g - 94) + Math.abs(b - 32) < 45; // the fake camera's #1b5e20
+  const moved = dm.stageLog.find((e) => e.corner === 'tl');
+  const samEnd = dm.stageLog.find((e) => e.t > moved.t && !(e.stage.kind === 'peer' && e.stage.view === 'screen'));
+  const T = (samEnd.t / 1000 - 0.8) - t0; // late in Sam's segment, after the glide
+  // Overlay box centres in 1920x1080: top-left (32+78, 32+97), bottom-right (1920-32-78, 1080-32-97)
+  log('overlay corner check:', isCam(px(T, 106, 125)) ? 'camera at top-left' : 'NOT at top-left', '|', isCam(px(T, 1806, 947)) ? 'still at bottom-right' : 'bottom-right is screen');
+  log('render report:\n  ' + (dm.reports.render ?? []).join('\n  '));
+  const off = dm.camOff && Object.entries(dm.camOff).find(([, iv]) => iv.length);
+  if (off) {
+    const [peer, [[a]]] = off;
+    const Tc = a / 1000 + 1.5 - t0;
+    const c = px(Tc, 950, 530);
+    log(`camera-off check (${dm.profiles[peer]?.name}): rgb(${c.join(',')}) ->`, isCam(c) ? 'camera still showing' : 'placeholder shown');
+  } else log('camera-off check: no camera-off stretch recorded');
 }

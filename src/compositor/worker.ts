@@ -20,8 +20,9 @@ import {
   canEncodeVideo,
   type VideoSample,
 } from 'mediabunny';
-import type { DirectorManifest, PeerId, Profile, RecFile } from '../lib/types';
+import type { Corner, DirectorManifest, PeerId, Profile, RecFile } from '../lib/types';
 import { audible, gridFor, lowerThirds, segments, videoStart, type Segment } from './plan';
+import { LoudnessMeter } from './loudness';
 
 const W = 1920;
 const H = 1080;
@@ -34,6 +35,13 @@ const LOWER_THIRD = '#0625c0';
 // Presenter overlay while a screen is on stage: a portrait rounded rectangle,
 // the same distance from the right and bottom edges.
 const PIP = { w: 156, h: 195, margin: 32, radius: 22 };
+const CORNER_MOVE_S = 0.45; // glide between corners, same as the live stage
+
+// Loudness: everyone is brought to the same speech level, within limits so
+// near-silent tracks aren't pumped up into noise.
+const TARGET_LUFS = -18;
+const MAX_BOOST_DB = 12;
+const MAX_CUT_DB = 12;
 
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
@@ -109,11 +117,61 @@ async function render(m: DirectorManifest) {
   const sourceAt = (peer: PeerId, kind: 'cam' | 'screen', t: number) =>
     sources.find((s) => s.video && s.file.peer === peer && s.file.kind === kind && t >= s.start - 1 && t < s.end) ?? null;
   const frameAt = async (peer: PeerId, kind: 'cam' | 'screen', t: number) => {
+    if (kind === 'cam' && camOff(peer, t)) return null;
     const s = sourceAt(peer, kind, t);
     return s ? cursor(s).at(Math.max(0, t - s.start)) : null;
   };
 
-  const mixer = new Mixer(audioSources, segs, m.take.director);
+  // Measure each person's loudness first (audio decodes fast), then mix with one
+  // gain per file. Reported in the render log.
+  const gains = new Map<string, number>();
+  for (const src of audioSources) {
+    const meter = new LoudnessMeter();
+    for await (const a of new AudioSampleSink(src.audio!).samples()) {
+      const [l, r] = toStereo48k(a);
+      a.close();
+      const mono = new Float32Array(l.length);
+      for (let i = 0; i < l.length; i++) mono[i] = (l[i] + r[i]) * 0.5;
+      meter.push(mono);
+    }
+    const lufs = meter.integrated();
+    const db = lufs === null ? 0 : Math.max(-MAX_CUT_DB, Math.min(MAX_BOOST_DB, TARGET_LUFS - lufs));
+    gains.set(src.file.name, 10 ** (db / 20));
+    const who = m.profiles[src.file.peer]?.name ?? src.file.peer;
+    post({ t: 'info', message: `${who}: ${lufs === null ? 'no speech detected' : `${lufs.toFixed(1)} LUFS`}, gain ${db >= 0 ? '+' : ''}${db.toFixed(1)} dB` });
+  }
+  const mixer = new Mixer(audioSources, segs, m.take.director, gains);
+
+  // Camera turned off by its owner: show their initials, not black frames.
+  const camOff = (peer: PeerId, t: number) =>
+    (m.camOff?.[peer] ?? []).some(([a, b]) => t * 1000 >= a && (b === null || t * 1000 < b));
+
+  // Overlay corner over time, with a glide whenever it moves.
+  const cornerLog = [...m.stageLog].sort((a, b) => a.t - b.t).filter((e) => e.corner);
+  const cornerXY = (c: Corner) => ({
+    x: c.endsWith('l') ? PIP.margin : W - PIP.w - PIP.margin,
+    y: c.startsWith('t') ? PIP.margin : H - PIP.h - PIP.margin,
+  });
+  const pipAt = (t: number) => {
+    // Start where the overlay already was when the take began (no glide-in).
+    let cur: Corner = cornerLog[0]?.corner ?? 'br';
+    let prev: Corner = cur;
+    let since = -Infinity;
+    for (const e of cornerLog) {
+      if (e.t / 1000 > t) break;
+      if (e.corner !== cur) {
+        prev = cur;
+        cur = e.corner!;
+        since = e.t / 1000;
+      }
+    }
+    const to = cornerXY(cur);
+    const k = Math.min(1, (t - since) / CORNER_MOVE_S);
+    if (k >= 1) return to;
+    const from = cornerXY(prev);
+    const e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2; // ease in-out
+    return { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+  };
   const total = Math.max(1, Math.round((duration - t0) * FPS));
   const wallStart = performance.now();
   let audioUntil = t0; // take time
@@ -161,12 +219,13 @@ async function render(m: DirectorManifest) {
       const cam = await frameAt(st.id, 'cam', t);
       if (screen) {
         drawContain(ctx, screen, 0, 0, W, H);
-        const x = W - PIP.w - PIP.margin;
-        const y = H - PIP.h - PIP.margin;
+        const { x, y } = pipAt(t);
         const path = roundRect(x, y, PIP.w, PIP.h, PIP.radius);
+        // No border: a soft shadow lifts it off the screen.
         ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,0.45)';
-        ctx.shadowBlur = 30;
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 40;
+        ctx.shadowOffsetY = 10;
         ctx.fillStyle = BG;
         ctx.fill(path);
         ctx.restore();
@@ -175,9 +234,6 @@ async function render(m: DirectorManifest) {
         if (cam) drawCover(ctx, cam, x, y, PIP.w, PIP.h);
         else placeholder(ctx, x, y, PIP.w, PIP.h, m.profiles[st.id]);
         ctx.restore();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.stroke(path);
       } else if (cam) {
         drawCover(ctx, cam, 0, 0, W, H);
       } else {
@@ -269,12 +325,15 @@ class Mixer {
     it: AsyncGenerator<AudioSample, void, unknown>;
     buf: [Float32Array, Float32Array];
     gain: number;
+    level: number; // loudness-normalizing gain for this file
     done: boolean;
   }[];
+  private env = 0; // limiter envelope
   constructor(
     sources: Source[],
     private segs: Segment[],
     private director: PeerId,
+    levels: Map<string, number>,
   ) {
     this.tracks = sources.map((s) => ({
       peer: s.file.peer,
@@ -283,6 +342,7 @@ class Mixer {
       it: new AudioSampleSink(s.audio!).samples(),
       buf: [new Float32Array(0), new Float32Array(0)],
       gain: 0,
+      level: levels.get(s.file.name) ?? 1,
       done: false,
     }));
   }
@@ -317,13 +377,26 @@ class Mixer {
         if (i === 0 || j % 480 === 0) target = audible(this.stageAt((from + j) / RATE), tr.peer, this.director) ? 1 : 0;
         tr.gain += Math.max(-step, Math.min(step, target - tr.gain));
         if (tr.gain === 0) continue;
-        out[0][j] += (L[i] ?? 0) * tr.gain;
-        out[1][j] += (R[i] ?? 0) * tr.gain;
+        const g = tr.gain * tr.level;
+        out[0][j] += (L[i] ?? 0) * g;
+        out[1][j] += (R[i] ?? 0) * g;
       }
       tr.buf = [L.subarray(Math.min(need, L.length)), R.subarray(Math.min(need, R.length))];
       tr.pos = from + n;
     }
-    for (const ch of out) for (let i = 0; i < n; i++) ch[i] = Math.max(-1, Math.min(1, ch[i]));
+    // Limiter: instant attack, ~150 ms release, keeps peaks under −1 dBFS
+    // without the crackle of hard clipping.
+    const ceiling = 0.89;
+    const release = Math.exp(-1 / (0.15 * RATE));
+    for (let i = 0; i < n; i++) {
+      const peak = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
+      this.env = peak > this.env ? peak : this.env * release + peak * (1 - release);
+      if (this.env > ceiling) {
+        const g = ceiling / this.env;
+        out[0][i] *= g;
+        out[1][i] *= g;
+      }
+    }
     return out;
   }
 

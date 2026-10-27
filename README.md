@@ -19,10 +19,11 @@ VDO.Ninja's hosted signaling server is only used so people can find each other. 
 
 Rules for the edit:
 - The picture follows the director's stage log.
-- A screen on stage gets the presenter's camera as a small portrait rounded rectangle, 32 px in from the bottom-right corner.
+- A screen on stage gets the presenter's camera as a small portrait rounded rectangle with a soft shadow, 32 px in from a corner. Anyone can drag it to another corner before a take (only the director during one); the move glides live and in the final cut.
+- While someone's camera is off, their initials show instead of black video, live and in the final cut.
 - The end screen is a grid of every camera, with no names.
 - Each person's name and subtitle show as a lower third for 5 s the first time they're on stage.
-- Audio is the director plus whoever is on stage; on the end screen, everyone.
+- Audio is the director plus whoever is on stage; on the end screen, everyone. Each person is loudness-normalized to −18 LUFS (ITU-R BS.1770, gain limited to ±12 dB) and the mix goes through a limiter; the measured levels are in the render's Recording details.
 
 ## Develop
 

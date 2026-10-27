@@ -15,6 +15,7 @@ import { camEncoding, MIC_ENCODING, openCamera, openScreen, screenEncoding, type
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, type Recorder } from './recorder';
 import * as fs from './opfs';
 import type {
+  Corner,
   DirectorManifest,
   PeerId,
   Presence,
@@ -59,6 +60,7 @@ export interface Snapshot {
   me: PeerId;
   profile: Profile;
   micMuted: boolean;
+  camOff: boolean;
   cam: MediaStream | null;
   screen: MediaStream | null;
   meshStatus: Mesh['status'];
@@ -67,6 +69,7 @@ export interface Snapshot {
   tiles: PeerId[];
   director: PeerId | null;
   stage: Stage | null;
+  corner: Corner;
   take: Take | null;
   /** Take start/stop on our own clock. */
   takeStartLocal: number | null;
@@ -90,6 +93,7 @@ export class Room {
   private cam: MediaStream | null = null;
   private screen: MediaStream | null = null;
   private micMuted = false;
+  private camOff = false;
   private presences = new Map<PeerId, Presence>();
   private clocks = new Map<PeerId, { samples: { rtt: number; offset: number }[] }>();
   private lamport = 0;
@@ -97,6 +101,7 @@ export class Room {
     director: { v: null, ts: 0, by: '' },
     order: { v: [], ts: 0, by: '' },
     stage: { v: null, ts: 0, by: '' },
+    corner: { v: 'br', ts: 0, by: '' },
     take: { v: null, ts: 0, by: '' },
   };
 
@@ -225,6 +230,7 @@ export class Room {
       me: this.me,
       profile: this.profile,
       micMuted: this.micMuted,
+      camOff: this.camOff,
       cam: this.cam,
       screen: this.screen,
       meshStatus: this.mesh.status,
@@ -233,6 +239,7 @@ export class Room {
       tiles: this.tiles(peers),
       director: this.shared.director.v,
       stage: this.shared.stage.v,
+      corner: this.shared.corner.v,
       take,
       takeStartLocal: take && dir !== null ? take.startAt - dir : null,
       takeStopLocal: take?.stopAt && dir !== null ? take.stopAt - dir : null,
@@ -278,7 +285,7 @@ export class Room {
     const take = this.shared.take.v;
     const locked = take && !take.stopAt;
     // During a take only the director can move the stage, and nobody can take the chair.
-    if (key === 'stage' && locked && st.by !== take.director) return;
+    if ((key === 'stage' || key === 'corner') && locked && st.by !== take.director) return;
     if (key === 'director' && locked && st.v !== take.director) return;
     if (key === 'order' && locked) return;
     (this.shared as any)[key] = st;
@@ -288,10 +295,8 @@ export class Room {
 
   private onShared(key: SharedKey) {
     if (key === 'take') this.onTake();
-    if (key === 'stage') {
-      this.logStage();
-      this.applyEncodings();
-    }
+    if (key === 'stage' || key === 'corner') this.logStage();
+    if (key === 'stage') this.applyEncodings();
     this.changed();
   }
 
@@ -324,6 +329,7 @@ export class Room {
       profile: this.profile,
       hasScreen: !!this.screen,
       micMuted: this.micMuted,
+      camOff: this.camOff,
       camStreamId: this.cam?.id ?? null,
       screenStreamId: this.screen?.id ?? null,
     };
@@ -360,7 +366,7 @@ export class Room {
         this.dmOnRec(peer, m.takeId, m.profile);
         break;
       case 'files':
-        this.dmOnFiles(peer, link, m.takeId, m.files, m.report);
+        this.dmOnFiles(peer, link, m.takeId, m.files, m.report, m.camOff);
         break;
       case 'want':
         this.uploadQueue.push({ takeId: m.takeId, name: m.name, offset: m.offset });
@@ -477,6 +483,32 @@ export class Room {
     for (const l of this.mesh.links.values()) this.pushTracks(l);
     this.applyEncodings();
     this.announce();
+  }
+
+  /**
+   * Camera off: the track is disabled (black frames, no re-negotiation), tiles
+   * and stage show initials, and the stretch is logged so the final cut shows
+   * initials too instead of black.
+   */
+  toggleCam() {
+    this.camOff = !this.camOff;
+    this.cam?.getVideoTracks().forEach((t) => (t.enabled = !this.camOff));
+    const a = this.active;
+    const m = a && this.mine.get(a.take.id);
+    if (a && m) {
+      const at = this.toTake(a.take, now());
+      m.camOff ??= [];
+      if (this.camOff) m.camOff.push([at, null]);
+      else if (m.camOff.length && m.camOff[m.camOff.length - 1][1] === null) m.camOff[m.camOff.length - 1][1] = at;
+      fs.writeJson(a.take.id, 'mine.json', m).catch(() => {});
+    }
+    this.announce();
+  }
+
+  /** Move the presenter's camera overlay; anyone before a take, only the director during one. */
+  setCorner(c: Corner) {
+    if (!this.canSetStage()) return this.say('Only the director can move the overlay while recording.');
+    if (this.shared.corner.v !== c) this.set('corner', c);
   }
 
   toggleMic() {
@@ -596,7 +628,7 @@ export class Room {
     if (wait > 0) await sleep(wait);
     if (this.active !== a || a.stopping) return;
     a.began = true;
-    if (!this.mine.has(take.id)) this.mine.set(take.id, { take, files: [], acked: [], complete: false });
+    if (!this.mine.has(take.id)) this.mine.set(take.id, { take, files: [], acked: [], complete: false, camOff: this.camOff ? [[-PREROLL_MS, null]] : [] });
     const v = this.cam?.getVideoTracks()[0]?.getSettings();
     const au = this.cam?.getAudioTracks()[0]?.getSettings();
     this.note(take.id, `browser: ${navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/g)?.join(' ') ?? navigator.userAgent}; ${navigator.platform}`);
@@ -715,6 +747,7 @@ export class Room {
         for (const f of m.files) this.dm.files[f.name] = { ...f, received: f.size, done: true };
         if (!this.dm.announced.includes(this.me)) this.dm.announced.push(this.me);
         (this.dm.reports ??= {})[this.me] = m.report ?? [];
+        (this.dm.camOff ??= {})[this.me] = m.camOff ?? [];
         this.dm.finishedAt[this.me] = now();
         this.saveDm();
       }
@@ -731,7 +764,7 @@ export class Room {
     if (!m || !m.complete) return;
     const link = this.mesh.links.get(m.take.director);
     if (!link?.open) return; // retried when the director (re)connects
-    link.send({ t: 'files', takeId, files: m.files.filter((f) => f.size > 0), report: m.report ?? [] });
+    link.send({ t: 'files', takeId, files: m.files.filter((f) => f.size > 0), report: m.report ?? [], camOff: m.camOff ?? [] });
   }
 
   private async pumpUploads() {
@@ -810,7 +843,7 @@ export class Room {
     this.saveDm();
   }
 
-  private async dmOnFiles(peer: PeerId, link: Link, takeId: string, files: RecFile[], report?: string[]) {
+  private async dmOnFiles(peer: PeerId, link: Link, takeId: string, files: RecFile[], report?: string[], camOff?: [number, number | null][]) {
     const dm = this.dm;
     if (dm?.take.id !== takeId) {
       // Not our take (or already discarded): tell them to let it go.
@@ -820,6 +853,7 @@ export class Room {
     if (!dm.expected.includes(peer)) dm.expected.push(peer);
     if (!dm.announced.includes(peer)) dm.announced.push(peer);
     if (report) (dm.reports ??= {})[peer] = report;
+    if (camOff) (dm.camOff ??= {})[peer] = camOff;
     for (const f of files) {
       const have = dm.files[f.name];
       if (have?.done) {
@@ -922,6 +956,7 @@ export class Room {
         this.say(`Heads up: ${m.message}`);
       }
       if (m.t === 'error') ((dm.reports ??= {}).render ??= []).push(`ERROR: ${m.error}`);
+      if (m.t === 'info') ((dm.reports ??= {}).render ??= []).push(m.message);
       if (m.t === 'error') this.render = { state: 'error', progress: 0, speed: 0, error: m.error };
       if (m.t === 'done') {
         dm.rendered = true;
@@ -974,7 +1009,7 @@ export class Room {
     const st = this.shared.stage.v;
     if (!dm || !st || !this.active?.began || this.active.take.id !== dm.take.id) return;
     if (this.shared.take.v?.stopAt) return;
-    dm.stageLog.push({ t: Math.max(0, now() - dm.take.startAt), stage: st });
+    dm.stageLog.push({ t: Math.max(0, now() - dm.take.startAt), stage: st, corner: this.shared.corner.v });
     for (const [id, p] of this.presences) dm.profiles[id] = p.profile;
     dm.profiles[this.me] = this.profile;
     this.saveDm();

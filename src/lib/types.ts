@@ -10,12 +10,16 @@ export interface Presence {
   profile: Profile;
   hasScreen: boolean;
   micMuted: boolean;
+  camOff?: boolean;
   camStreamId: string | null;
   screenStreamId: string | null;
 }
 
 /** What the main stage shows. A peer's screen falls back to their camera when they aren't sharing. */
 export type Stage = { kind: 'peer'; id: PeerId; view: 'cam' | 'screen' } | { kind: 'end' };
+
+/** Where the presenter's camera overlay sits when a screen is on stage. */
+export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
 export interface Take {
   id: string;
@@ -38,6 +42,7 @@ export interface SharedState {
   order: Stamped<PeerId[]>;
   stage: Stamped<Stage | null>;
   take: Stamped<Take | null>;
+  corner: Stamped<Corner>;
 }
 export type SharedKey = keyof SharedState;
 
@@ -45,6 +50,7 @@ export interface StageEvent {
   /** ms since take start */
   t: number;
   stage: Stage;
+  corner?: Corner;
 }
 
 /** A recorded file, as described by the peer that recorded it. */
@@ -89,6 +95,8 @@ export interface DirectorManifest {
   downloaded?: boolean;
   /** Each person's recording report (devices, encoders, counts, problems), plus 'render'. */
   reports?: Record<string, string[]>;
+  /** Per person: stretches (ms since take start) with the camera turned off. */
+  camOff?: Record<PeerId, [number, number | null][]>;
 }
 
 /** A non-director's record of what it still has to upload. */
@@ -100,4 +108,6 @@ export interface SenderManifest {
   complete: boolean;
   /** What this person's recorders saw: devices, encoders, counts, problems. */
   report?: string[];
+  /** Stretches (ms since take start) when this person had their camera off. */
+  camOff?: [number, number | null][];
 }

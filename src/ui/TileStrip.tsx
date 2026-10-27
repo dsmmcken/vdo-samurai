@@ -5,6 +5,8 @@ import { Crown, Grid, MicOff, Pencil, Screen } from './icons';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
 import { MicMeter } from './MicMeter';
+import { Avatar } from './Avatar';
+import { ScreenThumb } from './ScreenThumb';
 
 export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void }) {
   const [menu, setMenu] = useState<{ x: number; y: number; id: PeerId | 'end'; rect: DOMRect } | null>(null);
@@ -98,6 +100,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
             onDragEnd={() => endDrag(false)}
           >
             <Video stream={me ? s.cam : p?.cam ?? null} mirror={me} />
+            {(me ? s.camOff : p?.presence?.camOff) && <Avatar name={nameOf(s, id)} />}
             {!muted && <MicMeter stream={me ? s.cam : p?.cam ?? null} />}
             <div className="tile-badges">
               {s.director === id && (
@@ -105,7 +108,9 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
                   <Crown size={14} title="Director" />
                 </span>
               )}
-              {hasScreen && (
+              {me && s.screen ? (
+                <ScreenThumb stream={s.screen} onStage={active && st?.kind === 'peer' && st.view === 'screen'} />
+              ) : hasScreen && (
                 <span className={`badge ${active && st?.kind === 'peer' && st.view === 'screen' ? 'on' : ''}`} title="Screen share ready">
                   <Screen size={14} title="Screen share" />
                 </span>
