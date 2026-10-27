@@ -1,0 +1,10 @@
+camera: 1280x720@20
+  sub: track video
+  pub: peerConnected f8506497-3202-4ebb-a41e-d5102dac9e76
+viewer is decoding frames via VDO.Ninja-signaled connection
+
+720p30 uncapped    {"txKbps":684,"txRes":"1280x720","txFps":20,"encodeBusyPct":4.6,"limit":"none","codec":"video/VP8/libvpx","rxKbps":684,"rxRes":"1280x720","rxFps":20,"decodeBusyPct":3.1,"pubCpuPct":15.4,"subCpuPct":10.2}
+360p15 @300k       {"txKbps":296.8,"txRes":"640x480","txFps":15,"encodeBusyPct":2.4,"limit":"none","codec":"video/VP8/libvpx","rxKbps":296.8,"rxRes":"640x480","rxFps":15,"decodeBusyPct":1,"pubCpuPct":5.9,"subCpuPct":5.3}
+180p10 @100k       {"txKbps":100.8,"txRes":"320x240","txFps":10,"encodeBusyPct":0.8,"limit":"none","codec":"video/VP8/libvpx","rxKbps":100.8,"rxRes":"320x240","rxFps":10,"decodeBusyPct":0.2,"pubCpuPct":3.6,"subCpuPct":3.6}
+120p8 @40k         {"txKbps":20.8,"txRes":"96x96","txFps":7.7,"encodeBusyPct":0.2,"limit":"none","codec":"video/VP8/libvpx","rxKbps":20.8,"rxRes":"96x96","rxFps":7.7,"decodeBusyPct":0.1,"pubCpuPct":2.8,"subCpuPct":3.1}
+120p5 @20k         {"txKbps":15.6,"txRes":"96x96","txFps":5,"encodeBusyPct":0.2,"limit":"none","codec":"video/VP8/libvpx","rxKbps":15.6,"rxRes":"96x96","rxFps":5,"decodeBusyPct":0,"pubCpuPct":2.4,"subCpuPct":1.9}

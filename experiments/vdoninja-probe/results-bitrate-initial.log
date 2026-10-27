@@ -1,0 +1,6 @@
+camera: 160x120@8
+  sub: track video
+viewer is decoding frames via VDO.Ninja-signaled connection
+
+  pub: peerConnected 8bb47d53-ffe0-4770-9b6d-ad3d3483f804
+publish-time 120p8 @40k {"txKbps":39.7,"txRes":"160x120","txFps":8,"encodeBusyPct":0.2,"limit":"none","codec":"video/VP8/libvpx","rxKbps":39.7,"rxRes":"160x120","rxFps":8,"decodeBusyPct":0.1,"pubCpuPct":3.9,"subCpuPct":4.2}

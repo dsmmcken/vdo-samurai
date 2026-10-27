@@ -1,0 +1,103 @@
+export type PeerId = string;
+
+export interface Profile {
+  name: string;
+  subtitle: string;
+}
+
+/** What one peer tells everyone about itself. */
+export interface Presence {
+  profile: Profile;
+  hasScreen: boolean;
+  micMuted: boolean;
+  camStreamId: string | null;
+  screenStreamId: string | null;
+}
+
+/** What the main stage shows. A peer's screen falls back to their camera when they aren't sharing. */
+export type Stage = { kind: 'peer'; id: PeerId; view: 'cam' | 'screen' } | { kind: 'end' };
+
+export interface Take {
+  id: string;
+  director: PeerId;
+  /** Recording start, on the director's clock (ms since epoch). */
+  startAt: number;
+  /** Recording end, on the director's clock; absent while recording. */
+  stopAt?: number;
+}
+
+/** Last-writer-wins register. `ts` is a Lamport clock; ties break on `by`. */
+export interface Stamped<T> {
+  v: T;
+  ts: number;
+  by: PeerId;
+}
+
+export interface SharedState {
+  director: Stamped<PeerId | null>;
+  order: Stamped<PeerId[]>;
+  stage: Stamped<Stage | null>;
+  take: Stamped<Take | null>;
+}
+export type SharedKey = keyof SharedState;
+
+export interface StageEvent {
+  /** ms since take start */
+  t: number;
+  stage: Stage;
+}
+
+/** A recorded file, as described by the peer that recorded it. */
+export interface RecFile {
+  name: string;
+  peer: PeerId;
+  kind: 'cam' | 'screen';
+  /** When the file's video timeline starts, in ms since take start (negative: pre-roll). */
+  offset: number;
+  /** Same for its audio track (differs only for MediaRecorder recordings). */
+  audioOffset?: number;
+  /** 'capture': exact, from capture timestamps. 'estimated': MediaRecorder fallback. */
+  timing?: 'capture' | 'estimated';
+  size: number;
+  mime: string;
+}
+
+/** The director's view of one peer's upload. */
+export interface RaceRow {
+  peer: PeerId;
+  name: string;
+  received: number;
+  total: number;
+  /** Total is only known once the peer has announced all of its files. */
+  announced: boolean;
+  done: boolean;
+  finishedAt?: number;
+}
+
+/** Everything the compositor needs, saved by the director in OPFS. */
+export interface DirectorManifest {
+  take: Take;
+  stageLog: StageEvent[];
+  order: PeerId[];
+  profiles: Record<PeerId, Profile>;
+  /** Peers that started recording this take. */
+  expected: PeerId[];
+  files: Record<string, RecFile & { received: number; done: boolean }>;
+  announced: PeerId[];
+  finishedAt: Record<PeerId, number>;
+  rendered?: boolean;
+  downloaded?: boolean;
+  /** Each person's recording report (devices, encoders, counts, problems), plus 'render'. */
+  reports?: Record<string, string[]>;
+}
+
+/** A non-director's record of what it still has to upload. */
+export interface SenderManifest {
+  take: Take;
+  files: RecFile[];
+  acked: string[];
+  /** Recorders still running (e.g. page reloaded mid-take) aren't listed until they finish. */
+  complete: boolean;
+  /** What this person's recorders saw: devices, encoders, counts, problems. */
+  report?: string[];
+}

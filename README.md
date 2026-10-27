@@ -1,121 +1,53 @@
 # VDO Samurai
 
-A peer-to-peer application for screen sharing and recording. No central servers required. Recordings are captured locally and transferred to the host after the session for high-quality compositing.
+A browser-only meeting room for recording sessions. The live meeting uses tiny, low-CPU video. Each person records full quality locally, and the director's browser cuts the final 1080p30 H.264 MP4.
 
-> [!WARNING]
-> This is a vibe-coded project written with AI. Nothing other than this note was written by hand. No guarantees are offered. If you want changes, fork it and vibe your own.
+VDO.Ninja's hosted signaling server is only used so people can find each other. Media, room state and file transfers run over our own peer-to-peer connections.
 
-Inspired by [VDO.Ninja](https://vdo.ninja), but built for a different use case: **maximum quality local recordings** from each participant, transferred and composited after the session ends.
+## How it works
 
-## How It Works
+| Piece | Where |
+| --- | --- |
+| Room link: `#room=<name>`. The password is never in the link: invitees type it, and it's kept in the tab's session storage. | `src/lib/identity.ts` |
+| Mesh: VDO.Ninja `autoConnect` (half mode) opens one data link per pair. Over it we negotiate our own `RTCPeerConnection`, then signaling moves to its own `ctl` channel. | `src/lib/mesh.ts`, `src/lib/link.ts` |
+| Live media: capture once at 1080p; each sender is downscaled and capped (tile 180p, 120 kbps). Only the person on stage sends more. Screen previews are sent only while on stage. | `src/lib/media.ts` |
+| Shared state: director, tile order, stage and take are last-writer-wins registers, gossiped over every link. | `src/lib/room.ts` |
+| Timing: NTP-style pings per link. The take starts at a fixed instant on the director's clock, and each file records where it starts on the take's timeline. | `src/lib/room.ts` |
+| Recording: WebCodecs in a worker → fragmented MP4 in OPFS, camera and screen as separate files. Timing doesn't trust the browser's absolute timestamps (on Windows the first mic chunks can be seconds off): audio time is a sample count, video keeps its frame spacing, and each track's start is the earliest arrival seen. Recorders start when Record is pressed, before the countdown, so the encoder start-up hiccup never lands in the take. If capture fails mid-take, recording continues with `MediaRecorder`. Each person's recorder log is in ⋯ → Recording details. | `src/lib/recorder.ts`, `src/lib/capture-worker.ts` |
+| Upload: resumable data-channel transfer to the director. Files are deleted locally once the director confirms. | `src/lib/room.ts` |
+| Final cut: Mediabunny + WebCodecs in a Web Worker, written straight to OPFS. | `src/compositor/` |
 
-Each participant records their own video locally at full quality. When the session ends, recordings are transferred directly to the host via P2P, who can then composite and export the final video.
+Rules for the edit:
+- The picture follows the director's stage log.
+- A screen on stage gets the presenter's camera as a small portrait rounded rectangle, 32 px in from the bottom-right corner.
+- The end screen is a grid of every camera, with no names.
+- Each person's name and subtitle show as a lower third for 5 s the first time they're on stage.
+- Audio is the director plus whoever is on stage; on the end screen, everyone.
 
-**The timeline is captured during the session.** As the host switches between participants (clicking to focus different speakers), those edit decisions are recorded in real-time. When recording stops, the compositing timeline is already built for you - no manual syncing or editing required. Just review and export.
+## Develop
 
-This approach ensures **maximum quality** regardless of network conditions during the call. Unlike cloud recording services that depend on real-time bandwidth, VDO Samurai captures pristine local footage and syncs it afterwards.
-
-**Hosts must use the desktop app.** Compositing requires local file system access and FFmpeg with more memory than browsers can provide. Participants can join via browser - their recordings are transferred to the host for processing.
-
-## Features
-
-- **Local-First Recording** - Every peer records themselves locally, no quality loss from streaming
-- **P2P File Transfer** - Recordings sent directly to host after session, no cloud upload
-- **Video Compositing** - Host combines all recordings with FFmpeg for final export
-- **Decentralized** - Uses Trystero with WebTorrent trackers for signaling, no account needed
-- **P2P Screen Sharing** - Share your screen directly with peers using WebRTC
-- **Browser Participants** - Guests can join via browser, no download required
-
-## Quick Start
-
-### Hosting a Session (Desktop App)
-
-1. Download the desktop app from [Releases](https://github.com/dsmmcken/vdo-samurai/releases)
-2. Create a room
-3. Share the link with participants
-
-### Joining a Session (Browser)
-
-Participants can join directly in their browser at **[dsmmcken.github.io/vdo-samurai](https://dsmmcken.github.io/vdo-samurai)**
-
-Just paste the share link or room code to join.
-
-## Tech Stack
-
-- **Electron + React** - Cross-platform desktop app
-- **WebRTC** - Real-time peer-to-peer video streaming
-- **Trystero** - Decentralized signaling via WebTorrent trackers
-- **FFmpeg** - Video processing and compositing
-- **Zustand** - State management
-- **TypeScript** - Full type safety
-
-## Development
-
-```bash
-# Install dependencies
+```sh
 npm install
-
-# Start development (Electron)
-npm run dev
-
-# Start development (Browser)
-npm run dev:web
-
-# Test Electron host + browser participant together
-npm run dev:dual
-
-# Build for production
-npm run build        # Electron
-npm run build:web    # Browser
-
-# Package for distribution
-npm run package
+npm run dev          # http://localhost:5173
+npm run build        # static site in dist/
 ```
 
-### Commands
+`.github/workflows/pages.yml` deploys `dist/` to GitHub Pages on every push to `main`. The build uses relative paths, so it works under `user.github.io/<repo>/`.
 
-```bash
-npm run dev          # Start Electron with hot reload
-npm run dev:web      # Start browser dev server
-npm run dev:dual     # Launch Electron host + browser participant
-npm run lint         # Run ESLint
-npm run format       # Format with Prettier
-npm run tsc          # Type check
-npm run test:e2e:headless  # Run E2E tests
-```
+## Test
 
-### Windows Development (WSL)
+`npm run test:e2e` builds the app, then runs three headless Chromium peers through the real `wss.vdo.ninja`. They join (one by typing the password), pass the director role around, reorder tiles, rename someone, share a (fake) screen, record a take with stage switches, upload, render, and check that guests' storage is emptied. The final video lands in `test-results/final.mp4`.
 
-For developing on Windows with WSL:
+- `RELOAD_DIRECTOR=1` reloads the director right after Stop, to exercise upload resume.
+- `STATS=1` prints what each person sends live.
+- `CHROME=/path/to/chrome` picks the browser binary.
+- `FAIL_AUDIO=1` makes the director's audio encoder fail mid-take, to exercise the switch to the backup recorder; `REPORT=1` prints the director's recording report.
+- The fake camera, screen and mic encode the wall clock (a barcode in the picture, beeps on every 7th second), and the test prints how far each lands from where it should be in the final cut.
 
-```bash
-# Terminal 1: Start the dev server
-npm run dev:server
+## Known limits
 
-# Terminal 2: Run Windows Electron
-npm run dev:win
-```
-
-Requires Electron installed globally on Windows: `npm install -g electron`
-
-## Project Structure
-
-```
-electron/
-  main/           # Main process, IPC handlers, FFmpeg
-  preload/        # Context bridge for renderer
-src/
-  components/     # React components
-  pages/          # HomePage, SessionPage, CompositePage
-  services/       # P2P, recording, compositing logic
-  store/          # Zustand state stores
-  hooks/          # Custom React hooks
-  types/          # TypeScript definitions
-e2e/
-  tests/          # Playwright E2E tests
-  fixtures/       # Test fixtures (Electron + browser)
-```
-
-## License
-
-MIT
+- **No TURN.** Our connections use public STUN only. Two people whose networks need a relay won't see each other; the "N here" count shows it.
+- **Audio codec.** The final cut uses AAC where the browser can encode it (Chrome on Windows and macOS) and Opus in MP4 otherwise (Chrome on Linux).
+- **Not yet exercised by tests:**
+  - real cameras and screens, 8 people, or 20-minute takes;
+  - joining mid-recording.
