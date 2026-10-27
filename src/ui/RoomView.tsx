@@ -1,11 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { inviteLink, saveProfile } from '../lib/identity';
 import type { Room, Snapshot } from '../lib/room';
+import type { DeviceKind } from '../lib/media';
 import type { PeerId } from '../lib/types';
 import { fmtClock } from '../lib/util';
 import { AfterTake } from './AfterTake';
 import { Countdown } from './Countdown';
-import { Cam, CamOff, Copy, Dot, Info, Leave, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
+import { Cam, CamOff, Check, Chevron, Copy, Dot, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
 import { Popover } from './Popover';
 import { ProfileForm } from './ProfileForm';
 import { Stage } from './Stage';
@@ -104,7 +105,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
       {s.notice && <div className="glass toast">{s.notice}</div>}
 
       {[...s.peers.values()].map((p) => (
-        <RemoteAudio key={p.id} stream={p.cam} />
+        <RemoteAudio key={p.id} stream={p.cam} sinkId={s.current.speaker} />
       ))}
     </div>
   );
@@ -145,12 +146,50 @@ function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; 
       <button onClick={onEdit}>
         <Pencil size={16} /> Edit your name
       </button>
+      <DeviceMenu room={room} s={s} kind="cam" label="Camera" icon={<Cam size={16} />} close={close} />
+      <DeviceMenu room={room} s={s} kind="mic" label="Microphone" icon={<Mic size={16} />} close={close} />
+      <DeviceMenu room={room} s={s} kind="speaker" label="Speakers" icon={<Speaker size={16} />} close={close} />
       <button onClick={onDetails}>
         <Info size={16} /> Recording details
       </button>
       <button className="danger" onClick={onLeave}>
         <Leave size={16} /> Leave room
       </button>
+    </div>
+  );
+}
+
+/** A menu row that opens a side submenu listing devices of one kind, with a check on the current one. */
+function DeviceMenu({ room, s, kind, label, icon, close }: { room: Room; s: Snapshot; kind: DeviceKind; label: string; icon: React.ReactNode; close: () => void }) {
+  const [open, setOpen] = useState(false);
+  const list = kind === 'cam' ? s.devices.cams : kind === 'mic' ? s.devices.mics : s.devices.speakers;
+  const current = s.current[kind] ?? (kind === 'speaker' ? 'default' : null);
+  const name = (d: MediaDeviceInfo, i: number) => d.label || `${label} ${i + 1}`;
+  return (
+    <div className="has-sub" onMouseEnter={() => (setOpen(true), room.refreshDevices())} onMouseLeave={() => setOpen(false)}>
+      <button onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open}>
+        {icon} {label}
+        <Chevron size={16} className="chev" />
+      </button>
+      {open && (
+        <div className="submenu" role="menu">
+          {list.length === 0 && <div className="empty">{kind === 'speaker' ? 'This browser can’t choose speakers.' : 'No devices found.'}</div>}
+          {list.map((d, i) => (
+            <button
+              key={d.deviceId || i}
+              role="menuitemradio"
+              aria-checked={d.deviceId === current}
+              onClick={() => {
+                room.useDevice(kind, d.deviceId);
+                close();
+              }}
+            >
+              <span className="tick">{d.deviceId === current && <Check size={16} />}</span>
+              <span className="dev">{name(d, i)}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

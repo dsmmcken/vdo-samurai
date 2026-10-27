@@ -10,6 +10,8 @@ import type { PeerId } from './types';
 
 const ICE: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
 
+export type TrackRole = 'mic' | 'cam' | 'screen';
+
 export type SigMessage = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit | null };
 
 export interface LinkEvents {
@@ -31,7 +33,8 @@ export class Link {
   private makingOffer = false;
   private answeredFirst = false;
   private ignoreOffer = false;
-  private senders = new Map<MediaStreamTrack, RTCRtpSender>();
+  /** Outgoing senders by role, so a track can be swapped (or paused with null) without renegotiating. */
+  private senders = new Map<TrackRole, { sender: RTCRtpSender; track: MediaStreamTrack | null }>();
   private handlers: Partial<LinkEvents> = {};
 
   constructor(
@@ -158,28 +161,38 @@ export class Link {
   }
 
   /**
-   * Make the outgoing tracks match `tracks`. New tracks start with `enc` so they
-   * never briefly send at full resolution.
+   * Make the outgoing tracks match `tracks`, one per role. A role whose track
+   * changed gets replaceTrack (no renegotiation; `null` sends nothing, e.g.
+   * camera off). New roles start with `enc` so they never briefly send at full
+   * resolution; roles no longer listed are removed.
    */
-  setTracks(tracks: Array<{ track: MediaStreamTrack; stream: MediaStream; enc: RTCRtpEncodingParameters }>) {
+  setTracks(tracks: Array<{ role: TrackRole; track: MediaStreamTrack | null; stream: MediaStream; enc: RTCRtpEncodingParameters }>) {
     if (this.pc.signalingState === 'closed') return;
-    const wanted = new Set(tracks.map((t) => t.track));
-    for (const [track, sender] of this.senders) {
-      if (!wanted.has(track)) {
-        this.pc.removeTrack(sender);
-        this.senders.delete(track);
+    const wanted = new Set(tracks.map((t) => t.role));
+    for (const [role, s] of this.senders) {
+      if (!wanted.has(role)) {
+        this.pc.removeTrack(s.sender);
+        this.senders.delete(role);
       }
     }
-    for (const { track, stream, enc } of tracks) {
-      if (this.senders.has(track)) continue;
+    for (const { role, track, stream, enc } of tracks) {
+      const cur = this.senders.get(role);
+      if (cur) {
+        if (cur.track !== track) {
+          cur.track = track;
+          cur.sender.replaceTrack(track).catch((e) => console.warn('[link] replaceTrack failed', e));
+        }
+        continue;
+      }
+      if (!track) continue; // nothing to send yet
       const tr = this.pc.addTransceiver(track, { direction: 'sendonly', streams: [stream], sendEncodings: [enc] });
-      this.senders.set(track, tr.sender);
+      this.senders.set(role, { sender: tr.sender, track });
     }
   }
 
-  /** Live encoder settings for one outgoing track; no renegotiation. */
-  async setEncoding(track: MediaStreamTrack, enc: RTCRtpEncodingParameters) {
-    const sender = this.senders.get(track);
+  /** Live encoder settings for one outgoing role; no renegotiation. */
+  async setEncoding(role: TrackRole, enc: RTCRtpEncodingParameters) {
+    const sender = this.senders.get(role)?.sender;
     if (!sender) return;
     const params = sender.getParameters();
     if (!params.encodings?.length) params.encodings = [{}];

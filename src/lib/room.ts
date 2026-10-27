@@ -11,7 +11,7 @@
 import { Mesh } from './mesh';
 import { saveProfile } from './identity';
 import type { Link } from './link';
-import { camEncoding, MIC_ENCODING, openCamera, openScreen, screenEncoding, type CamRole } from './media';
+import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVideoTrack, screenEncoding, setDevicePref, type CamRole, type DeviceKind } from './media';
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, type Recorder } from './recorder';
 import * as fs from './opfs';
 import type {
@@ -62,6 +62,8 @@ export interface Snapshot {
   micMuted: boolean;
   camOff: boolean;
   cam: MediaStream | null;
+  devices: { cams: MediaDeviceInfo[]; mics: MediaDeviceInfo[]; speakers: MediaDeviceInfo[] };
+  current: { cam: string | null; mic: string | null; speaker: string | null };
   screen: MediaStream | null;
   meshStatus: Mesh['status'];
   meshError: string | null;
@@ -142,6 +144,8 @@ export class Room {
 
   async start(cam: MediaStream) {
     this.cam = cam;
+    this.refreshDevices();
+    navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
     await this.restore();
     this.timers.push(setInterval(() => this.pingAll(), 5000));
     this.timers.push(setInterval(() => this.directorTick(), 500));
@@ -232,6 +236,16 @@ export class Room {
       micMuted: this.micMuted,
       camOff: this.camOff,
       cam: this.cam,
+      devices: {
+        cams: this.devices.filter((d) => d.kind === 'videoinput'),
+        mics: this.devices.filter((d) => d.kind === 'audioinput'),
+        speakers: this.devices.filter((d) => d.kind === 'audiooutput'),
+      },
+      current: {
+        cam: this.cam?.getVideoTracks()[0]?.getSettings().deviceId ?? devicePref('cam'),
+        mic: this.cam?.getAudioTracks()[0]?.getSettings().deviceId ?? devicePref('mic'),
+        speaker: this.speaker,
+      },
       screen: this.screen,
       meshStatus: this.mesh.status,
       meshError: this.mesh.error,
@@ -425,11 +439,21 @@ export class Room {
   private pushTracks(link: Link) {
     const tracks: Parameters<Link['setTracks']>[0] = [];
     if (this.cam) {
-      for (const t of this.cam.getAudioTracks()) tracks.push({ track: t, stream: this.cam, enc: MIC_ENCODING });
-      for (const t of this.cam.getVideoTracks()) tracks.push({ track: t, stream: this.cam, enc: camEncoding(t, this.camRole()) });
+      const mic = this.cam.getAudioTracks()[0] ?? null;
+      const cam = this.cam.getVideoTracks()[0] ?? null;
+      tracks.push({ role: 'mic', track: mic, stream: this.cam, enc: MIC_ENCODING });
+      // While the camera is off its sender stays, sending nothing; turning it
+      // back on just swaps a track in.
+      tracks.push({ role: 'cam', track: cam, stream: this.cam, enc: cam ? camEncoding(cam, this.camRole()) : {} });
     }
-    if (this.screen) for (const t of this.screen.getVideoTracks()) tracks.push({ track: t, stream: this.screen, enc: screenEncoding(t, this.screenOnStage()) });
+    const screen = this.screen?.getVideoTracks()[0];
+    if (screen && this.screen) tracks.push({ role: 'screen', track: screen, stream: this.screen, enc: screenEncoding(screen, this.screenOnStage()) });
     link.setTracks(tracks);
+  }
+
+  private pushAll() {
+    for (const l of this.mesh.links.values()) this.pushTracks(l);
+    this.applyEncodings();
   }
 
   private camRole(): CamRole {
@@ -449,8 +473,8 @@ export class Room {
     const role = this.camRole();
     const onStage = this.screenOnStage();
     for (const link of only ? [only] : this.mesh.links.values()) {
-      for (const t of this.cam?.getVideoTracks() ?? []) link.setEncoding(t, camEncoding(t, role));
-      for (const t of this.screen?.getVideoTracks() ?? []) link.setEncoding(t, screenEncoding(t, onStage));
+      for (const t of this.cam?.getVideoTracks() ?? []) link.setEncoding('cam', camEncoding(t, role));
+      for (const t of this.screen?.getVideoTracks() ?? []) link.setEncoding('screen', screenEncoding(t, onStage));
     }
   }
 
@@ -485,24 +509,102 @@ export class Room {
     this.announce();
   }
 
+  /** The running recorder for one kind, if any. */
+  private recorderFor(kind: 'cam' | 'screen') {
+    return this.active?.recorders.find((r) => r.kind === kind && r.recording) ?? null;
+  }
+
   /**
-   * Camera off: the track is disabled (black frames, no re-negotiation), tiles
-   * and stage show initials, and the stretch is logged so the final cut shows
-   * initials too instead of black.
+   * Camera off releases the camera (so its light goes off) and the outgoing
+   * sender sends nothing; on reopens it and swaps the new track in, without
+   * renegotiating. Tiles and stage show initials meanwhile, and the stretch is
+   * logged so the final cut shows initials too.
    */
-  toggleCam() {
-    this.camOff = !this.camOff;
-    this.cam?.getVideoTracks().forEach((t) => (t.enabled = !this.camOff));
+  async toggleCam() {
+    const rec = this.recorderFor('cam');
+    if (!this.camOff) {
+      this.camOff = true;
+      if (rec && !rec.setVideo) {
+        // Backup recorder (MediaRecorder) can't swap tracks: just blank the video.
+        this.cam?.getVideoTracks().forEach((t) => (t.enabled = false));
+      } else {
+        for (const t of this.cam?.getVideoTracks() ?? []) {
+          this.cam!.removeTrack(t);
+          t.stop();
+        }
+        rec?.setVideo?.(null);
+      }
+    } else {
+      const disabled = this.cam?.getVideoTracks()[0];
+      if (disabled) disabled.enabled = true;
+      else {
+        try {
+          const t = await openVideoTrack();
+          this.cam?.addTrack(t);
+          rec?.setVideo?.(t);
+        } catch (e) {
+          return this.say(`Couldn't turn the camera back on: ${(e as Error).message}`);
+        }
+      }
+      this.camOff = false;
+    }
+    this.logCamOff();
+    this.pushAll();
+    this.announce();
+  }
+
+  private logCamOff() {
     const a = this.active;
     const m = a && this.mine.get(a.take.id);
-    if (a && m) {
-      const at = this.toTake(a.take, now());
-      m.camOff ??= [];
-      if (this.camOff) m.camOff.push([at, null]);
-      else if (m.camOff.length && m.camOff[m.camOff.length - 1][1] === null) m.camOff[m.camOff.length - 1][1] = at;
-      fs.writeJson(a.take.id, 'mine.json', m).catch(() => {});
+    if (!a || !m) return;
+    const at = this.toTake(a.take, now());
+    m.camOff ??= [];
+    if (this.camOff) m.camOff.push([at, null]);
+    else if (m.camOff.length && m.camOff[m.camOff.length - 1][1] === null) m.camOff[m.camOff.length - 1][1] = at;
+    fs.writeJson(a.take.id, 'mine.json', m).catch(() => {});
+  }
+
+  // ------------------------------------------------------------------ devices
+
+  private devices: MediaDeviceInfo[] = [];
+  private speaker: string | null = devicePref('speaker');
+
+  async refreshDevices() {
+    try {
+      this.devices = await navigator.mediaDevices.enumerateDevices();
+    } catch {
+      this.devices = [];
     }
-    this.announce();
+    this.changed();
+  }
+
+  /** Switch camera, microphone or speakers; applies live, even mid-take, and is remembered. */
+  async useDevice(kind: DeviceKind, id: string) {
+    setDevicePref(kind, id);
+    if (kind === 'speaker') {
+      this.speaker = id;
+      return this.changed();
+    }
+    const rec = this.recorderFor('cam');
+    if (rec && !rec.setVideo) return this.say('Switching devices mid-take needs the main recorder; it will apply after this take.');
+    if (kind === 'cam' && this.camOff) return this.changed(); // used when the camera comes back on
+    try {
+      const t = kind === 'cam' ? await openVideoTrack(id) : await openMicTrack(id);
+      if (kind === 'mic') t.enabled = !this.micMuted;
+      const old = kind === 'cam' ? this.cam?.getVideoTracks()[0] : this.cam?.getAudioTracks()[0];
+      if (old) {
+        this.cam!.removeTrack(old);
+        old.stop();
+      }
+      this.cam?.addTrack(t);
+      if (kind === 'cam') rec?.setVideo?.(t);
+      else rec?.setAudio?.(t);
+      this.note(this.active?.take.id ?? '', `${kind === 'cam' ? 'camera' : 'microphone'} switched to ${t.label || 'another device'}`);
+      this.pushAll();
+      this.announce();
+    } catch (e) {
+      this.say(`Couldn't switch ${kind === 'cam' ? 'camera' : 'microphone'}: ${(e as Error).message}`);
+    }
   }
 
   /** Move the presenter's camera overlay; anyone before a take, only the director during one. */

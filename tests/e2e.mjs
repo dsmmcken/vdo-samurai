@@ -309,8 +309,17 @@ try {
   await cam.getByRole('button', { name: 'Turn camera off' }).click();
   await dir.waitForSelector('.stage .avatar', { timeout: 5000 });
   log('camera off shows initials on the stage');
+  const camTracks = await cam.evaluate(() => window.samurai.getSnapshot().cam.getVideoTracks().map((t) => t.readyState));
+  log('camera tracks while off (should be none, so the light is off):', JSON.stringify(camTracks));
   await sleep(3000);
   await cam.getByRole('button', { name: 'Turn camera on' }).click();
+  // Mid-take device switch from the ⋯ menu: Camera › first listed device.
+  await dir.getByRole('button', { name: 'More' }).click();
+  await dir.locator('.has-sub', { hasText: 'Camera' }).hover();
+  const devs = await dir.locator('.submenu [role=menuitemradio]').allTextContents();
+  log('camera submenu lists:', JSON.stringify(devs));
+  await dir.locator('.submenu [role=menuitemradio]').first().click();
+  await sleep(500);
   await dir.locator('.tile.end-tile').click();
   await sleep(3000);
   await dir.getByRole('button', { name: 'Stop', exact: true }).click();

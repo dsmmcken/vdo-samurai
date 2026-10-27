@@ -25,6 +25,9 @@ export interface Recorder {
   readonly started: Promise<number>;
   readonly recording: boolean;
   stop(): Promise<RecorderResult>;
+  /** Swap the camera / mic mid-recording (null = camera off). Capture recorder only. */
+  setVideo?(track: MediaStreamTrack | null): void;
+  setAudio?(track: MediaStreamTrack | null): void;
 }
 
 /** What a recorder tells the room: plain info for the report, warnings, and fatal failures. */
@@ -140,6 +143,27 @@ class CaptureRecorder implements Recorder {
 
   get recording() {
     return !this.stopped;
+  }
+
+  private swap(kind: 'video' | 'audio', track: MediaStreamTrack | null) {
+    if (this.stopped) return;
+    const old = this.clones.find((t) => t.kind === kind);
+    old?.stop();
+    this.clones = this.clones.filter((t) => t !== old);
+    let stream: ReadableStream | null = null;
+    if (track) {
+      const clone = track.clone();
+      this.clones.push(clone);
+      const Processor = (globalThis as any).MediaStreamTrackProcessor;
+      stream = new Processor(kind === 'audio' ? { track: clone, maxBufferSize: 50 } : { track: clone }).readable;
+    }
+    this.worker.postMessage({ t: kind, stream }, stream ? [stream as unknown as Transferable] : []);
+  }
+  setVideo(track: MediaStreamTrack | null) {
+    this.swap('video', track);
+  }
+  setAudio(track: MediaStreamTrack | null) {
+    this.swap('audio', track);
   }
 
   async stop() {

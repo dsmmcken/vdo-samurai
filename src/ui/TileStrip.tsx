@@ -1,12 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import type { PeerId } from '../lib/types';
-import { Crown, Grid, MicOff, Pencil, Screen } from './icons';
+import { Helmet, Grid, MicOff, Pencil, Screen } from './icons';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
 import { MicMeter } from './MicMeter';
 import { Avatar } from './Avatar';
-import { ScreenThumb } from './ScreenThumb';
+
 
 export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void }) {
   const [menu, setMenu] = useState<{ x: number; y: number; id: PeerId | 'end'; rect: DOMRect } | null>(null);
@@ -43,12 +43,12 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
     const dragging = dragRef.current;
     if (!dragging) return;
     const strip = e.currentTarget;
-    const first = strip.querySelector<HTMLElement>('.tile');
-    if (!first) return;
     const cur = previewRef.current ?? s.tiles;
-    const slot = first.offsetWidth + 12; // tile width + gap
-    const x = e.clientX - strip.getBoundingClientRect().left + strip.scrollLeft - first.offsetLeft;
-    const to = Math.max(0, Math.min(cur.length - 1, Math.floor(x / slot)));
+    // Real tile positions (offsetLeft ignores the slide animation's transforms;
+    // tiles differ in width once your screen tile sits next to yours).
+    const x = e.clientX - strip.getBoundingClientRect().left + strip.scrollLeft;
+    const others = [...strip.querySelectorAll<HTMLElement>('.tile[data-id]')].filter((el) => el.dataset.id !== dragging);
+    const to = Math.min(cur.length - 1, others.filter((el) => el.offsetLeft + el.offsetWidth / 2 < x).length);
     if (cur.indexOf(dragging) === to) return;
     const next = cur.filter((id) => id !== dragging);
     next.splice(to, 0, dragging);
@@ -82,8 +82,9 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         const muted = me ? s.micMuted : !!p?.presence?.micMuted;
         const active = st?.kind === 'peer' && st.id === id;
         return (
+          <Fragment key={id}>
           <div
-            key={id}
+            data-id={id}
             ref={flip(id)}
             className={`tile ${active ? 'active' : ''} ${dragging === id ? 'dragging' : ''} ${me ? 'mine' : ''}`}
             role="button"
@@ -105,12 +106,10 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
             <div className="tile-badges">
               {s.director === id && (
                 <span className="badge crown" title="Director">
-                  <Crown size={14} title="Director" />
+                  <Helmet size={14} title="Director" />
                 </span>
               )}
-              {me && s.screen ? (
-                <ScreenThumb stream={s.screen} onStage={active && st?.kind === 'peer' && st.view === 'screen'} />
-              ) : hasScreen && (
+              {hasScreen && (
                 <span className={`badge ${active && st?.kind === 'peer' && st.view === 'screen' ? 'on' : ''}`} title="Screen share ready">
                   <Screen size={14} title="Screen share" />
                 </span>
@@ -129,7 +128,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
                   room.setDirector(s.me);
                 }}
               >
-                <Crown size={14} /> Claim director
+                <Helmet size={14} /> Claim director
               </button>
             )}
             <div className="tile-name">
@@ -151,6 +150,8 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
               </button>
             )}
           </div>
+          {me && s.screen && <ScreenTile stream={s.screen} onStage={active && st?.kind === 'peer' && st.view === 'screen'} onClick={() => room.setStage({ kind: 'peer', id: s.me, view: 'screen' })} />}
+          </Fragment>
         );
       })}
       <div
@@ -168,11 +169,11 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         <div className="glass popover menu-list context" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {s.director === menu.id ? (
             <button disabled={locked} onClick={() => (room.setDirector(null), setMenu(null))}>
-              <Crown size={16} className="gold" /> {menu.id === s.me ? 'Step down as director' : 'Remove as director'}
+              <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Step down as director' : 'Remove as director'}
             </button>
           ) : (
             <button disabled={locked} onClick={() => (room.setDirector(menu.id as PeerId), setMenu(null))}>
-              <Crown size={16} className="gold" /> {menu.id === s.me ? 'Become director' : `Make ${nameOf(s, menu.id)} director`}
+              <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Become director' : `Make ${nameOf(s, menu.id)} director`}
             </button>
           )}
           <button onClick={() => (onEditProfile(menu.rect, menu.id as PeerId), setMenu(null))}>
@@ -206,4 +207,17 @@ function useFlip(order: string[], animate: boolean) {
     if (el) els.current.set(id, el);
     else els.current.delete(id);
   };
+}
+
+/** Your own screen share, shown only to you, as a tile at its real shape next to yours. */
+function ScreenTile({ stream, onStage, onClick }: { stream: MediaStream; onStage: boolean; onClick: () => void }) {
+  const st = stream.getVideoTracks()[0]?.getSettings();
+  const aspect = st?.width && st?.height ? st.width / st.height : 16 / 9;
+  const w = Math.round(Math.max(120, Math.min(360, 160 * aspect)));
+  return (
+    <div className={`tile screen-tile ${onStage ? 'active' : ''}`} style={{ '--w': `${w}px` } as React.CSSProperties} role="button" tabIndex={0} onClick={onClick} title="Your screen share (only you see this tile). Click to put it on stage.">
+      <Video stream={stream} fit="contain" />
+      <div className="tile-name">Your screen</div>
+    </div>
+  );
 }

@@ -26,6 +26,9 @@ body,
   margin: 0;
 }
 body {
+  /* UI text isn't selectable by accident; inputs and copyable text opt back in. */
+  user-select: none;
+  -webkit-user-select: none;
   background: var(--bg);
   color: var(--fg);
   font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -479,77 +482,38 @@ button.chip:hover {
     transform: scale(0.9);
   }
 }
+/* Camera off: the same circle and initials everywhere, sized to its own box. */
 .avatar {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
+  container-type: size;
   background: radial-gradient(circle at 50% 40%, #2a2733, #15141b);
   pointer-events: none; /* never blocks the tray, tiles or overlay */
 }
 .avatar span {
   display: grid;
   place-items: center;
-  width: min(44%, 120px);
+  width: 46cqmin;
   aspect-ratio: 1;
   border-radius: 50%;
   background: rgba(255, 183, 197, 0.14);
   color: var(--accent);
   font-weight: 700;
-  font-size: clamp(14px, 4cqw, 44px);
+  font-size: 17cqmin;
   letter-spacing: 0.02em;
 }
-.tile .avatar span {
-  font-size: 22px;
-}
-.screen-thumb {
-  display: block;
-  width: 52px;
-  height: 30px;
-  border-radius: 6px;
-  overflow: hidden;
+.tile.screen-tile {
+  flex: 0 0 auto;
+  width: var(--w, 284px);
   background: #000;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 2px 8px rgba(0, 0, 0, 0.5);
-  cursor: zoom-in;
 }
-.screen-thumb.on {
-  box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0, 0, 0, 0.5);
+.screen-tile video {
+  object-fit: contain;
 }
-.screen-thumb video {
-  width: 100%;
-  height: 100%;
-}
-.screen-peek {
-  position: fixed;
-  z-index: 80;
-  width: 480px;
-  transform: translateY(-100%);
-  border-radius: 12px;
-  overflow: hidden;
-  background: #000;
-  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-  animation: peek-in 0.15s ease-out;
-}
-.screen-peek video {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-}
-.screen-peek span {
-  position: absolute;
-  left: 10px;
-  bottom: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
-}
-@keyframes peek-in {
-  from {
-    opacity: 0;
-    transform: translateY(calc(-100% + 6px));
-  }
+.screen-tile .tile-name {
+  color: rgba(255, 255, 255, 0.85);
 }
 .pip video {
   width: 100%;
@@ -783,7 +747,7 @@ button.chip:hover {
   color: #fff;
 }
 .badge.crown {
-  color: var(--gold);
+  color: var(--accent);
 }
 .badge.on {
   background: var(--accent);
@@ -824,7 +788,7 @@ button.chip:hover {
   cursor: pointer;
 }
 .claim svg {
-  color: var(--gold);
+  color: var(--accent);
 }
 .claim:hover {
   background: var(--glass-hover);
@@ -911,7 +875,7 @@ button.chip:hover {
   color: var(--bad);
 }
 .menu-list button svg.gold {
-  color: var(--gold);
+  color: var(--accent);
 }
 .menu-list button:disabled {
   opacity: 0.45;
@@ -1164,4 +1128,52 @@ button.chip:hover {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+}
+
+input,
+textarea,
+code,
+pre,
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ---------- nested menus (devices) */
+.menu-list .has-sub {
+  position: relative;
+}
+.menu-list .has-sub > button .chev {
+  margin-left: auto;
+  color: var(--muted);
+}
+.submenu {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: -6px;
+  min-width: 260px;
+  max-width: 340px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(24, 24, 31, 0.92);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+.submenu button span.dev {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.submenu button .tick {
+  width: 16px;
+  color: var(--accent);
+}
+.submenu .empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 13px;
 }

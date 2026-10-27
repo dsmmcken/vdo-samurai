@@ -27,8 +27,15 @@ const warn = (msg: string) => {
 };
 let stopRequested: (() => void) | null = null;
 
-self.onmessage = (e: MessageEvent<Start | { t: 'stop' }>) => {
+// Mid-recording track swaps (camera back on, or a different camera / mic).
+let swapVideo: ((s: ReadableStream<VideoFrame> | null) => void) | null = null;
+let swapAudio: ((s: ReadableStream<AudioData> | null) => void) | null = null;
+
+type Swap = { t: 'video'; stream: ReadableStream<VideoFrame> | null } | { t: 'audio'; stream: ReadableStream<AudioData> | null };
+self.onmessage = (e: MessageEvent<Start | Swap | { t: 'stop' }>) => {
   if (e.data.t === 'stop') stopRequested?.();
+  else if (e.data.t === 'video') swapVideo?.(e.data.stream);
+  else if (e.data.t === 'audio') swapAudio?.(e.data.stream);
   else record(e.data).catch((err) => post({ t: 'error', error: `${err?.name ?? 'Error'}: ${err?.message ?? err}`, stack: String(err?.stack ?? '') }));
 };
 
@@ -48,7 +55,9 @@ async function record(job: Start) {
 
   // Fragmented MP4: appended as it goes, so a crash still leaves a playable file.
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'fragmented' }), target: new StreamTarget(writable) });
-  const video = job.video
+  // A camera recording always has a video track, even if the camera starts off.
+  const hasVideo = !!job.video || !job.screen;
+  const video = hasVideo
     ? new VideoSampleSource({
         codec: 'avc',
         bitrate: job.videoBitrate,
@@ -83,22 +92,30 @@ async function record(job: Start) {
   // second arrives late, which means audio was really dropped.
   const wallNow = () => performance.timeOrigin + performance.now();
   let videoZero: number | null = null; // wall ms of video media time 0 (refined as frames arrive)
-  let firstFrameUs: number | null = null;
   let stopping = false;
   let fatal: string | null = null;
   const stopped = new Promise<void>((r) => (stopRequested = () => ((stopping = true), r())));
-  const read = async <T extends VideoFrame | AudioData>(stream: ReadableStream<T>, onChunk: (chunk: T) => Promise<void>) => {
+  /** Reads a stream until it ends, it's replaced (`cancel`), or we stop. */
+  const read = <T extends VideoFrame | AudioData>(stream: ReadableStream<T>, onChunk: (chunk: T) => Promise<void>) => {
     const reader = stream.getReader();
-    stopped.then(() => reader.cancel().catch(() => {}));
-    while (!stopping) {
-      const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
-      if (done || !value) break;
-      try {
-        await onChunk(value);
-      } finally {
-        value.close();
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+      reader.cancel().catch(() => {});
+    };
+    stopped.then(cancel);
+    const done = (async () => {
+      while (!stopping && !cancelled) {
+        const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
+        if (done || !value) break;
+        try {
+          await onChunk(value);
+        } finally {
+          value.close();
+        }
       }
-    }
+    })();
+    return { done, cancel };
   };
 
   const pumps: Promise<void>[] = [];
@@ -107,7 +124,7 @@ async function record(job: Start) {
   // re-write it every half second while nothing new arrives (and once more at
   // the end), so the file covers the whole time the screen was shared.
   let finishVideo: (() => Promise<void>) | null = null;
-  if (job.video && video) {
+  if (hasVideo && video) {
     let last = -1;
     let held: VideoFrame | null = null;
     let heldAt = 0;
@@ -143,28 +160,67 @@ async function record(job: Start) {
       held?.close();
       held = null;
     };
-    pumps.push(
-      read(job.video, async (frame) => {
+
+    // Camera off when the take starts: begin with one black 1080p frame so
+    // the file has video from zero (the final cut shows initials there anyway).
+    if (!job.video) {
+      const c = new OffscreenCanvas(1920, 1080);
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, 1920, 1080);
+      videoZero = wallNow();
+      held = new VideoFrame(c, { timestamp: 0 });
+      heldAt = videoZero;
+      add(held.clone(), 0);
+      post({ t: 'started' });
+    }
+
+    let current: ReturnType<typeof read> | null = null;
+    // Segment 0 is the camera the take started with: it defines the file's zero
+    // from frame spacing. Any later segment (camera back on, another camera, or
+    // the first one after a black start) is placed by its first frame's arrival.
+    let segments = job.video ? 0 : 1;
+    const start = (stream: ReadableStream<VideoFrame> | null) => {
+      current?.cancel();
+      current = null;
+      if (!stream) return; // camera off: held frames carry on
+      const seg = segments++;
+      let segFirstUs: number | null = null;
+      let segBase: number | null = null;
+      const r = read(stream, async (frame) => {
         if (stats.framesIn++ === 0) {
           post({ t: 'info', message: `video in: ${frame.displayWidth}x${frame.displayHeight} ${frame.format ?? '?'}` });
-          post({ t: 'started' });
+          if (videoZero === null) post({ t: 'started' });
         }
-        firstFrameUs ??= frame.timestamp;
-        const ts = (frame.timestamp - firstFrameUs) / 1e6;
-        const z = wallNow() - ts * 1000;
-        if (videoZero === null || z < videoZero) videoZero = z;
+        segFirstUs ??= frame.timestamp;
+        let ts: number;
+        if (seg === 0) {
+          ts = (frame.timestamp - segFirstUs) / 1e6;
+          const z = wallNow() - ts * 1000;
+          if (videoZero === null || z < videoZero) videoZero = z;
+        } else {
+          segBase ??= (wallNow() - videoZero!) / 1000;
+          ts = segBase + (frame.timestamp - segFirstUs) / 1e6;
+        }
         if (ts < 0) return;
         held?.close();
         held = frame.clone();
         heldAt = wallNow();
         await add(frame.clone(), ts);
-      }),
-    );
+      });
+      current = r;
+      pumps.push(r.done);
+    };
+    swapVideo = (stream) => {
+      post({ t: 'info', message: stream ? 'camera resumed' : 'camera off (holding last frame)' });
+      start(stream);
+    };
+    start(job.video);
   }
 
   let audioZero: number | null = null; // wall ms of audio sample 0
   let flushAudio: (() => Promise<void>) | null = null;
-  if (job.audio && audio) {
+  if (!job.screen && audio) {
     let written = 0; // samples placed so far, including forward jumps for dropped audio
     let fileOffset = 0; // file seconds of audio sample 0 (relative to the file's zero)
     let settled = false;
@@ -210,11 +266,12 @@ async function record(job: Start) {
     };
     flushAudio = settle;
 
-    pumps.push(
-      read(job.audio, async (data) => {
+    let resync = false; // set when a new mic stream takes over
+    let current: ReturnType<typeof read> | null = null;
+    const onAudio = async (data: AudioData) => {
         if (stats.audioIn++ === 0) {
           post({ t: 'info', message: `audio in: ${data.sampleRate} Hz, ${data.numberOfChannels} ch, ${data.format}, ${data.numberOfFrames} frames/chunk` });
-          if (!job.video) post({ t: 'started' });
+          if (!hasVideo) post({ t: 'started' });
         }
         const ch = data.numberOfChannels;
         const n = data.numberOfFrames;
@@ -229,8 +286,15 @@ async function record(job: Start) {
           const z = wallNow() - (samplesBefore / rate) * 1000;
           if (audioZero === null || z < audioZero) audioZero = z;
           pending.push({ planar, ch, n, rate });
-          if (samplesBefore + n >= rate && (videoZero !== null || !job.video)) await settle();
+          if (samplesBefore + n >= rate && (videoZero !== null || !hasVideo)) await settle();
           return;
+        }
+        if (resync) {
+          // New mic: carry on from wherever the clock now says we are (forward only).
+          resync = false;
+          written = Math.max(written, Math.round(((wallNow() - audioZero!) / 1000) * rate) - n);
+          windowMinLate = Infinity;
+          windowCount = 0;
         }
         // How late is this chunk versus where the sample count says it belongs?
         const late = (wallNow() - (audioZero! + (written / rate) * 1000)) / 1000;
@@ -246,12 +310,28 @@ async function record(job: Start) {
           windowCount = 0;
         }
         await write(planar, ch, n, rate);
-      }),
-    );
+    };
+    const start = (stream: ReadableStream<AudioData> | null) => {
+      current?.cancel();
+      current = null;
+      if (!stream) return;
+      current = read(stream, onAudio);
+      pumps.push(current.done);
+    };
+    swapAudio = (stream) => {
+      post({ t: 'info', message: stream ? 'microphone switched' : 'microphone stopped' });
+      if (settled) resync = true;
+      start(stream);
+    };
+    if (job.audio) start(job.audio);
   }
 
   await stopped;
-  await Promise.allSettled(pumps);
+  // Pumps can be added by swaps while we wait; settle until none are left.
+  for (let n = 0; n !== pumps.length; ) {
+    n = pumps.length;
+    await Promise.allSettled(pumps);
+  }
   await flushAudio?.(); // a take shorter than a second never settled its anchor
   await finishVideo?.();
   if (fatal) {

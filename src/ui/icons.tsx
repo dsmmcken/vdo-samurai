@@ -10,7 +10,18 @@ const svg = (d: React.ReactNode) =>
     );
   };
 
-export const Crown = svg(<path d="M3 7.5l4.6 3.9L12 4l4.4 7.4L21 7.5 19.2 17H4.8L3 7.5zM5 18.5h14V20H5z" />);
+// Kabuto (samurai helmet): crescent crest, dome, tiered neck guard flaring out
+// with the side flaps turned up; that silhouette still reads at 14 px. Marks the director.
+export const Helmet = svg(
+  <>
+    <path d="M3 1c1.1 5 4.4 7.6 9 7.6S19.9 6 21 1c-2.5 3.3-5.6 5-9 5S5.5 4.3 3 1z" />
+    <path d="M6.5 13.6c0-3.1 2.5-4.9 5.5-4.9s5.5 1.8 5.5 4.9z" />
+    <path d="M2.8 14.1h18.4l-.8 1.6H3.6z" />
+    <path d="M4 16.2h16l2.6 3H1.4z" />
+    <path d="M1.6 19.8h20.8L24 23H0z" />
+    <path d="M0 11.6l4 2.5H.8zM24 11.6l-4 2.5h3.2z" />
+  </>,
+);
 export const Screen = svg(<path d="M3 4h18a1 1 0 011 1v11a1 1 0 01-1 1h-7v2h3v1.5H7V19h3v-2H3a1 1 0 01-1-1V5a1 1 0 011-1zm1 2v9h16V6H4z" />);
 export const Mic = svg(<path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />);
 export const MicOff = svg(<path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />);
@@ -28,3 +39,6 @@ export const EyeOff = svg(<path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.
 export const Info = svg(<path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 2a8 8 0 100 16 8 8 0 000-16zm1 6v7h-2v-7h2zm0-3v2h-2V7h2z" />);
 export const Cam = svg(<path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />);
 export const CamOff = svg(<path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z" />);
+export const Check = svg(<path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z" />);
+export const Chevron = svg(<path d="M9.3 6.7 10.7 5.3 17.4 12l-6.7 6.7-1.4-1.4 5.3-5.3z" />);
+export const Speaker = svg(<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8v8a4.5 4.5 0 002.5-4zM14 3.2v2.1a7 7 0 010 13.4v2.1a9 9 0 000-17.6z" />);
