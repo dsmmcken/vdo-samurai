@@ -23,6 +23,7 @@ import {
 import type { Corner, DirectorManifest, PeerId, Profile, RecFile } from '../lib/types';
 import { audible, gridFor, lowerThirds, segments, videoStart, type Segment } from './plan';
 import { LoudnessMeter } from './loudness';
+import { Limiter, VoiceChain } from './voice';
 
 const W = 1920;
 const H = 1080;
@@ -37,11 +38,13 @@ const LOWER_THIRD = '#0625c0';
 const PIP = { w: 156, h: 195, margin: 32, radius: 22 };
 const CORNER_MOVE_S = 0.45; // glide between corners, same as the live stage
 
-// Loudness: everyone is brought to the same speech level, within limits so
-// near-silent tracks aren't pumped up into noise.
-const TARGET_LUFS = -18;
-const MAX_BOOST_DB = 12;
+// Audio polish (see voice.ts): each person goes through high-pass, de-esser,
+// leveler and compressor, then is normalized to the spoken-word standard; the
+// mixed bus goes through a look-ahead limiter.
+const TARGET_LUFS = -16; // podcast / YouTube spoken word
+const MAX_BOOST_DB = 12; // so near-silent tracks aren't pumped up into noise
 const MAX_CUT_DB = 12;
+const LIMITER_HEADROOM_DB = 3; // loudest peaks may go at most this far into the limiter
 
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
 
@@ -122,25 +125,61 @@ async function render(m: DirectorManifest) {
     return s ? cursor(s).at(Math.max(0, t - s.start)) : null;
   };
 
-  // Measure each person's loudness first (audio decodes fast), then mix with one
-  // gain per file. Reported in the render log.
+  // Pass 1 per person: run their audio through the voice chain and measure the
+  // result (loudness and loudest peaks). Pass 2, in the mixer, runs the same
+  // chain again and applies one normalizing gain. Audio decodes fast and the
+  // chain runs a few hundred times real time, so this adds seconds, not minutes.
   const gains = new Map<string, number>();
   for (const src of audioSources) {
     const meter = new LoudnessMeter();
+    const chain = new VoiceChain();
     for await (const a of new AudioSampleSink(src.audio!).samples()) {
-      const [l, r] = toStereo48k(a);
+      const mono = toMono48k(a);
       a.close();
-      const mono = new Float32Array(l.length);
-      for (let i = 0; i < l.length; i++) mono[i] = (l[i] + r[i]) * 0.5;
-      meter.push(mono);
+      meter.push(chain.process(mono));
     }
     const lufs = meter.integrated();
-    const db = lufs === null ? 0 : Math.max(-MAX_CUT_DB, Math.min(MAX_BOOST_DB, TARGET_LUFS - lufs));
+    const peak = chain.peakDb();
+    const toTarget = lufs === null ? 0 : TARGET_LUFS - lufs;
+    const headroom = Limiter.CEILING_DB + LIMITER_HEADROOM_DB - peak;
+    const db = Math.max(-MAX_CUT_DB, Math.min(MAX_BOOST_DB, toTarget, headroom));
     gains.set(src.file.name, 10 ** (db / 20));
+    const st = chain.stats();
     const who = m.profiles[src.file.peer]?.name ?? src.file.peer;
-    post({ t: 'info', message: `${who}: ${lufs === null ? 'no speech detected' : `${lufs.toFixed(1)} LUFS`}, gain ${db >= 0 ? '+' : ''}${db.toFixed(1)} dB` });
+    const sign = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+    post({
+      t: 'info',
+      message:
+        lufs === null
+          ? `${who}: no speech detected`
+          : `${who}: ${lufs.toFixed(1)} LUFS after polish → gain ${sign(db)} dB${db < toTarget - 0.05 ? ' (held back by peaks)' : ''}; leveler ${sign(st.levelerDb)} dB, compression −${st.compressionDb.toFixed(1)} dB, de-esser ${Math.round(st.deEss * 100)}% of speech`,
+    });
   }
   const mixer = new Mixer(audioSources, segs, m.take.director, gains);
+
+  // Bus limiter. Its 5 ms look-ahead delays the audio, so the first LOOKAHEAD
+  // samples out are dropped and the tail is flushed at the end: no A/V shift.
+  const limiter = new Limiter();
+  let latency = Limiter.LOOKAHEAD;
+  let emitted = 0; // samples written, from t0
+  const emitAudio = async (L: Float32Array, R: Float32Array) => {
+    if (!audio) return;
+    limiter.process(L, R);
+    if (latency > 0) {
+      const d = Math.min(latency, L.length);
+      L = L.subarray(d);
+      R = R.subarray(d);
+      latency -= d;
+    }
+    if (!L.length) return;
+    const data = new Float32Array(L.length * 2);
+    data.set(L, 0);
+    data.set(R, L.length);
+    const sample = new AudioSample({ data, format: 'f32-planar', numberOfChannels: 2, sampleRate: RATE, timestamp: emitted / RATE });
+    await audio.add(sample);
+    sample.close();
+    emitted += L.length;
+  };
 
   // Camera turned off by its owner: show their initials, not black frames.
   const camOff = (peer: PeerId, t: number) =>
@@ -190,13 +229,8 @@ async function render(m: DirectorManifest) {
     while (audio && audioUntil < Math.min(duration, t + 1)) {
       const n = Math.min(AUDIO_BLOCK, Math.round((duration - audioUntil) * RATE));
       if (n <= 0) break;
-      const planes = await mixer.mix(audioUntil, n);
-      const data = new Float32Array(n * 2);
-      data.set(planes[0], 0);
-      data.set(planes[1], n);
-      const sample = new AudioSample({ data, format: 'f32-planar', numberOfChannels: 2, sampleRate: RATE, timestamp: audioUntil - t0 });
-      await audio.add(sample);
-      sample.close();
+      const [L, R] = await mixer.mix(audioUntil, n);
+      await emitAudio(L, R);
       audioUntil += n / RATE;
     }
 
@@ -254,6 +288,10 @@ async function render(m: DirectorManifest) {
 
   for (const c of cursors.values()) await c.close();
   await mixer.close();
+  // Flush the limiter's look-ahead tail.
+  const tail = Limiter.LOOKAHEAD - latency;
+  if (audio && tail > 0) await emitAudio(new Float32Array(tail), new Float32Array(tail));
+  if (audio) post({ t: 'info', message: `mix limiter: average reduction ${(limiter.reductionDbSum / Math.max(1, limiter.reduced)).toFixed(1)} dB while active, active ${((limiter.reduced / Math.max(1, emitted)) * 100).toFixed(0)}% of the time` });
   await output.finalize();
   post({ t: 'done', seconds: duration - t0, audioCodec });
 }
@@ -326,9 +364,9 @@ class Mixer {
     buf: [Float32Array, Float32Array];
     gain: number;
     level: number; // loudness-normalizing gain for this file
+    chain: VoiceChain; // same polish as the measuring pass
     done: boolean;
   }[];
-  private env = 0; // limiter envelope
   constructor(
     sources: Source[],
     private segs: Segment[],
@@ -343,6 +381,7 @@ class Mixer {
       buf: [new Float32Array(0), new Float32Array(0)],
       gain: 0,
       level: levels.get(s.file.name) ?? 1,
+      chain: new VoiceChain(),
       done: false,
     }));
   }
@@ -384,19 +423,6 @@ class Mixer {
       tr.buf = [L.subarray(Math.min(need, L.length)), R.subarray(Math.min(need, R.length))];
       tr.pos = from + n;
     }
-    // Limiter: instant attack, ~150 ms release, keeps peaks under −1 dBFS
-    // without the crackle of hard clipping.
-    const ceiling = 0.89;
-    const release = Math.exp(-1 / (0.15 * RATE));
-    for (let i = 0; i < n; i++) {
-      const peak = Math.max(Math.abs(out[0][i]), Math.abs(out[1][i]));
-      this.env = peak > this.env ? peak : this.env * release + peak * (1 - release);
-      if (this.env > ceiling) {
-        const g = ceiling / this.env;
-        out[0][i] *= g;
-        out[1][i] *= g;
-      }
-    }
     return out;
   }
 
@@ -413,7 +439,8 @@ class Mixer {
         tr.done = true;
         break;
       }
-      let planes = toStereo48k(value);
+      const mono = tr.chain.process(toMono48k(value));
+      let planes: [Float32Array, Float32Array] = [mono, mono];
       const at = tr.zero + Math.round(value.timestamp * RATE); // take sample index of this chunk
       value.close();
       const end = tr.pos + tr.buf[0].length;
@@ -431,6 +458,15 @@ class Mixer {
   async close() {
     for (const tr of this.tracks) await tr.it.return();
   }
+}
+
+/** Voices are processed in mono (the mic is mono anyway); stereo is averaged. */
+function toMono48k(s: AudioSample): Float32Array {
+  const [l, r] = toStereo48k(s);
+  if (l === r) return l;
+  const m = new Float32Array(l.length);
+  for (let i = 0; i < l.length; i++) m[i] = (l[i] + r[i]) * 0.5;
+  return m;
 }
 
 function toStereo48k(s: AudioSample): [Float32Array, Float32Array] {

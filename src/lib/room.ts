@@ -891,30 +891,42 @@ export class Room {
     const ch = link.pc.createDataChannel(`f:${takeId}:${name}`, { ordered: true });
     ch.binaryType = 'arraybuffer';
     ch.bufferedAmountLowThreshold = HIGH_WATER / 2;
-    await new Promise<void>((res, rej) => {
-      ch.onopen = () => res();
-      ch.onclose = () => rej(new Error('channel closed'));
-    });
-    let pos = offset;
-    this.upload.set(key, { sent: pos, total: file.size });
-    while (pos < file.size) {
-      if (ch.readyState !== 'open') throw new Error('channel closed');
-      const block = await file.slice(pos, pos + 16 * CHUNK).arrayBuffer();
-      for (let i = 0; i < block.byteLength; i += CHUNK) {
-        if (ch.bufferedAmount > HIGH_WATER) await new Promise<void>((r) => (ch.onbufferedamountlow = () => r()));
-        if (ch.readyState !== 'open') throw new Error('channel closed');
-        ch.send(block.slice(i, i + CHUNK));
+    // Closing a peer connection doesn't fire 'close' on its data channels, so
+    // every wait here also checks the connection and gives up on a timeout;
+    // otherwise one dead upload would block the queue (and the resume) forever.
+    const dead = () => ch.readyState === 'closing' || ch.readyState === 'closed' || ['closed', 'failed'].includes(link.pc.connectionState);
+    const until = (ready: () => boolean, ms: number, what: string) =>
+      new Promise<void>((res, rej) => {
+        const t0 = Date.now();
+        const tick = () => {
+          if (ready()) return res();
+          if (dead()) return rej(new Error(`upload channel closed (${what})`));
+          if (Date.now() - t0 > ms) return rej(new Error(`upload timed out (${what})`));
+          setTimeout(tick, 100);
+        };
+        tick();
+      });
+    try {
+      await until(() => ch.readyState === 'open', 20_000, 'opening');
+      let pos = offset;
+      this.upload.set(key, { sent: pos, total: file.size });
+      while (pos < file.size) {
+        const block = await file.slice(pos, pos + 16 * CHUNK).arrayBuffer();
+        for (let i = 0; i < block.byteLength; i += CHUNK) {
+          if (ch.bufferedAmount > HIGH_WATER) await until(() => ch.bufferedAmount <= HIGH_WATER / 2, 60_000, 'sending');
+          if (ch.readyState !== 'open') throw new Error('upload channel closed (sending)');
+          ch.send(block.slice(i, i + CHUNK));
+        }
+        pos += block.byteLength;
+        this.upload.set(key, { sent: pos - ch.bufferedAmount, total: file.size });
+        this.changed();
       }
-      pos += block.byteLength;
-      this.upload.set(key, { sent: pos - ch.bufferedAmount, total: file.size });
-      this.changed();
+      ch.send('eof');
+      // The director closes the channel after it has flushed the file to disk.
+      await until(() => ch.readyState === 'closed', 120_000, 'finishing').catch(() => {});
+    } finally {
+      if (ch.readyState !== 'closed') ch.close();
     }
-    ch.send('eof');
-    // The director closes the channel after it has flushed the file to disk.
-    await new Promise<void>((r) => {
-      if (ch.readyState === 'closed') r();
-      ch.onclose = () => r();
-    });
   }
 
   private async onAck(takeId: string, name: string) {

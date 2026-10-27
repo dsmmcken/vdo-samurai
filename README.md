@@ -23,7 +23,7 @@ Rules for the edit:
 - While someone's camera is off, their initials show instead of black video, live and in the final cut.
 - The end screen is a grid of every camera, with no names.
 - Each person's name and subtitle show as a lower third for 5 s the first time they're on stage.
-- Audio is the director plus whoever is on stage; on the end screen, everyone. Each person is loudness-normalized to −18 LUFS (ITU-R BS.1770, gain limited to ±12 dB) and the mix goes through a limiter; the measured levels are in the render's Recording details.
+- Audio is the director plus whoever is on stage; on the end screen, everyone. Each voice is polished in the render: 80 Hz high-pass (24 dB/oct), de-esser, slow leveler (±12 dB, holds in silence), gentle 3:1 compressor, then loudness-normalized to −16 LUFS (ITU-R BS.1770; gain capped so peaks only lightly touch the limiter). The mix goes through a 5 ms look-ahead limiter at −1.5 dBFS. Per-person numbers are in the render's Recording details. (`src/compositor/voice.ts`)
 
 ## Develop
 
