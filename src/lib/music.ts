@@ -45,16 +45,17 @@ export class WaitingMusic {
     this.ramp(this.muted ? 0 : LEVEL, FADE_IN_S);
   }
 
-  /** Fades out, then stops the loop. */
-  stop() {
+  /** Fades out (quickly when `fast`, e.g. recording is starting), then stops the loop. */
+  stop(fast = false) {
     if (!this.ctx || !this.source) return;
-    this.ramp(0, FADE_OUT_S);
+    const seconds = fast ? 0.25 : FADE_OUT_S;
+    this.ramp(0, seconds);
     if (this.stopTimer) clearTimeout(this.stopTimer);
     this.stopTimer = setTimeout(() => {
       this.source?.stop();
       this.source?.disconnect();
       this.source = null;
-    }, FADE_OUT_S * 1000 + 100);
+    }, seconds * 1000 + 100);
   }
 
   setMuted(muted: boolean) {
