@@ -462,6 +462,11 @@ button.chip:hover {
     opacity 0.25s,
     box-shadow 0.15s;
 }
+.pip.hidden {
+  /* Corner changes while hidden are instant (it reappears where you ask). */
+  transition: width 0.35s, height 0.35s;
+  pointer-events: none;
+}
 .pip.hidden .pip-face {
   transform: scale(0.4);
   opacity: 0;
@@ -585,7 +590,30 @@ html.resizing .pip-face {
   transform: translate(-50%, -50%) scale(0.7);
   transition: opacity 0.18s, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.pip.hidden:hover .pip-unhide,
+.pip-spot {
+  --m: 1.667cqw;
+  position: absolute;
+  width: var(--w);
+  height: var(--h);
+  z-index: 3;
+}
+.pip-spot.c-tl {
+  left: var(--m);
+  top: var(--m);
+}
+.pip-spot.c-tr {
+  left: calc(100cqw - var(--w) - var(--m));
+  top: var(--m);
+}
+.pip-spot.c-bl {
+  left: var(--m);
+  top: calc(56.25cqw - var(--h) - var(--m));
+}
+.pip-spot.c-br {
+  left: calc(100cqw - var(--w) - var(--m));
+  top: calc(56.25cqw - var(--h) - var(--m));
+}
+.pip-spot:hover .pip-unhide,
 .pip-unhide:focus-visible {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);

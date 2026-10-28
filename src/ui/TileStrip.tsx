@@ -82,7 +82,10 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         const p = me ? null : s.peers.get(id);
         const hasScreen = me ? !!s.screen : !!p?.presence?.hasScreen;
         const muted = me ? s.micMuted : !!p?.presence?.micMuted;
-        const active = st?.kind === 'peer' && st.id === id;
+        // The ring marks what's on stage: with their screen up and the camera
+        // overlay hidden, that's the screen (badge / screen tile), not the camera.
+        const onStage = st?.kind === 'peer' && st.id === id;
+        const active = onStage && !(st.view === 'screen' && hasScreen && s.pip.hidden);
         return (
           <Fragment key={id}>
           <div
@@ -112,7 +115,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
                 </span>
               )}
               {hasScreen && (
-                <span className={`badge ${active && st?.kind === 'peer' && st.view === 'screen' ? 'on' : ''}`} title="Screen share ready">
+                <span className={`badge ${onStage && st?.kind === 'peer' && st.view === 'screen' ? 'on' : ''}`} title="Screen share ready">
                   <Screen size={14} title="Screen share" />
                 </span>
               )}
@@ -152,7 +155,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
               </button>
             )}
           </div>
-          {me && s.screen && <ScreenTile stream={s.screen} onStage={active && st?.kind === 'peer' && st.view === 'screen'} onClick={() => room.setStage({ kind: 'peer', id: s.me, view: 'screen' })} />}
+          {me && s.screen && <ScreenTile stream={s.screen} onStage={onStage && st?.kind === 'peer' && st.view === 'screen'} onClick={() => room.setStage({ kind: 'peer', id: s.me, view: 'screen' })} />}
           </Fragment>
         );
       })}

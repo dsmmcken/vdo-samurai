@@ -102,6 +102,7 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
   // the overlay and its icons: a "safe cone" that covers the way across to
   // them from any side. Leaving it (with a short grace) closes the menu.
   const [menu, setMenu] = useState(false);
+  const settleUntil = useRef(0); // no hover menu while it glides after a drop
   const [scale, setScale] = useState(0); // stage px per 1080p px
   useEffect(() => {
     const frame = ref.current?.parentElement;
@@ -151,6 +152,9 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
   };
   const onUp = () => {
     if (!drag) return;
+    // It's about to glide to its corner, possibly under the pointer: that
+    // isn't a hover. The menu waits until it has come to rest.
+    settleUntil.current = performance.now() + 500;
     room.setCorner(drag.near);
     setDrag(null);
   };
@@ -170,9 +174,10 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
         ref={ref}
         className={`pip c-${s.corner} s-${shape} ${hidden ? 'hidden' : ''} ${drag ? 'dragging' : ''} ${canMove ? 'movable' : ''} ${menu && !drag && !hidden ? 'menu' : ''}`}
         style={drag ? { left: drag.x, top: drag.y } : undefined}
-        // Move as well as enter: after a drop the pointer is already over it.
-        onPointerEnter={() => canMove && !hidden && setMenu(true)}
-        onPointerMove={() => !menu && !drag && canMove && !hidden && setMenu(true)}
+        // Move as well as enter: after a drop the pointer may already be over it
+        // once it has settled.
+        onPointerEnter={() => canMove && !hidden && !drag && performance.now() > settleUntil.current && setMenu(true)}
+        onPointerMove={() => !menu && !drag && canMove && !hidden && performance.now() > settleUntil.current && setMenu(true)}
       >
         <div className="pip-face" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} title={canMove && !hidden ? 'Drag to another corner' : undefined}>
           {off ? <Avatar name={name} /> : <Video stream={stream} mirror={mirror} />}
@@ -203,12 +208,26 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
           </div>
         )}
 
-        {canMove && hidden && (
-          <button className="pip-unhide" onClick={() => room.setPip({ hidden: false })} aria-label="Show camera overlay" title="Show camera overlay">
-            <Eye size={18} />
-          </button>
-        )}
       </div>
+      {/* Hidden: every corner offers to bring it back there, in case you've
+          forgotten where it was. It moves while invisible, then grows in. */}
+      {canMove &&
+        hidden &&
+        CORNERS.map((c) => (
+          <div key={c} className={`pip-spot c-${c} s-${shape}`}>
+            <button
+              className="pip-unhide"
+              onClick={() => {
+                room.setCorner(c);
+                setTimeout(() => room.setPip({ hidden: false }), 30);
+              }}
+              aria-label={`Show camera overlay ${{ tl: 'top left', tr: 'top right', bl: 'bottom left', br: 'bottom right' }[c]}`}
+              title="Show camera overlay here"
+            >
+              <Eye size={18} />
+            </button>
+          </div>
+        ))}
     </>
   );
 }

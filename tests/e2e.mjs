@@ -309,6 +309,18 @@ try {
   await dir.getByRole('button', { name: 'Circle overlay' }).click();
   await sam.waitForSelector('.pip.s-circle', { timeout: 5000 });
   log('overlay is a circle for a guest too');
+  // Hide it, then bring it back via a different corner (top-right).
+  await sleep(1200);
+  const face2 = await dir.locator('.pip-face').boundingBox();
+  await dir.mouse.move(face2.x + face2.width / 2, face2.y + face2.height / 2);
+  await dir.getByRole('button', { name: 'Hide camera overlay' }).click();
+  await sam.waitForSelector('.pip.hidden', { timeout: 5000 });
+  await sleep(1500);
+  const spotTr = await dir.locator('.pip-spot.c-tr').boundingBox();
+  await dir.mouse.move(spotTr.x + spotTr.width / 2, spotTr.y + spotTr.height / 2);
+  await dir.getByRole('button', { name: 'Show camera overlay top right' }).click();
+  await sam.waitForSelector('.pip.c-tr:not(.hidden)', { timeout: 5000 });
+  log('overlay hidden, then shown again at top-right (synced)');
   await sleep(1500);
   await dir.screenshot({ path: 'test-results/stage-director.png' });
   await sam.screenshot({ path: 'test-results/stage-guest.png' });
@@ -488,13 +500,25 @@ async function checkOverlayAndCamOff(dir) {
   const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
   const px = (T, x, y) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', `crop=8:8:${x}:${y},scale=1:1`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'])];
   const isCam = ([r, g, b]) => Math.abs(r - 27) + Math.abs(g - 94) + Math.abs(b - 32) < 45; // the fake camera's #1b5e20
-  const moved = dm.stageLog.find((e) => e.corner === 'tl');
+  const moved = dm.stageLog.find((e) => e.corner === 'tr' && e.t > (dm.stageLog.find((x) => x.corner === 'tl')?.t ?? 0));
   const samEnd = dm.stageLog.find((e) => e.t > moved.t && !(e.stage.kind === 'peer' && e.stage.view === 'screen'));
   const T = (samEnd.t / 1000 - 0.8) - t0; // late in Sam's segment, after the glide
   // Overlay box centres in 1920x1080: top-left (32+78, 32+97), bottom-right (1920-32-78, 1080-32-97)
   // Circle at top-left: (40,40) is inside its bounding box but outside the circle.
-  log('overlay shape check:', isCam(px(T, 120, 120)) ? 'camera at circle centre' : 'NO camera at centre', '|', isCam(px(T, 36, 36)) ? 'camera in box corner (not a circle)' : 'screen in box corner (circle)');
-  log('overlay corner check:', isCam(px(T, 106, 125)) ? 'camera at top-left' : 'NOT at top-left', '|', isCam(px(T, 1806, 947)) ? 'still at bottom-right' : 'bottom-right is screen');
+  log('overlay shape check (top-right):', isCam(px(T, 1792, 120)) ? 'camera at circle centre' : 'NO camera at centre', '|', isCam(px(T, 1884, 36)) ? 'camera in box corner (not a circle)' : 'screen in box corner (circle)');
+  // Transitions, frame by frame (render geometry: circle 184 @32px inset; rect 156x195).
+  const dist = (c) => Math.abs(c[0] - 27) + Math.abs(c[1] - 94) + Math.abs(c[2] - 32); // 0 = camera colour
+  const circleEv = dm.stageLog.find((e) => e.pip?.shape === 'circle');
+  const hideEv = dm.stageLog.find((e) => e.pip?.hidden);
+  const showEv = dm.stageLog.find((e) => hideEv && e.t > hideEv.t && e.pip && !e.pip.hidden);
+  const at = (ev, dt) => ev.t / 1000 + dt - t0;
+  // Inside the rectangle, outside the circle: camera -> screen while it morphs.
+  log('shape morph at (40,186): ' + [0.02, 0.15, 0.3, 0.6].map((dt) => `+${dt}s ${dist(px(at(circleEv, dt), 40, 186))}`).join(', ') + '  (0 = camera, large = screen)');
+  // Circle centre while hiding: camera, then blended, then gone.
+  log('hide fade at circle centre: ' + [0.02, 0.15, 0.3, 0.6].map((dt) => `+${dt}s ${dist(px(at(hideEv, dt), 120, 120))}`).join(', '));
+  // Shown again at top-right: circle centre there is camera once it's grown in.
+  log('reappear at top-right centre (1796,124): ' + [0.02, 0.6].map((dt) => `+${dt}s ${dist(px(at(showEv, dt), 1792, 120))}`).join(', '));
+  log('overlay corner check:', isCam(px(T, 1792, 120)) ? 'camera at top-right' : 'NOT at top-right', '|', isCam(px(T, 1806, 947)) ? 'still at bottom-right' : 'bottom-right is screen');
   log('render report:\n  ' + (dm.reports.render ?? []).join('\n  '));
   const off = dm.camOff && Object.entries(dm.camOff).find(([, iv]) => iv.length);
   if (off) {
