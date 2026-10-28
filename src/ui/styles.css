@@ -1422,6 +1422,13 @@ pre,
   color: #fff;
   pointer-events: none;
 }
+.lt-preview.empty {
+  opacity: 0.55;
+}
+.lt-preview.empty strong {
+  font-style: italic;
+  font-weight: 600;
+}
 .lt-preview strong {
   font-size: 2.4cqw;
   font-weight: 700;

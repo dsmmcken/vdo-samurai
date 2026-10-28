@@ -135,7 +135,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
             )}
             <div className="tile-name">
               {nameOf(s, id)}
-              {me && <span className="you"> (you)</span>}
+              {me && s.profile.name && <span className="you"> (you)</span>}
               {p?.route === 'relay' && <span className="you"> · relayed</span>}
             </div>
             {me && (

@@ -124,14 +124,13 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
               </button>
             </div>
           )}
-          {/* Your lower third, at the same proportions as in the final 1080p video
-              (none without a name, as in the final cut). */}
-          {profile.name.trim() && (
-            <div className="lt-preview" aria-label="Lower third preview">
-              <strong>{profile.name.trim()}</strong>
-              {profile.subtitle.trim() && <span>{profile.subtitle.trim()}</span>}
-            </div>
-          )}
+          {/* Your lower third, at the same proportions as in the final 1080p video.
+              Empty, it shows a dimmed placeholder to invite a name (the final
+              cut has no lower third without one). */}
+          <div className={`lt-preview ${profile.name.trim() ? '' : 'empty'}`} aria-label="Lower third preview">
+            <strong>{profile.name.trim() || 'Your name'}</strong>
+            {profile.subtitle.trim() && <span>{profile.subtitle.trim()}</span>}
+          </div>
         </div>
         <label className="field">
           <span>Full name</span>
