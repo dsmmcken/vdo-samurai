@@ -60,21 +60,27 @@ export function audible(stage: Stage, peer: PeerId, director: PeerId) {
   return peer === director || stage.kind === 'end' || stage.id === peer;
 }
 
+/**
+ * End-screen rows: every row spans the full width and rows share the height,
+ * so odd counts don't leave holes (3 = one row of 3, 5 = 3 over 2, 7 = 4 over
+ * 3). Videos are cropped to fill their cells.
+ */
+export function endRows(n: number): number[] {
+  const table: Record<number, number[]> = { 1: [1], 2: [2], 3: [3], 4: [2, 2], 5: [3, 2], 6: [3, 3], 7: [4, 3], 8: [4, 4] };
+  if (table[n]) return table[n];
+  const perRow = Math.ceil(n / Math.ceil(n / 4)); // beyond 8: rows of up to 4, fullest first
+  const rows: number[] = [];
+  for (let left = n; left > 0; left -= perRow) rows.push(Math.min(perRow, left));
+  return rows;
+}
+
 export function gridFor(n: number, W: number, H: number, gap: number) {
-  const cols = Math.ceil(Math.sqrt(n));
-  const rows = Math.ceil(n / cols);
-  const cw = (W - gap * (cols + 1)) / cols;
-  const ch = Math.min((H - gap * (rows + 1)) / rows, (cw * 9) / 16);
-  const cwFit = Math.min(cw, (ch * 16) / 9);
-  const totalH = rows * ch + (rows - 1) * gap;
-  const top = (H - totalH) / 2;
+  const rows = endRows(n);
+  const rh = (H - gap * (rows.length + 1)) / rows.length;
   const cells: { x: number; y: number; w: number; h: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const r = Math.floor(i / cols);
-    const inRow = Math.min(cols, n - r * cols); // centre a short last row
-    const rowW = inRow * cwFit + (inRow - 1) * gap;
-    const c = i - r * cols;
-    cells.push({ x: (W - rowW) / 2 + c * (cwFit + gap), y: top + r * (ch + gap), w: cwFit, h: ch });
-  }
+  rows.forEach((count, r) => {
+    const cw = (W - gap * (count + 1)) / count;
+    for (let c = 0; c < count; c++) cells.push({ x: gap + c * (cw + gap), y: gap + r * (rh + gap), w: cw, h: rh });
+  });
   return cells;
 }

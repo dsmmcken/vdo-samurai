@@ -1,6 +1,7 @@
 import type { Room, Snapshot } from '../lib/room';
 import { Avatar } from './Avatar';
 import { Pip } from './Pip';
+import { endRows } from '../compositor/plan';
 import type { PeerId } from '../lib/types';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
@@ -19,14 +20,21 @@ export function Stage({ room, s, children }: { room: Room; s: Snapshot; children
   if (!st || (st.kind === 'peer' && !present(st.id))) {
     body = <div className="stage-empty">Click a tile to put it on the main stage.</div>;
   } else if (st.kind === 'end') {
-    const ids = s.tiles;
-    const cols = Math.ceil(Math.sqrt(ids.length));
-    const rows = Math.ceil(ids.length / cols);
+    // Same rows as the final cut (plan.ts endRows): each row fills the width.
+    // Only people whose camera is on (everyone, as initials, if nobody's is).
+    const on = s.tiles.filter((id) => !off(id));
+    const ids = on.length ? on : s.tiles;
+    const rows = endRows(ids.length);
+    let next = 0;
     body = (
-      <div className="end-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)` }}>
-        {ids.map((id) => (
-          <div key={id} className="end-cell">
-            {camView(id)}
+      <div className="end-grid">
+        {rows.map((count, r) => (
+          <div key={r} className="end-row">
+            {ids.slice(next, (next += count)).map((id) => (
+              <div key={id} className="end-cell">
+                {camView(id)}
+              </div>
+            ))}
           </div>
         ))}
       </div>

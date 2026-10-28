@@ -131,7 +131,7 @@ export class Room {
   constructor(
     me: PeerId,
     readonly roomName: string,
-    password: string,
+    readonly password: string,
     profile: Profile,
   ) {
     this.me = me;
@@ -142,8 +142,12 @@ export class Room {
 
   // ------------------------------------------------------------------ lifecycle
 
-  async start(cam: MediaStream) {
+  /** `cam` may arrive without a video track (camera turned off in the lobby). */
+  async start(cam: MediaStream, opts: { micMuted?: boolean; camOff?: boolean } = {}) {
     this.cam = cam;
+    this.micMuted = !!opts.micMuted;
+    this.camOff = !!opts.camOff || cam.getVideoTracks().length === 0;
+    cam.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
     this.refreshDevices();
     navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
     await this.restore();
@@ -155,9 +159,12 @@ export class Room {
 
   async leave() {
     this.timers.forEach(clearInterval);
-    await this.mesh.stop();
+    // Camera, mic and screen first: disconnecting from signaling can take a
+    // moment, and the camera light shouldn't wait for it.
     this.cam?.getTracks().forEach((t) => t.stop());
     this.screen?.getTracks().forEach((t) => t.stop());
+    for (const r of this.active?.recorders ?? []) if (r.recording) r.stop().catch(() => {});
+    await this.mesh.stop();
   }
 
   /** Picks up unfinished business from OPFS after a reload. */

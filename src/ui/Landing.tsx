@@ -34,7 +34,7 @@ export function Landing({ children }: { children: React.ReactNode }) {
           </div>
         </Popover>
       )}
-      <a className="landing-credit" href="https://github.com/steveseguin/ninjasdk" target="_blank" rel="noopener noreferrer">
+      <a className="landing-credit" href="https://sdk.vdo.ninja/" target="_blank" rel="noopener noreferrer">
         Built with VDO.Ninja SDK
       </a>
     </main>

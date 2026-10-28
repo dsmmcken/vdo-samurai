@@ -238,14 +238,17 @@ async function render(m: DirectorManifest) {
     ctx.fillRect(0, 0, W, H);
     const st = seg.stage;
     if (st.kind === 'end') {
-      const cells = gridFor(Math.max(1, camPeers.length), W, H, 32);
-      for (let i = 0; i < camPeers.length; i++) {
+      // Only people whose camera is on (initials for everyone if nobody's is).
+      const on = camPeers.filter((p) => !camOff(p, t));
+      const shown = on.length ? on : camPeers;
+      const cells = gridFor(Math.max(1, shown.length), W, H, 32);
+      for (let i = 0; i < shown.length; i++) {
         const c = cells[i];
-        const f = await frameAt(camPeers[i], 'cam', t);
+        const f = await frameAt(shown[i], 'cam', t);
         ctx.save();
         ctx.clip(roundRect(c.x, c.y, c.w, c.h, 24));
         if (f) drawCover(ctx, f, c.x, c.y, c.w, c.h);
-        else placeholder(ctx, c.x, c.y, c.w, c.h, m.profiles[camPeers[i]]);
+        else placeholder(ctx, c.x, c.y, c.w, c.h, m.profiles[shown[i]]);
         ctx.restore();
       }
     } else {

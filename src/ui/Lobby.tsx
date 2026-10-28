@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { claimIdentity, inviteLink, loadProfile, recallPassword, rememberJoined, rememberPassword, saveProfile, wasJoined } from '../lib/identity';
-import { openCamera } from '../lib/media';
+import { openCamera, openVideoTrack } from '../lib/media';
 import { Room } from '../lib/room';
 import { CopyButton } from './CopyButton';
 import { Video } from './Video';
 import { Petals } from './Petals';
 import { PasswordInput, SecretText } from './Secret';
 import { Landing } from './Landing';
+import { Avatar } from './Avatar';
+import { Cam, CamOff, Mic, MicOff } from './icons';
 
 export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw: string) => void }) {
   // Whoever created the room already has the password; invitees type it here.
@@ -19,6 +21,34 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
   const [joining, setJoining] = useState(false);
   const camRef = useRef<MediaStream | null>(null);
   const handedOff = useRef(false); // the camera now belongs to the room
+  // Join muted and/or with the camera off. Camera off releases the camera here
+  // too (light off); turning it back on reopens it.
+  const [micOff, setMicOff] = useState(false);
+  const [camOff, setCamOff] = useState(false);
+  const [videoKey, setVideoKey] = useState(0);
+  const toggleMic = () => {
+    const next = !micOff;
+    cam?.getAudioTracks().forEach((t) => (t.enabled = !next));
+    setMicOff(next);
+  };
+  const toggleCam = async () => {
+    if (!cam) return;
+    if (!camOff) {
+      for (const t of cam.getVideoTracks()) {
+        cam.removeTrack(t);
+        t.stop();
+      }
+      setCamOff(true);
+    } else {
+      try {
+        cam.addTrack(await openVideoTrack());
+        setVideoKey((k) => k + 1); // new <video> for the new track
+        setCamOff(false);
+      } catch (e) {
+        setError(`Couldn't turn the camera on: ${(e as Error).message}`);
+      }
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +77,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
     const id = await claimIdentity(room);
     const r = new Room(id, room, pw, p);
     handedOff.current = true;
-    r.start(cam);
+    r.start(cam, { micMuted: micOff, camOff });
     (window as any).samurai = r; // handy from the devtools console
     onJoined(r, pw);
   };
@@ -64,7 +94,25 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
       <form className="home-card lobby" onSubmit={join}>
         <h1 className="room-title">{room}</h1>
         <div className="preview">
-          {cam ? <Video stream={cam} mirror /> : <div className="preview-empty">{error ?? 'Starting camera…'}</div>}
+          {cam ? (
+            camOff ? (
+              <Avatar name={profile.name.trim() || '?'} />
+            ) : (
+              <Video key={videoKey} stream={cam} mirror />
+            )
+          ) : (
+            <div className="preview-empty">{error ?? 'Starting camera…'}</div>
+          )}
+          {cam && (
+            <div className="preview-controls">
+              <button type="button" className={`glass round ${micOff ? 'off' : ''}`} onClick={toggleMic} aria-label={micOff ? 'Unmute' : 'Mute'} title={micOff ? 'Join muted (click to unmute)' : 'Mute'}>
+                {micOff ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
+              <button type="button" className={`glass round ${camOff ? 'off' : ''}`} onClick={toggleCam} aria-label={camOff ? 'Turn camera on' : 'Turn camera off'} title={camOff ? 'Join with camera off (click to turn on)' : 'Turn camera off'}>
+                {camOff ? <CamOff size={18} /> : <Cam size={18} />}
+              </button>
+            </div>
+          )}
           {/* Your lower third, at the same proportions as in the final 1080p video. */}
           <div className="lt-preview" aria-label="Lower third preview">
             <strong>{profile.name.trim() || 'Your name'}</strong>

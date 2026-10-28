@@ -82,7 +82,7 @@ input {
   opacity: 0.45;
   cursor: default;
 }
-/* Obsidian glass; cherry blossom petals drift down inside on hover. */
+/* Obsidian glass; cherry blossom petals drift down inside on hover (no glow). */
 .btn.primary {
   position: relative;
   overflow: hidden;
@@ -100,14 +100,9 @@ input {
 }
 .btn.primary:hover:not(:disabled) {
   background:
-    radial-gradient(120% 160% at 25% -20%, rgba(255, 255, 255, 0.14), transparent 50%),
-    linear-gradient(165deg, #23202a 0%, #0d0c11 55%, #1a1720 100%);
-  border-color: rgba(255, 183, 197, 0.4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -12px 22px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 183, 197, 0.12),
-    0 8px 30px rgba(255, 183, 197, 0.16);
+    radial-gradient(120% 160% at 25% -20%, rgba(255, 255, 255, 0.16), transparent 50%),
+    linear-gradient(165deg, #25222c 0%, #0e0d12 55%, #1b1921 100%);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 .btn.primary:active:not(:disabled) {
   transform: translateY(1px);
@@ -551,13 +546,21 @@ button.chip:hover {
 .end-grid {
   position: absolute;
   inset: 0;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   padding: 10px;
 }
+.end-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+}
 .end-cell {
   position: relative;
-  min-height: 0;
+  flex: 1;
+  min-width: 0;
   border-radius: 10px;
   overflow: hidden;
   background: var(--raised);
@@ -1403,4 +1406,18 @@ pre,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Mic / camera toggles over the lobby preview */
+.preview-controls {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  gap: 8px;
+  z-index: 2;
+}
+.preview-controls .round {
+  width: 38px;
+  height: 38px;
 }

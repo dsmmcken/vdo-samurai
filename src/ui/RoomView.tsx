@@ -33,7 +33,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
     <div className="room">
       <Stage room={room} s={s}>
         <RecIndicator s={s} />
-        {!s.director && !s.take && <div className="glass hint">No Shōgun (director) yet. Claim it on your tile.</div>}
+        {!s.director && !s.take && <div className="glass hint">One person must be Shōgun (director) to record. Claim it on your tile.</div>}
 
         <div className="tray">
           <button className={`glass round ${s.micMuted ? 'off' : ''}`} onClick={() => room.toggleMic()} title={s.micMuted ? 'Unmute' : 'Mute'} aria-label={s.micMuted ? 'Unmute' : 'Mute'}>
@@ -145,6 +145,7 @@ function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; 
         </span>
       </div>
       <CopyItem text={inviteLink(room.roomName)} label="Copy invite link" close={close} />
+      {room.password && <CopyItem text={room.password} label="Copy password" close={close} />}
       <button onClick={onEdit}>
         <Pencil size={16} /> Edit your name
       </button>

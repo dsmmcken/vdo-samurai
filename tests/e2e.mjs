@@ -321,7 +321,11 @@ try {
   log('camera submenu lists:', JSON.stringify(devs));
   await dir.locator('.submenu [role=menuitemradio]').first().click();
   await sleep(500);
+  // Cam Only goes camera-off for the end screen: it should show only the other two.
+  await cam.getByRole('button', { name: 'Turn camera off' }).click();
   await dir.locator('.tile.end-tile').click();
+  await dir.waitForFunction(() => document.querySelectorAll('.end-cell').length === 2, null, { timeout: 5000 });
+  log('live end screen leaves out the camera-off person: 2 cells');
   await sleep(3000);
   await dir.getByRole('button', { name: 'Stop', exact: true }).click();
   log('stopped');
@@ -392,6 +396,7 @@ try {
   await checkBackButton(browsers[2]);
   // Leave from the ⋯ menu goes back to the home screen.
   await cam.getByRole('button', { name: 'More' }).click();
+  log('menu has Copy password:', (await cam.getByRole('button', { name: 'Copy password' }).count()) === 1);
   await cam.screenshot({ path: 'test-results/menu.png' });
   await cam.getByRole('button', { name: 'Leave room' }).click();
   await cam.waitForSelector('text=Create room');
@@ -488,6 +493,10 @@ async function checkOverlayAndCamOff(dir) {
     const c = px(Tc, 950, 530);
     log(`camera-off check (${dm.profiles[peer]?.name}): rgb(${c.join(',')}) ->`, isCam(c) ? 'camera still showing' : 'placeholder shown');
   } else log('camera-off check: no camera-off stretch recorded');
+  // End screen with one camera off: two cells, so the middle of the frame is the gap between them.
+  const dur = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', 'test-results/final.mp4']).toString());
+  const mid = px(dur - 0.5, 956, 536);
+  log(`end screen centre pixel rgb(${mid.join(',')}) ->`, isCam(mid) ? 'a camera (3 cells?)' : 'gap between 2 cells');
 }
 
 /** Browser Back from the lobby, and from a live call, must release camera and mic. */
