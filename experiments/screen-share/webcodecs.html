@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Screen share via WebCodecs</title>
+<body style="background:#222;color:#ddd;font:13px monospace">
+<pre id="out">running…</pre>
+<script type="module">
+// Encode-once screen sharing with WebCodecs AV1 in constant-quality mode
+// (bitrateMode 'quantizer', a quantizer chosen per frame), with a "settle"
+// pass: once the picture stops changing, the same frame is encoded again at
+// a much finer quantizer, and the still frames after it are near-empty skips
+// that keep the sharp version on screen.
+//
+// Timeline at 8 fps: 4 s still, 6 s scrolling, 6 s still. Reports bytes per
+// phase and the decoded text quality (luma PSNR of a code crop).
+import { src, g, draw } from './screen.js';
+
+const W = 1920, H = 1080, FPS = 8;
+const out = document.getElementById('out');
+const log = (s) => { out.textContent += '\n' + s; console.log(s); };
+
+const caps = {};
+for (const [name, cfg] of Object.entries({
+  av1: { codec: 'av01.0.08M.08', width: W, height: H },
+  'av1 quantizer': { codec: 'av01.0.08M.08', width: W, height: H, bitrateMode: 'quantizer', latencyMode: 'realtime' },
+  'av1 contentHint text': { codec: 'av01.0.08M.08', width: W, height: H, bitrateMode: 'quantizer', latencyMode: 'realtime', contentHint: 'text' },
+  'av1 444 (profile 1)': { codec: 'av01.1.08M.08', width: W, height: H },
+  vp9: { codec: 'vp09.00.40.08', width: W, height: H, bitrateMode: 'quantizer' },
+})) {
+  const r = await VideoEncoder.isConfigSupported(cfg).catch((e) => ({ supported: false, e: String(e) }));
+  caps[name] = r.supported + (r.config && 'contentHint' in cfg ? ` (contentHint kept: ${r.config.contentHint ?? 'no'})` : '');
+}
+caps['decode av1'] = (await VideoDecoder.isConfigSupported({ codec: 'av01.0.08M.08' })).supported;
+log('support: ' + JSON.stringify(caps));
+
+const cmp = new OffscreenCanvas(W, H);
+const cg = cmp.getContext('2d', { willReadFrequently: true });
+const CROP = [320, 300, 900, 400];
+function luma(ctx) {
+  const d = ctx.getImageData(...CROP).data, l = new Float32Array(d.length / 4);
+  for (let i = 0; i < l.length; i++) l[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  return l;
+}
+const psnr = (a, b) => {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
+  return 10 * Math.log10(255 ** 2 / Math.max(1e-9, s / a.length));
+};
+
+// A 2x close-up of some code, as a PNG data URL, for looking at by eye.
+async function crop(from) {
+  const c = new OffscreenCanvas(500, 220);
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(from, 300, 300, 250, 110, 0, 0, 500, 220);
+  const b = await c.convertToBlob();
+  return await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+}
+
+async function run({ name, moving, settled, hint, settleAfter = 2, keyEvery = 0, settleKey = false }) {
+  let decoded = null, outN = 0;
+  const dec = new VideoDecoder({ output: (f) => { decoded?.close(); decoded = f; outN++; }, error: (e) => log('dec ' + e) });
+  dec.configure({ codec: 'av01.0.08M.08', optimizeForLatency: true }); // otherwise it holds ~3 frames back
+  const chunks = [];
+  const enc = new VideoEncoder({
+    output: (c) => { chunks.push(c.byteLength); dec.decode(c); },
+    error: (e) => log('enc ' + e),
+  });
+  enc.configure({ codec: 'av01.0.08M.08', width: W, height: H, bitrateMode: 'quantizer', latencyMode: 'realtime', ...(hint ? { contentHint: hint } : {}) });
+
+  const phases = [['still', 4], ['scroll', 6], ['still again', 6]];
+  const res = { name };
+  let scroll = 0, n = 0, quiet = 0, refined = false, encMs = 0, lastSig = '';
+  for (const [phase, secs] of phases) {
+    const start = chunks.length;
+    const q = [];
+    for (let i = 0; i < secs * FPS; i++) {
+      if (phase === 'scroll') scroll += 36; // ~290 px/s, whole pixels like a real scroll
+      draw(scroll);
+      const frame = new VideoFrame(src, { timestamp: (n * 1e6) / FPS });
+      // Stillness: our own drawing tells us here; the app would compare small thumbnails.
+      const sig = String(scroll);
+      quiet = sig === lastSig ? quiet + 1 : 0;
+      lastSig = sig;
+      let quantizer = refined ? settled : moving, settleNow = false;
+      if (quiet === 0) refined = false, (quantizer = moving);
+      if (quiet >= settleAfter && !refined && settled != null) {
+        quantizer = settled;
+        refined = settleNow = true;
+      }
+      const t = performance.now();
+      enc.encode(frame, { keyFrame: n === 0 || (keyEvery && n % keyEvery === 0) || (settleKey && settleNow), av1: { quantizer } });
+      frame.close();
+      await enc.flush();
+      // (Flushing a decoder makes it demand a key frame next, so just wait for the picture.)
+      const t1 = performance.now();
+      while (outN < chunks.length && performance.now() - t1 < 1000) await new Promise((r) => setTimeout(r, 1));
+      if (outN < chunks.length) res.lagging = chunks.length - outN;
+      encMs += performance.now() - t;
+      n++;
+      if (decoded && (i === secs * FPS - 1 || (phase === 'still again' && (i === 3 || i === 15)))) {
+        cg.drawImage(decoded, 0, 0);
+        q.push(+psnr(luma(g), luma(cg)).toFixed(1));
+        if (phase === 'still again' && i === secs * FPS - 1) (res.crop = await crop(cmp)), (res.sourceCrop = await crop(src));
+      }
+    }
+    const bytes = chunks.slice(start).reduce((a, b) => a + b, 0);
+    res[phase] = `${Math.round((bytes * 8) / secs / 1000)} kbps, text ${q.join(' → ')} dB`;
+  }
+  res.maxFrameKB = Math.round(Math.max(...chunks.slice(1)) / 1024);
+  res.keyKB = Math.round(chunks[0] / 1024);
+  res.encMsPerFrame = +(encMs / n).toFixed(1);
+  enc.close(); dec.close(); decoded?.close();
+  return res;
+}
+
+const rows = [];
+for (const c of [
+  { name: 'q40 no hint', moving: 40 },
+  { name: 'q40 detail', moving: 40, hint: 'detail' },
+  { name: 'q40 text', moving: 40, hint: 'text' },
+  { name: 'q30 text', moving: 30, hint: 'text' },
+  { name: 'q20 text', moving: 20, hint: 'text' },
+  { name: 'q40 text, settle q10', moving: 40, settled: 10, hint: 'text' },
+  { name: 'q40 text, settle q4', moving: 40, settled: 4, hint: 'text' },
+  { name: 'q50 text, settle q10', moving: 50, settled: 10, hint: 'text' },
+  { name: 'q40 text, settle q10, key 4 s', moving: 40, settled: 10, hint: 'text', keyEvery: 32 },
+  { name: 'q40 text, settle key q10', moving: 40, settled: 10, hint: 'text', settleKey: true },
+  { name: 'q40 text, settle key q20', moving: 40, settled: 20, hint: 'text', settleKey: true },
+  { name: 'q50 text, settle key q10', moving: 50, settled: 10, hint: 'text', settleKey: true },
+].filter((c) => !location.search.includes('only=') || c.name.includes(new URLSearchParams(location.search).get('only')))) {
+  log('… ' + c.name);
+  rows.push(await run(c));
+  log(JSON.stringify(rows.at(-1)));
+}
+window.result = { caps, rows };
+</script>
+</body>

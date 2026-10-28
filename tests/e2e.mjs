@@ -291,6 +291,16 @@ try {
   await dir.locator('.tile', { hasText: 'Sam Screen' }).click(); // Sam's screen
   await sam.waitForFunction(() => !!document.querySelector('.stage .pip'), null, { timeout: 10000 });
   log('Sam screen on stage everywhere');
+  // Sam's screen is encoded once and sent to both viewers over data channels,
+  // at full size, with no WebRTC screen track.
+  for (const p of [dir, cam]) await p.waitForFunction(() => [...window.samurai.views.values()].some((v) => v.frames >= 5), null, { timeout: 10000 });
+  const shown = await dir.evaluate(() => {
+    const v = document.querySelector('.stage-video');
+    return { w: v.videoWidth, h: v.videoHeight, frames: [...window.samurai.views.values()].map((x) => x.frames) };
+  });
+  const cast = await sam.evaluate(() => ({ kb: Math.round((window.samurai.caster?.sent ?? 0) / 1024), tracks: [...window.samurai.mesh.links.values()].map((l) => l.pc.getSenders().filter((s) => s.track?.kind === 'video').length) }));
+  log('screen arrives encoded once:', JSON.stringify(shown), 'Sam sent', cast.kb, 'KB per viewer; video senders per link', JSON.stringify(cast.tracks));
+  if (shown.w !== 1920 || shown.h !== 1080) throw new Error(`screen on stage is ${shown.w}x${shown.h}, expected 1920x1080`);
   await sleep(1500);
   // The director drags the camera overlay to the top-left corner.
   const pip = await dir.locator('.pip').boundingBox();

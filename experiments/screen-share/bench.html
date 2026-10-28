@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Screen share bench</title>
+<body style="background:#222;color:#ddd;font:13px monospace">
+<pre id="out">running…</pre>
+<script type="module">
+// Loops a synthetic 1080p "screen" (an editor full of small text) through a
+// local WebRTC connection under different codec / size / bitrate settings and
+// measures what a viewer would get: bits sent, encode cost, and how close the
+// received picture is to the original (luma PSNR, whole frame and a text crop).
+//
+// Timeline per condition: 8 s static (quality converges), 6 s scrolling,
+// then static again, sampled 0.5 s / 2 s / 6 s after the scroll stops.
+// ?only=AV1 runs just the conditions whose name contains that text.
+
+const W = 1920, H = 1080;
+const out = document.getElementById('out');
+const log = (s) => (out.textContent += '\n' + s);
+
+import { src, g, draw } from './screen.js';
+
+// ---- measuring ----------------------------------------------------------
+const cmp = new OffscreenCanvas(W, H);
+const cg = cmp.getContext('2d', { willReadFrequently: true });
+function luma(ctx, x, y, w, h) {
+  const d = ctx.getImageData(x, y, w, h).data, l = new Float32Array(w * h);
+  for (let i = 0; i < l.length; i++) l[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  return l;
+}
+const psnr = (a, b) => {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
+  return 10 * Math.log10(255 ** 2 / Math.max(1e-9, s / a.length));
+};
+const CROP = [320, 300, 900, 400]; // code text
+function quality(video) {
+  // Viewer shows it full size (1080p stage); the browser upscales a smaller stream.
+  cg.drawImage(video, 0, 0, W, H);
+  const a = luma(g, 0, 0, W, H), b = luma(cg, 0, 0, W, H);
+  return { all: psnr(a, b), text: psnr(luma(g, ...CROP), luma(cg, ...CROP)) };
+}
+async function sendStats(pc) {
+  const r = await pc.getStats();
+  for (const s of r.values()) if (s.type === 'outbound-rtp' && s.kind === 'video') return { ...s, codec: r.get(s.codecId)?.mimeType };
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const frame = () => new Promise((r) => requestAnimationFrame(r));
+
+async function run(c) {
+  draw(0);
+  const stream = src.captureStream(30);
+  const track = stream.getVideoTracks()[0];
+  track.contentHint = c.hint ?? 'detail';
+  const a = new RTCPeerConnection(), b = new RTCPeerConnection();
+  a.onicecandidate = (e) => e.candidate && b.addIceCandidate(e.candidate);
+  b.onicecandidate = (e) => e.candidate && a.addIceCandidate(e.candidate);
+  const tr = a.addTransceiver(track, {
+    direction: 'sendonly',
+    sendEncodings: [{ scaleResolutionDownBy: H / c.height, maxBitrate: c.kbps * 1000, maxFramerate: c.fps, ...(c.mode ? { scalabilityMode: c.mode } : {}) }],
+  });
+  const codecs = RTCRtpSender.getCapabilities('video').codecs;
+  tr.setCodecPreferences([...codecs.filter((x) => x.mimeType === 'video/' + c.codec), ...codecs.filter((x) => x.mimeType !== 'video/' + c.codec)]);
+  if (c.degrade) {
+    const p = tr.sender.getParameters();
+    p.degradationPreference = c.degrade;
+    await tr.sender.setParameters(p).catch(() => {});
+  }
+  const video = document.createElement('video');
+  video.muted = true;
+  b.ontrack = (e) => { video.srcObject = new MediaStream([e.track]); video.play(); };
+  await a.setLocalDescription(); await b.setRemoteDescription(a.localDescription);
+  await b.setLocalDescription(); await a.setRemoteDescription(b.localDescription);
+
+  // Static: something real-screen-capture-like, a refresh frame every 200 ms.
+  let scroll = 0;
+  const tick = setInterval(() => draw(scroll), 200);
+  await wait(8000);
+  const s0 = await sendStats(a);
+  const staticQ = quality(video);
+  // A brisk scroll (about 300 px/s), redrawn at up to 30 fps.
+  clearInterval(tick);
+  const end = performance.now() + 6000;
+  while (performance.now() < end) { scroll += 10; draw(scroll); await frame(); await wait(23); }
+  const s1 = await sendStats(a);
+  const tick2 = setInterval(() => draw(scroll), 200);
+  const after = {};
+  for (const [ms, label] of [[500, 'q0.5'], [1500, 'q2'], [4000, 'q6']]) { await wait(ms); after[label] = quality(video); }
+  const s2 = await sendStats(a);
+  clearInterval(tick2);
+  const kbps = (x, y, secs) => Math.round(((y.bytesSent - x.bytesSent) * 8) / secs / 1000);
+  const res = {
+    name: c.name,
+    codec: s2.codec,
+    impl: s2.encoderImplementation,
+    size: `${s2.frameWidth}x${s2.frameHeight}`,
+    staticKbps: Math.round((s0.bytesSent * 8) / 8 / 1000),
+    scrollKbps: kbps(s0, s1, 6),
+    scrollFps: Math.round((s1.framesEncoded - s0.framesEncoded) / 6),
+    encMs: +((s2.totalEncodeTime / s2.framesEncoded) * 1000).toFixed(1),
+    qp: Math.round(s2.qpSum / s2.framesEncoded),
+    staticText: +staticQ.text.toFixed(1),
+    afterText: [after['q0.5'].text, after.q2.text, after.q6.text].map((x) => +x.toFixed(1)),
+    limit: s1.qualityLimitationReason,
+  };
+  a.close(); b.close(); track.stop();
+  return res;
+}
+
+const C = (codec, height, kbps, fps, extra = {}) => ({ name: `${codec} ${height}p ${kbps}k ${fps}fps${extra.tag ? ' ' + extra.tag : ''}`, codec, height, kbps, fps, ...extra });
+const conditions = [
+  C('VP8', 720, 900, 8, { tag: '(today)' }),
+  C('VP8', 1080, 900, 8),
+  C('VP9', 720, 900, 8),
+  C('VP9', 1080, 900, 8),
+  C('AV1', 720, 900, 8),
+  C('AV1', 1080, 900, 8),
+  C('AV1', 1080, 600, 8),
+  C('AV1', 1080, 1500, 15),
+  C('VP9', 1080, 1500, 15),
+  C('H264', 1080, 900, 8),
+  C('AV1', 1080, 900, 8, { tag: 'text-hint', hint: 'text' }),
+  C('AV1', 1080, 900, 8, { tag: 'L1T3', mode: 'L1T3' }),
+];
+// Ceiling for a 720p stream: just the downscale and the viewer's upscale, no codec.
+{
+  draw(0);
+  const small = new OffscreenCanvas(1280, 720);
+  small.getContext('2d').drawImage(src, 0, 0, 1280, 720);
+  const q = quality(small);
+  log(`720p ceiling (scaling only, no codec): text ${q.text.toFixed(1)} dB, whole frame ${q.all.toFixed(1)} dB`);
+}
+const only = new URLSearchParams(location.search).get('only');
+const results = [];
+for (const c of conditions.filter((c) => !only || c.name.includes(only))) {
+  log(`… ${c.name}`);
+  const r = await run(c);
+  results.push(r);
+  log(JSON.stringify(r));
+}
+window.result = results;
+</script>
+</body>

@@ -13,6 +13,7 @@ import { saveProfile } from './identity';
 import type { Link } from './link';
 import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVideoTrack, screenEncoding, setDevicePref, type CamRole, type DeviceKind } from './media';
 import { FaceWatch } from './face/watch';
+import { castSupport, ScreenCaster, ScreenView } from './screencast';
 import type { Head } from './framing';
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, testHook, type Recorder } from './recorder';
 import * as fs from './opfs';
@@ -104,6 +105,11 @@ export class Room {
   private mesh: Mesh;
   private cam: MediaStream | null = null;
   private screen: MediaStream | null = null;
+  /** Our screen, encoded once for every viewer that can take it (screencast.ts). */
+  private caster: ScreenCaster | null = null;
+  /** Other people's screens arriving that way. */
+  private views = new Map<PeerId, ScreenView>();
+  private cast = { send: false, receive: false };
   private micMuted = false;
   private camOff = false;
   private head: Head | null = null;
@@ -168,6 +174,10 @@ export class Room {
     cam.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
     this.watchFace();
     this.refreshDevices();
+    castSupport().then((c) => {
+      this.cast = c;
+      this.announce();
+    });
     navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
     await this.restore();
     this.timers.push(setInterval(() => this.pingAll(), 5000));
@@ -184,6 +194,8 @@ export class Room {
     // moment, and the camera light shouldn't wait for it.
     this.cam?.getTracks().forEach((t) => t.stop());
     this.screen?.getTracks().forEach((t) => t.stop());
+    this.caster?.stop();
+    this.views.forEach((v) => v.close());
     for (const r of this.active?.recorders ?? []) if (r.recording) r.stop().catch(() => {});
     await this.mesh.stop();
   }
@@ -256,9 +268,14 @@ export class Room {
         id: link.peer,
         presence: p,
         cam: (p?.camStreamId && link.remoteStreams.get(p.camStreamId)) || null,
-        screen: (p?.hasScreen && p.screenStreamId && link.remoteStreams.get(p.screenStreamId)) || null,
+        screen: !p?.hasScreen ? null : this.viaCast(link.peer) ? this.viewFor(link.peer).stream : (p.screenStreamId && link.remoteStreams.get(p.screenStreamId)) || null,
         route: link.route,
       });
+    }
+    for (const [id, v] of this.views) {
+      if (peers.get(id)?.screen === v.stream) continue;
+      v.close();
+      this.views.delete(id);
     }
     const take = this.shared.take.v;
     const dir = take ? this.dirOffset(take) : null;
@@ -366,6 +383,7 @@ export class Room {
     link.on('message', (m) => this.onMessage(peer, link, m));
     link.on('stream', () => this.changed());
     link.on('fileChannel', (ch) => this.receiveFile(peer, ch));
+    link.on('screenData', (buf) => this.viaCast(peer) && this.viewFor(peer).receive(buf));
     link.on('state', () => {
       if (link.open && !greeted) {
         greeted = true;
@@ -376,6 +394,7 @@ export class Room {
         // The director (re)appeared: resume any uploads we owe them.
         for (const m of this.mine.values()) if (m.take.director === peer) this.offerFiles(m.take.id);
       }
+      this.updateCast();
       this.changed();
     });
     link.pc.addEventListener('signalingstatechange', () => link.pc.signalingState === 'stable' && this.applyEncodings(link));
@@ -391,6 +410,8 @@ export class Room {
       head: this.head,
       camStreamId: this.cam?.id ?? null,
       screenStreamId: this.screen?.id ?? null,
+      castRx: this.cast.receive,
+      screenCast: !!this.caster,
     };
   }
 
@@ -401,10 +422,20 @@ export class Room {
 
   private onMessage(peer: PeerId, link: Link, m: any) {
     switch (m.t) {
-      case 'hello':
+      case 'hello': {
+        const castRx = !!this.presences.get(peer)?.castRx;
         this.presences.set(peer, m.presence);
+        // They can (or no longer can) take our screen encoded-once: switch how it's sent.
+        if (this.screen && castRx !== !!m.presence.castRx) {
+          this.pushTracks(link);
+          this.applyEncodings(link);
+        }
         if (this.dm && this.active) this.dm.profiles[peer] = m.presence.profile;
         this.changed();
+        break;
+      }
+      case 'scr-key':
+        this.caster?.requestKey(peer);
         break;
       case 'state':
         for (const key of Object.keys(m.shared) as SharedKey[]) this.merge(key, m.shared[key], peer);
@@ -495,7 +526,7 @@ export class Room {
       tracks.push({ role: 'cam', track: cam, stream: this.cam, enc: cam ? camEncoding(cam, this.camRole()) : {} });
     }
     const screen = this.screen?.getVideoTracks()[0];
-    if (screen && this.screen) tracks.push({ role: 'screen', track: screen, stream: this.screen, enc: screenEncoding(screen, this.screenOnStage()) });
+    if (screen && this.screen && !this.castsTo(link.peer)) tracks.push({ role: 'screen', track: screen, stream: this.screen, enc: screenEncoding(screen, this.screenOnStage()) });
     link.setTracks(tracks);
   }
 
@@ -531,6 +562,34 @@ export class Room {
       for (const t of this.cam?.getVideoTracks() ?? []) link.setEncoding('cam', camEncoding(t, role));
       for (const t of this.screen?.getVideoTracks() ?? []) link.setEncoding('screen', screenEncoding(t, onStage));
     }
+    this.updateCast();
+  }
+
+  /** Our screen goes encoded-once to this peer (else as a WebRTC track). */
+  private castsTo(peer: PeerId) {
+    return !!this.caster && !!this.presences.get(peer)?.castRx;
+  }
+
+  /** This peer's screen reaches us encoded-once. */
+  private viaCast(peer: PeerId) {
+    return this.cast.receive && !!this.presences.get(peer)?.screenCast;
+  }
+
+  private viewFor(peer: PeerId) {
+    let v = this.views.get(peer);
+    if (!v) {
+      v = new ScreenView(() => this.mesh.links.get(peer)?.send({ t: 'scr-key' }));
+      this.views.set(peer, v);
+    }
+    return v;
+  }
+
+  /** Who gets our encoded screen, and whether it's worth encoding (only while it's on stage). */
+  private updateCast() {
+    if (!this.caster) return;
+    const channels = new Map<string, RTCDataChannel>();
+    for (const l of this.mesh.openLinks()) if (this.castsTo(l.peer)) channels.set(l.peer, l.scr);
+    this.caster.update(channels, this.screenOnStage());
   }
 
   async toggleScreen() {
@@ -541,8 +600,16 @@ export class Room {
     try {
       const s = await openScreen();
       this.screen = s;
-      s.getVideoTracks()[0]?.addEventListener('ended', () => this.screen === s && this.stopScreen());
-      for (const l of this.mesh.links.values()) this.pushTracks(l);
+      const track = s.getVideoTracks()[0];
+      track?.addEventListener('ended', () => this.screen === s && this.stopScreen());
+      if (track && (await castSupport()).send && this.screen === s) {
+        try {
+          this.caster = new ScreenCaster(track);
+        } catch (e) {
+          console.warn('[screencast] unavailable, sending the screen as a track', e);
+        }
+      }
+      this.pushAll();
       this.announce();
       if (this.active?.began) this.startRecorder('screen');
       // Sharing while you're on stage puts the screen up.
@@ -558,6 +625,8 @@ export class Room {
     if (!s) return;
     this.screen = null;
     s.getTracks().forEach((t) => t.stop());
+    this.caster?.stop();
+    this.caster = null;
     for (const r of this.active?.recorders ?? []) if (r.kind === 'screen' && r.recording) this.finishRecorder(r);
     for (const l of this.mesh.links.values()) this.pushTracks(l);
     this.applyEncodings();

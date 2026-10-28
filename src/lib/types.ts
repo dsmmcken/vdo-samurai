@@ -17,6 +17,10 @@ export interface Presence {
   head?: Head | null;
   camStreamId: string | null;
   screenStreamId: string | null;
+  /** This browser can show a screen sent encoded-once over a data channel (screencast.ts). */
+  castRx?: boolean;
+  /** Our screen goes to peers with castRx that way, not as a WebRTC track. */
+  screenCast?: boolean;
 }
 
 /** What the main stage shows. A peer's screen falls back to their camera when they aren't sharing. */

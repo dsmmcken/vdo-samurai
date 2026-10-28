@@ -1,0 +1,98 @@
+[
+ {
+  "setting": "VP8 720p (today)",
+  "viewers": 1,
+  "codecs": "video/VP8",
+  "width": 1280,
+  "still % core": 6,
+  "scroll % core": 11
+ },
+ {
+  "setting": "VP8 720p (today)",
+  "viewers": 2,
+  "codecs": "video/VP8",
+  "width": 1280,
+  "still % core": 10,
+  "scroll % core": 20
+ },
+ {
+  "setting": "VP8 720p (today)",
+  "viewers": 4,
+  "codecs": "video/VP8",
+  "width": 1280,
+  "still % core": 24,
+  "scroll % core": 44
+ },
+ {
+  "setting": "VP8 720p (today)",
+  "viewers": 6,
+  "codecs": "video/VP8",
+  "width": 1280,
+  "still % core": 38,
+  "scroll % core": 67
+ },
+ {
+  "setting": "AV1 1080p 8fps",
+  "viewers": 1,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 7,
+  "scroll % core": 17
+ },
+ {
+  "setting": "AV1 1080p 8fps",
+  "viewers": 2,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 16,
+  "scroll % core": 39
+ },
+ {
+  "setting": "AV1 1080p 8fps",
+  "viewers": 4,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 44,
+  "scroll % core": 103
+ },
+ {
+  "setting": "AV1 1080p 8fps",
+  "viewers": 6,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 76,
+  "scroll % core": 160
+ },
+ {
+  "setting": "AV1 1080p 15fps",
+  "viewers": 1,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 8,
+  "scroll % core": 29
+ },
+ {
+  "setting": "AV1 1080p 15fps",
+  "viewers": 2,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 16,
+  "scroll % core": 69
+ },
+ {
+  "setting": "AV1 1080p 15fps",
+  "viewers": 4,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 44,
+  "scroll % core": 184
+ },
+ {
+  "setting": "AV1 1080p 15fps",
+  "viewers": 6,
+  "codecs": "video/AV1",
+  "width": 1920,
+  "still % core": 77,
+  "scroll % core": 308
+ }
+]

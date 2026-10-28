@@ -87,9 +87,12 @@ export function camEncoding(track: MediaStreamTrack, role: CamRole): RTCRtpEncod
   return { active: true, scaleResolutionDownBy: scaleFor(track, p.height), maxBitrate: p.maxBitrate, maxFramerate: p.maxFramerate };
 }
 
-/** Screen previews are only sent while that screen is on stage. */
+/**
+ * A screen sent as a plain WebRTC track (screencast.ts covers the usual case),
+ * only while it's on stage. Full size: any downscale blurs small text.
+ */
 export function screenEncoding(track: MediaStreamTrack, onStage: boolean): RTCRtpEncodingParameters {
-  return { active: onStage, scaleResolutionDownBy: scaleFor(track, 720), maxBitrate: 900_000, maxFramerate: 8 };
+  return { active: onStage, scaleResolutionDownBy: scaleFor(track, 1080), maxBitrate: 900_000, maxFramerate: 8 };
 }
 
 export const MIC_ENCODING: RTCRtpEncodingParameters = { maxBitrate: 32_000 };

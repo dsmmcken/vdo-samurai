@@ -1,0 +1,84 @@
+{
+ "caps": {
+  "av1": "true",
+  "av1 quantizer": "true",
+  "av1 contentHint text": "true (contentHint kept: text)",
+  "av1 444 (profile 1)": "true",
+  "vp9": "true",
+  "decode av1": true
+ },
+ "rows": [
+  {
+   "name": "q40 no hint",
+   "still": "299 kbps, text 50.4 dB",
+   "scroll": "11585 kbps, text 48.7 dB",
+   "still again": "4 kbps, text 48.7 → 48.7 → 48.7 dB",
+   "maxFrameKB": 191,
+   "keyKB": 143,
+   "encMsPerFrame": 11.8
+  },
+  {
+   "name": "q40 detail",
+   "still": "204 kbps, text 49.9 dB",
+   "scroll": "401 kbps, text 50.9 dB",
+   "still again": "3 kbps, text 50.9 → 50.9 → 50.9 dB",
+   "maxFrameKB": 10,
+   "keyKB": 98,
+   "encMsPerFrame": 6.8
+  },
+  {
+   "name": "q40 text",
+   "still": "204 kbps, text 49.9 dB",
+   "scroll": "401 kbps, text 50.9 dB",
+   "still again": "3 kbps, text 50.9 → 50.9 → 50.9 dB",
+   "maxFrameKB": 10,
+   "keyKB": 98,
+   "encMsPerFrame": 6.9
+  },
+  {
+   "name": "q40 text, settle q10",
+   "still": "317 kbps, text 56.9 dB",
+   "scroll": "392 kbps, text 50.9 dB",
+   "still again": "5 kbps, text 50.9 → 50.9 → 50.9 dB",
+   "maxFrameKB": 52,
+   "keyKB": 98,
+   "encMsPerFrame": 6.9
+  },
+  {
+   "name": "q40 text, settle q4",
+   "still": "406 kbps, text 62.2 dB",
+   "scroll": "391 kbps, text 50.9 dB",
+   "still again": "3 kbps, text 50.9 → 50.9 → 50.9 dB",
+   "maxFrameKB": 88,
+   "keyKB": 98,
+   "encMsPerFrame": 7
+  },
+  {
+   "name": "q40 text, settle q10, key 4 s",
+   "still": "317 kbps, text 56.9 dB",
+   "scroll": "654 kbps, text 50.4 dB",
+   "still again": "271 kbps, text 56.7 → 56.8 → 56.6 dB",
+   "maxFrameKB": 135,
+   "keyKB": 98,
+   "encMsPerFrame": 8
+  },
+  {
+   "name": "q40 text, settle key q10",
+   "still": "500 kbps, text 56 dB",
+   "scroll": "394 kbps, text 50.9 dB",
+   "still again": "190 kbps, text 56.5 → 56.6 → 56.6 dB",
+   "maxFrameKB": 143,
+   "keyKB": 98,
+   "encMsPerFrame": 7.8
+  },
+  {
+   "name": "q40 text, settle key q20",
+   "still": "458 kbps, text 53.3 dB",
+   "scroll": "395 kbps, text 50.9 dB",
+   "still again": "163 kbps, text 53.8 → 53.8 → 53.8 dB",
+   "maxFrameKB": 123,
+   "keyKB": 98,
+   "encMsPerFrame": 7.7
+  }
+ ]
+}

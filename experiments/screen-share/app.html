@@ -1,0 +1,104 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Screen cast check</title>
+<body style="background:#222;color:#ddd;font:13px monospace">
+<pre id="out">running…</pre>
+<script type="module">
+// The app's own ScreenCaster -> ScreenView path (src/lib/screencast.ts), fed
+// the fake editor screen through a pretend data channel. Served by the app's
+// vite dev server: http://localhost:8080/experiments/screen-share/app.html
+// Timeline: 4 s still, 6 s scrolling, 6 s still, 6 s with a blinking caret.
+import { ScreenCaster, ScreenView } from '/src/lib/screencast.ts';
+import { src, g, draw } from './screen.js';
+
+const out = document.getElementById('out');
+const log = (s) => { out.textContent += '\n' + s; console.log(s); };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const view = new ScreenView(() => caster.requestKey('viewer'));
+const video = document.createElement('video');
+video.muted = true;
+video.srcObject = view.stream;
+video.play();
+
+// Pretend data channel, with a log of what went through it.
+const sent = [];
+const channel = {
+  readyState: 'open',
+  bufferedAmount: 0,
+  bufferedAmountLowThreshold: 0,
+  addEventListener() {},
+  send(buf) {
+    sent.push({ at: performance.now(), bytes: buf.byteLength, key: new DataView(buf).getUint8(0) & 1, part: new DataView(buf).getUint8(1) });
+    view.receive(buf);
+  },
+};
+
+let scroll = 0;
+draw(0);
+const stream = src.captureStream(30);
+const caster = new ScreenCaster(stream.getVideoTracks()[0]);
+caster.update(new Map([['viewer', channel]]), true);
+let timer = setInterval(() => draw(scroll), 200); // a real still screen still refreshes now and then
+
+// Quality of what the viewer shows: luma PSNR of a code crop.
+const cmp = new OffscreenCanvas(1920, 1080);
+const cg = cmp.getContext('2d', { willReadFrequently: true });
+const CROP = [320, 300, 900, 400];
+const luma = (ctx) => {
+  const d = ctx.getImageData(...CROP).data, l = new Float32Array(d.length / 4);
+  for (let i = 0; i < l.length; i++) l[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  return l;
+};
+const quality = () => {
+  cg.drawImage(video, 0, 0, 1920, 1080);
+  const a = luma(g), b = luma(cg);
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
+  return +(10 * Math.log10(255 ** 2 / Math.max(1e-9, s / a.length))).toFixed(1);
+};
+
+const rows = [];
+async function phase(name, ms, during) {
+  const t0 = performance.now(), n0 = sent.length;
+  const samples = [];
+  const sampler = setInterval(() => samples.push(quality()), ms / 4);
+  await during(ms);
+  clearInterval(sampler);
+  samples.push(quality());
+  const msgs = sent.slice(n0);
+  const frames = msgs.filter((m) => m.part === 0);
+  rows.push({
+    phase: name,
+    kbps: Math.round((msgs.reduce((a, m) => a + m.bytes, 0) * 8) / (performance.now() - t0)),
+    frames: frames.length,
+    keys: frames.filter((m) => m.key).length,
+    textDb: samples.join(' → '),
+  });
+  log(JSON.stringify(rows.at(-1)));
+}
+
+await phase('still', 4000, wait);
+await phase('scroll', 6000, async (ms) => {
+  clearInterval(timer);
+  const end = performance.now() + ms;
+  while (performance.now() < end) { scroll += 10; draw(scroll); await wait(33); }
+  timer = setInterval(() => draw(scroll), 200);
+});
+await phase('still again', 6000, wait);
+await phase('blinking caret', 6000, async (ms) => {
+  clearInterval(timer);
+  const end = performance.now() + ms;
+  let on = false;
+  while (performance.now() < end) {
+    draw(scroll);
+    if ((on = !on)) { g.fillStyle = '#fff'; g.fillRect(700, 400, 2, 16); }
+    await wait(530);
+  }
+  timer = setInterval(() => draw(scroll), 200);
+});
+clearInterval(timer);
+caster.stop();
+window.result = { rows, viewerFrames: view.frames };
+</script>
+</body>

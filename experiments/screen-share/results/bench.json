@@ -1,0 +1,19 @@
+[
+ {
+  "name": "VP8 720p 900k 8fps (today)",
+  "codec": "video/VP8",
+  "size": "1280x720",
+  "staticKbps": 207,
+  "scrollKbps": 1053,
+  "scrollFps": 8,
+  "encMs": 4.6,
+  "qp": 32,
+  "staticText": 25.3,
+  "afterText": [
+   25.6,
+   25.7,
+   25.7
+  ],
+  "limit": "none"
+ }
+]

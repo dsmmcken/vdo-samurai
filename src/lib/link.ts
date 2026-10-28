@@ -18,12 +18,16 @@ export interface LinkEvents {
   message: (m: any) => void;
   stream: (stream: MediaStream) => void;
   fileChannel: (ch: RTCDataChannel) => void;
+  /** A piece of an encoded screen frame (see screencast.ts). */
+  screenData: (buf: ArrayBuffer) => void;
   state: () => void;
 }
 
 export class Link {
   readonly pc: RTCPeerConnection;
   readonly ctl: RTCDataChannel;
+  /** Carries the encoded screen share, sharer to viewer (see screencast.ts). */
+  readonly scr: RTCDataChannel;
   readonly remoteStreams = new Map<string, MediaStream>();
   /** 'bootstrap' until our ctl channel opens. */
   transport: 'bootstrap' | 'ctl' = 'bootstrap';
@@ -101,6 +105,9 @@ export class Link {
       if (m.sig) this.receiveSignal(m.sig);
       else this.handlers.message?.(m);
     };
+    this.scr = pc.createDataChannel('scr', { negotiated: true, id: 1 });
+    this.scr.binaryType = 'arraybuffer';
+    this.scr.onmessage = (e) => this.handlers.screenData?.(e.data);
   }
 
   private log(line: string) {
@@ -186,6 +193,9 @@ export class Link {
       }
       if (!track) continue; // nothing to send yet
       const tr = this.pc.addTransceiver(track, { direction: 'sendonly', streams: [stream], sendEncodings: [enc] });
+      // A screen sent as a plain track (to a viewer that can't decode our own
+      // encoding) prefers the codecs that are best with text.
+      if (role === 'screen') preferCodecs(tr, ['video/AV1', 'video/VP9']);
       this.senders.set(role, { sender: tr.sender, track });
     }
   }
@@ -223,5 +233,19 @@ export class Link {
 
   close() {
     this.pc.close();
+  }
+}
+
+function preferCodecs(tr: RTCRtpTransceiver, first: string[]) {
+  const all = RTCRtpSender.getCapabilities?.('video')?.codecs;
+  if (!all || !tr.setCodecPreferences) return;
+  const rank = (c: RTCRtpCodec) => {
+    const i = first.indexOf(c.mimeType);
+    return i < 0 ? first.length : i;
+  };
+  try {
+    tr.setCodecPreferences([...all].sort((a, b) => rank(a) - rank(b)));
+  } catch (e) {
+    console.debug('[link] setCodecPreferences failed', e);
   }
 }

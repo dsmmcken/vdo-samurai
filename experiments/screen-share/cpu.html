@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Screen share CPU</title>
+<script type="module">
+// One page of cpu-run.mjs: the sender (?role=send) or the viewers (?role=recv),
+// in separate browsers so the sender's CPU can be measured on its own. Node
+// relays signaling through window.signal / the exposed `relay` function.
+import { src, draw } from './screen.js';
+
+const role = new URLSearchParams(location.search).get('role');
+const pcs = new Map();
+const pcFor = (id) => {
+  if (pcs.has(id)) return pcs.get(id);
+  const pc = new RTCPeerConnection();
+  pc.onicecandidate = (e) => e.candidate && relay(JSON.stringify({ id, candidate: e.candidate }));
+  if (role === 'recv') {
+    pc.ontrack = (e) => {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.srcObject = new MediaStream([e.track]);
+      v.play();
+      document.body.append(v);
+    };
+  }
+  pcs.set(id, pc);
+  return pc;
+};
+window.signal = async (raw) => {
+  const { id, sdp, candidate } = JSON.parse(raw);
+  const pc = pcFor(id);
+  if (candidate) return pc.addIceCandidate(candidate);
+  await pc.setRemoteDescription(sdp);
+  if (sdp.type === 'offer') {
+    await pc.setLocalDescription();
+    relay(JSON.stringify({ id, sdp: pc.localDescription }));
+  }
+};
+
+let scroll = 0, timer = 0, track = null;
+window.setup = async ({ codec, height, kbps, fps, viewers }) => {
+  draw(0);
+  track = src.captureStream(30).getVideoTracks()[0];
+  track.contentHint = 'detail';
+  timer = setInterval(() => draw(scroll), 200); // a still screen still refreshes
+  for (let i = 0; i < viewers; i++) {
+    const pc = pcFor(`v${i}`);
+    const tr = pc.addTransceiver(track, { direction: 'sendonly', sendEncodings: [{ scaleResolutionDownBy: 1080 / height, maxBitrate: kbps * 1000, maxFramerate: fps }] });
+    const cs = RTCRtpSender.getCapabilities('video').codecs;
+    tr.setCodecPreferences([...cs.filter((c) => c.mimeType === 'video/' + codec), ...cs.filter((c) => c.mimeType !== 'video/' + codec)]);
+    await pc.setLocalDescription();
+    relay(JSON.stringify({ id: `v${i}`, sdp: pc.localDescription }));
+  }
+};
+window.scrollFor = async (ms) => {
+  clearInterval(timer);
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    scroll += 10;
+    draw(scroll);
+    await new Promise((r) => setTimeout(r, 33));
+  }
+  timer = setInterval(() => draw(scroll), 200);
+};
+window.stats = async () => {
+  const out = [];
+  for (const pc of pcs.values()) {
+    const r = await pc.getStats();
+    for (const s of r.values()) if (s.type === 'outbound-rtp' && s.kind === 'video') out.push({ codec: r.get(s.codecId)?.mimeType, w: s.frameWidth, frames: s.framesEncoded, enc: s.totalEncodeTime, bytes: s.bytesSent });
+  }
+  return out;
+};
+window.teardown = () => {
+  clearInterval(timer);
+  for (const pc of pcs.values()) pc.close();
+  pcs.clear();
+  track?.stop();
+};
+</script>
