@@ -26,8 +26,8 @@ export function Landing({ children }: { children: React.ReactNode }) {
       {about && (
         <Popover anchor={about} onClose={() => setAbout(null)} align="end">
           <div className="about">
-            <p>VDO Samurai is a browser app for recording conversations.</p>
-            <p>During the call, everyone sees small, light video, so nobody's laptop fan takes off. Meanwhile each browser records its own camera, mic and screen at full quality. When the director hits stop, those files go straight to the director, peer to peer, and their browser edits the final video.</p>
+            <p>VDO Samurai is for recording multi-person demos.</p>
+            <p>During the call, everyone sees small, lightweight video plus whatever's on the main stage. Meanwhile each browser records its own camera, mic and screen at full quality. When recording stops, those files transfer to the director's machine peer to peer and render there in high quality.</p>
             <p className="muted">Use Chrome. It's what we test on.</p>
           </div>
         </Popover>
