@@ -14,7 +14,7 @@ import type { Link } from './link';
 import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVideoTrack, screenEncoding, setDevicePref, type CamRole, type DeviceKind } from './media';
 import { FaceWatch } from './face/watch';
 import type { Head } from './framing';
-import { captureStatus, fileExtension, markCaptureBroken, startRecorder, type Recorder } from './recorder';
+import { captureStatus, fileExtension, markCaptureBroken, startRecorder, testHook, type Recorder } from './recorder';
 import * as fs from './opfs';
 import type {
   Corner,
@@ -36,6 +36,10 @@ import { now, rid, sleep } from './util';
 
 const CHUNK = 64 * 1024;
 const HIGH_WATER = 8 * 1024 * 1024;
+/** A transfer that moves no bytes for this long is dropped and asked for again (from what's on disk). */
+const STALL_MS = 15_000;
+/** Senders re-offer unconfirmed files this often, in case a request or confirmation went missing. */
+const REOFFER_MS = 10_000;
 export const COUNTDOWN_MS = 3000;
 const LEAD_MS = 1500; // time for the start message to reach everyone, and for recorders to spin up
 // Recorders start as soon as the take is announced, before the countdown shows:
@@ -127,7 +131,12 @@ export class Room {
 
   // Director only
   private dm: DirectorManifest | null = null;
-  private receiving = new Set<string>();
+  /**
+   * Files asked for or arriving, by name: the channel once it's open, and when
+   * a byte (or the request) last moved. Anything quiet for STALL_MS is
+   * dropped and asked for again.
+   */
+  private receiving = new Map<string, { ch: RTCDataChannel | null; at: number; stop?: () => Promise<void> }>();
   private render: RenderState | null = null;
   private worker: Worker | null = null;
 
@@ -163,6 +172,7 @@ export class Room {
     await this.restore();
     this.timers.push(setInterval(() => this.pingAll(), 5000));
     this.timers.push(setInterval(() => this.directorTick(), 500));
+    this.timers.push(setInterval(() => this.reofferFiles(), REOFFER_MS));
     window.addEventListener('pagehide', () => this.mesh.broadcast({ t: 'bye' }));
     await this.mesh.start();
   }
@@ -418,6 +428,9 @@ export class Room {
         this.dmOnFiles(peer, link, m.takeId, m.files, m.report, m.camOff, m.frames);
         break;
       case 'want':
+        // The latest request for a file wins: the director drops a stalled
+        // transfer before asking again, from the offset it has on disk.
+        this.uploadQueue = this.uploadQueue.filter((j) => j.takeId !== m.takeId || j.name !== m.name);
         this.uploadQueue.push({ takeId: m.takeId, name: m.name, offset: m.offset });
         this.pumpUploads();
         break;
@@ -493,10 +506,17 @@ export class Room {
 
   private camRole(): CamRole {
     const s = this.shared.stage.v;
-    if (!s) return 'tile';
+    // While we upload a take, our camera goes out at thumbnail quality so the upload gets the bandwidth.
+    if (!s || this.owesFiles()) return 'tile';
     if (s.kind === 'end') return 'grid';
     if (s.id !== this.me) return 'tile';
     return s.view === 'cam' || !this.screen ? 'stage' : 'tile';
+  }
+
+  /** We have finished-take files the director hasn't confirmed yet. */
+  private owesFiles() {
+    for (const m of this.mine.values()) if (m.take.director !== this.me && m.complete && !this.purged.has(m.take.id) && m.files.some((f) => f.size > 0 && !m.acked.includes(f.name))) return true;
+    return false;
   }
 
   private screenOnStage() {
@@ -917,6 +937,7 @@ export class Room {
       }
     } else {
       this.offerFiles(take.id);
+      this.applyEncodings();
     }
     this.changed();
   }
@@ -950,33 +971,59 @@ export class Room {
     if (!m || !link?.open || m.acked.includes(name)) return;
     const file = await (await (await fs.takeDir(takeId)).getFileHandle(name)).getFile();
     const key = `${takeId}/${name}`;
-    const ch = link.pc.createDataChannel(`f:${takeId}:${name}`, { ordered: true });
+    const ch = link.pc.createDataChannel(`f:${takeId}:${name}:${offset}`, { ordered: true });
     ch.binaryType = 'arraybuffer';
     ch.bufferedAmountLowThreshold = HIGH_WATER / 2;
-    // Closing a peer connection doesn't fire 'close' on its data channels, so
-    // every wait here also checks the connection and gives up on a timeout;
-    // otherwise one dead upload would block the queue (and the resume) forever.
-    const dead = () => ch.readyState === 'closing' || ch.readyState === 'closed' || ['closed', 'failed'].includes(link.pc.connectionState);
-    const until = (ready: () => boolean, ms: number, what: string) =>
+    // Closing a peer connection doesn't fire 'close' on its data channels, and a
+    // newer request for this file supersedes this one, so every wait also
+    // checks for those, and gives up when nothing moves for STALL_MS (a dead
+    // upload would otherwise block the queue). The director asks again.
+    const superseded = () => this.uploadQueue.some((j) => j.takeId === takeId && j.name === name);
+    const dead = () => ch.readyState === 'closing' || ch.readyState === 'closed' || ['closed', 'failed'].includes(link.pc.connectionState) || superseded();
+    const until = (ready: () => boolean, what: string, progress = () => 0) =>
       new Promise<void>((res, rej) => {
-        const t0 = Date.now();
-        const tick = () => {
-          if (ready()) return res();
-          if (dead()) return rej(new Error(`upload channel closed (${what})`));
-          if (Date.now() - t0 > ms) return rej(new Error(`upload timed out (${what})`));
-          setTimeout(tick, 100);
+        let seen = progress();
+        let moved = Date.now();
+        const check = () => {
+          if (ready()) return done(res);
+          if (dead()) return done(() => rej(new Error(`upload channel closed (${what})`)));
+          const p = progress();
+          if (p !== seen) (seen = p), (moved = Date.now());
+          if (Date.now() - moved > STALL_MS) done(() => rej(new Error(`upload stalled (${what})`)));
         };
-        tick();
+        // Events answer straight away (also in a background tab, where timers
+        // slow to once a second); the timer catches deaths that fire no event.
+        const timer = setInterval(check, 1000);
+        const done = (f: () => void) => {
+          clearInterval(timer);
+          ch.removeEventListener('bufferedamountlow', check);
+          ch.removeEventListener('open', check);
+          ch.removeEventListener('close', check);
+          f();
+        };
+        ch.addEventListener('bufferedamountlow', check);
+        ch.addEventListener('open', check);
+        ch.addEventListener('close', check);
+        check();
       });
     try {
-      await until(() => ch.readyState === 'open', 20_000, 'opening');
+      await until(() => ch.readyState === 'open', 'opening');
       let pos = offset;
+      const sentOut = () => pos - ch.bufferedAmount; // grows as the channel hands bytes to the network
       this.upload.set(key, { sent: pos, total: file.size });
       while (pos < file.size) {
+        if (pos > 0 && pos >= (testHook('freezeUploadAt') ?? Infinity)) {
+          // Test: go silent mid-file, channel open, no error (a frozen upload).
+          localStorage.removeItem('samurai:test:freezeUploadAt');
+          await new Promise<void>((res) => {
+            const t = setInterval(() => dead() && (clearInterval(t), res()), 200);
+          });
+          throw new Error('upload channel closed (test freeze)');
+        }
         const block = await file.slice(pos, pos + 16 * CHUNK).arrayBuffer();
         for (let i = 0; i < block.byteLength; i += CHUNK) {
-          if (ch.bufferedAmount > HIGH_WATER) await until(() => ch.bufferedAmount <= HIGH_WATER / 2, 60_000, 'sending');
-          if (ch.readyState !== 'open') throw new Error('upload channel closed (sending)');
+          if (ch.bufferedAmount > HIGH_WATER) await until(() => ch.bufferedAmount <= HIGH_WATER / 2, 'sending', sentOut);
+          if (dead()) throw new Error('upload channel closed (sending)');
           ch.send(block.slice(i, i + CHUNK));
         }
         pos += block.byteLength;
@@ -985,9 +1032,21 @@ export class Room {
       }
       ch.send('eof');
       // The director closes the channel after it has flushed the file to disk.
-      await until(() => ch.readyState === 'closed', 120_000, 'finishing').catch(() => {});
+      await until(() => ch.readyState === 'closed', 'finishing', () => ch.bufferedAmount).catch(() => {});
     } finally {
       if (ch.readyState !== 'closed') ch.close();
+    }
+  }
+
+  /**
+   * Safety net: every so often, re-offer files the director hasn't confirmed.
+   * The director ignores offers for files that are arriving fine and asks
+   * again for the rest, so a lost request or confirmation can't strand one.
+   */
+  private reofferFiles() {
+    for (const m of this.mine.values()) {
+      if (m.take.director === this.me || !m.complete || this.purged.has(m.take.id)) continue;
+      if (m.files.some((f) => f.size > 0 && !m.acked.includes(f.name))) this.offerFiles(m.take.id);
     }
   }
 
@@ -1003,6 +1062,7 @@ export class Room {
     } else {
       await fs.writeJson(takeId, 'mine.json', m).catch(() => {});
     }
+    this.applyEncodings();
     this.changed();
   }
 
@@ -1037,50 +1097,92 @@ export class Room {
         link.send({ t: 'ack', takeId, name: f.name });
         continue;
       }
-      if (this.receiving.has(f.name)) continue;
+      if (have && this.receiving.has(f.name)) continue; // in hand; the watchdog restarts it if it stalls
       const onDisk = await fs.fileSize(takeId, f.name);
+      if (this.receiving.has(f.name)) continue; // asked for while we looked
       dm.files[f.name] = { ...f, peer, received: Math.min(onDisk, f.size), done: false };
-      link.send({ t: 'want', takeId, name: f.name, offset: dm.files[f.name].received });
+      this.want(link, f.name);
     }
     this.saveDm();
     this.directorTick();
   }
 
+  private want(link: Link, name: string) {
+    const dm = this.dm!;
+    this.receiving.set(name, { ch: null, at: Date.now() });
+    link.send({ t: 'want', takeId: dm.take.id, name, offset: dm.files[name].received });
+  }
+
+  /**
+   * Restarts transfers that stopped moving: closes the channel, waits for what
+   * did arrive to reach disk, then asks again from there. Also asks for files
+   * nobody is sending (a failed transfer, a short file at 'eof').
+   */
+  private watchTransfers() {
+    const dm = this.dm!;
+    for (const f of Object.values(dm.files)) {
+      if (f.done || f.peer === this.me) continue;
+      const link = this.mesh.links.get(f.peer);
+      if (!link?.open) continue; // they re-offer when they reconnect
+      const r = this.receiving.get(f.name);
+      if (r && Date.now() - r.at < STALL_MS) continue;
+      if (r?.stop) {
+        console.warn(`[upload] ${f.name} stalled at ${f.received} of ${f.size} bytes; asking again`);
+        r.at = Date.now(); // not again while it winds down
+        const stop = r.stop;
+        r.stop = undefined;
+        stop().then(() => this.dm === dm && !f.done && this.want(link, f.name));
+      } else {
+        this.want(link, f.name);
+      }
+    }
+  }
+
   private receiveFile(peer: PeerId, ch: RTCDataChannel) {
-    const [, takeId, name] = ch.label.split(':');
+    const [, takeId, name, from] = ch.label.split(':');
     const dm = this.dm;
     const f = dm?.files[name];
-    if (!dm || dm.take.id !== takeId || !f || f.peer !== peer || f.done) return ch.close();
+    const r = this.receiving.get(name);
+    // Only the channel we asked for, starting where our file ends: not a late
+    // one from an earlier request.
+    if (!dm || dm.take.id !== takeId || !f || f.peer !== peer || f.done || !r || r.ch || Number(from) !== f.received) return ch.close();
     ch.binaryType = 'arraybuffer';
-    this.receiving.add(name);
+    r.ch = ch;
+    r.at = Date.now();
     const writer = new fs.SequentialWriter(takeId, name, f.received);
     let base = f.received;
-    let finished = false;
-    ch.onmessage = async (e) => {
+    let ended: Promise<void> | null = null;
+    // Ends this transfer once: whatever arrived is flushed to disk and counted.
+    const end = () =>
+      (ended ??= (async () => {
+        ch.onmessage = null;
+        await writer.close().catch((e) => console.warn('[upload] write failed', e));
+        f.received = Math.min(writer.written, f.size);
+        if (writer.written > f.size || writer.failed) f.received = 0; // can't trust it: start over
+        if (this.receiving.get(name) === r) this.receiving.delete(name);
+        if (ch.readyState !== 'closed') ch.close();
+        this.saveDm();
+      })());
+    r.stop = end;
+    ch.onmessage = (e) => {
+      r.at = Date.now();
       if (typeof e.data === 'string') {
         if (e.data !== 'eof') return;
-        finished = true;
-        await writer.close().catch(() => {});
-        f.received = writer.written;
-        f.done = f.received === f.size;
-        this.receiving.delete(name);
-        if (f.done) this.mesh.links.get(peer)?.send({ t: 'ack', takeId, name });
-        this.checkPeerDone(peer);
-        this.saveDm();
-        ch.close();
+        end().then(() => {
+          f.done = f.received === f.size;
+          // Short (a lost chunk): the watchdog asks for the rest straight away.
+          if (!f.done) return console.warn(`[upload] ${name} ended short: ${f.received} of ${f.size} bytes`);
+          this.mesh.links.get(peer)?.send({ t: 'ack', takeId, name });
+          this.checkPeerDone(peer);
+          this.saveDm();
+        });
         return;
       }
       base += e.data.byteLength;
-      f.received = base;
+      f.received = Math.min(base, f.size);
       writer.write(e.data);
     };
-    ch.onclose = async () => {
-      if (finished) return;
-      await writer.close().catch(() => {});
-      f.received = writer.written;
-      this.receiving.delete(name);
-      this.saveDm();
-    };
+    ch.onclose = () => void end();
   }
 
   private checkPeerDone(peer: PeerId) {
@@ -1093,6 +1195,7 @@ export class Room {
   private directorTick() {
     const dm = this.dm;
     if (!dm || !dm.take.stopAt || dm.rendered) return;
+    this.watchTransfers();
     const rows: RaceRow[] = dm.expected
       .filter((p) => p !== this.me)
       .map((peer) => {

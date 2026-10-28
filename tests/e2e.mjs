@@ -130,6 +130,8 @@ try {
     // FAIL_AUDIO=1: the director's capture recorder loses its audio encoder ~5 s
     // into the take; the room must switch to the backup recorder and keep audio.
     if (process.env.FAIL_AUDIO && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:failAudioAfter', '500'));
+    // A guest's upload goes silent partway (channel open, no error); the director must notice and ask again.
+    if (process.env.FREEZE_UPLOAD && i === 1) await page.addInitScript(() => localStorage.setItem('samurai:test:freezeUploadAt', '1000000'));
     if (process.env.DIRECTOR_SCREEN && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:stillScreen', '1'));
     await page.goto(i === 2 ? urlNoPw : url);
     if (i === 2) await page.getByLabel('Room password').fill(pw);

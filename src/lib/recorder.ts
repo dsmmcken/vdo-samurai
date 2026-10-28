@@ -38,10 +38,11 @@ export interface RecorderEvents {
   fail?: (msg: string) => void;
 }
 
-const BITRATE = { cam: 5_000_000, screen: 5_000_000 };
+// The camera mostly ends up small (a tile or the overlay); the screen keeps detail for text.
+const BITRATE = { cam: 2_500_000, screen: 5_000_000 };
 
 /** Test-only switches, set from the e2e test via localStorage. */
-function testHook(name: string): number | undefined {
+export function testHook(name: string): number | undefined {
   try {
     const v = localStorage.getItem(`samurai:test:${name}`);
     return v === null ? undefined : Number(v);
