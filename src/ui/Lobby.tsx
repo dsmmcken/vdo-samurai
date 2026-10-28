@@ -11,14 +11,15 @@ import { Avatar } from './Avatar';
 import { MicMeter } from './MicMeter';
 import { Cam, CamOff, Mic, MicOff } from './icons';
 
-// Example names for the fields: one famous samurai per visit.
+// Example names for the fields, one per visit: fictional samurai. An even
+// mix: two usually women's names, two men's, two used for anyone (Ren, Aoi).
 const EXAMPLES = [
-  { name: 'Miyamoto Musashi', subtitle: 'Rōnin, Niten Ichi-ryū' },
-  { name: 'Tomoe Gozen', subtitle: 'Onna-musha, Minamoto clan' },
-  { name: 'Date Masamune', subtitle: 'Daimyō of Sendai' },
-  { name: 'Sanada Yukimura', subtitle: 'General, Sanada clan' },
-  { name: 'Uesugi Kenshin', subtitle: 'Dragon of Echigo' },
-  { name: 'Honda Tadakatsu', subtitle: 'General, Tokugawa clan' },
+  { name: 'Kazehaya Ren', subtitle: 'Swordmaster' },
+  { name: 'Hoshino Akane', subtitle: 'Master Archer' },
+  { name: 'Mizuhara Daisuke', subtitle: 'Castle Lord' },
+  { name: 'Asagiri Aoi', subtitle: 'Captain of the Guard' },
+  { name: 'Fujinami Kaito', subtitle: 'Retainer' },
+  { name: 'Amano Shizuka', subtitle: 'Strategist' },
 ];
 
 export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw: string) => void }) {
