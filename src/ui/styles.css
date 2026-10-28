@@ -847,7 +847,7 @@ html.resizing .pip-face {
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 18px 10px 7px;
+  padding: 18px 10px 10px; /* room below the name for the mic meter */
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
   color: #fff;
   font-size: 12px;
@@ -860,18 +860,20 @@ html.resizing .pip-face {
   font-weight: 400;
   opacity: 0.7;
 }
-/* Mic level: a 2 px bar on the bottom edge. The gradient is fixed to the tile
-   width and revealed up to the level, so color shows how loud (pink shades for
-   the classic green / yellow / red). */
+/* Mic level: a 2 px bar inset from the bottom (clear of the active tile's
+   pink ring and the rounded corners). The gradient is fixed to the bar's width
+   and revealed up to the level, so color shows how loud (pink shades for the
+   classic green / yellow / red). */
 .meter {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 8px;
+  right: 8px;
+  bottom: 5px;
   height: 2px;
+  border-radius: 2px;
   z-index: 2;
   background: linear-gradient(90deg, #9c6b78 0%, #ffb7c5 55%, #ff7fa6 78%, #ff2f6d 94%);
-  clip-path: inset(0 calc((1 - var(--l, 0)) * 100%) 0 0);
+  clip-path: inset(0 calc((1 - var(--l, 0)) * 100%) 0 0 round 2px);
   transition: clip-path 0.06s linear;
 }
 .tile-badges {

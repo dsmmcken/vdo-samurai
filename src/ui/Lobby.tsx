@@ -8,6 +8,7 @@ import { Petals } from './Petals';
 import { PasswordInput, SecretText } from './Secret';
 import { Landing } from './Landing';
 import { Avatar } from './Avatar';
+import { MicMeter } from './MicMeter';
 import { Cam, CamOff, Mic, MicOff } from './icons';
 
 // Example names for the fields: one famous samurai per visit.
@@ -114,6 +115,8 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
           ) : (
             <div className="preview-empty">{error ?? 'Starting camera…'}</div>
           )}
+          {/* Same level meter as the tiles: check your mic before joining. */}
+          {cam && !micOff && <MicMeter stream={cam} />}
           {cam && (
             <div className="preview-controls">
               <button type="button" className={`glass round ${micOff ? 'off' : ''}`} onClick={toggleMic} aria-label={micOff ? 'Unmute' : 'Mute'} title={micOff ? 'Join muted (click to unmute)' : 'Mute'}>
