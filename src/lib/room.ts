@@ -609,7 +609,7 @@ export class Room {
 
   /** Move the presenter's camera overlay; anyone before a take, only the director during one. */
   setCorner(c: Corner) {
-    if (!this.canSetStage()) return this.say('Only the director can move the overlay while recording.');
+    if (!this.canSetStage()) return this.say('Only the Shōgun (director) can move the overlay while recording.');
     if (this.shared.corner.v !== c) this.set('corner', c);
   }
 
@@ -638,7 +638,7 @@ export class Room {
 
   /** Clicking a tile: put it on stage, or flip camera/screen if it's already there. */
   clickTile(id: PeerId | 'end') {
-    if (!this.canSetStage()) return this.say('Only the director can switch the stage while recording.');
+    if (!this.canSetStage()) return this.say('Only the Shōgun (director) can switch the stage while recording.');
     if (id === 'end') return this.set('stage', { kind: 'end' });
     const hasScreen = id === this.me ? !!this.screen : !!this.presences.get(id)?.hasScreen;
     const cur = this.shared.stage.v;
@@ -651,7 +651,7 @@ export class Room {
 
   /** Put a specific view on stage (the Camera / Screen toggle). */
   setStage(stage: Stage) {
-    if (!this.canSetStage()) return this.say('Only the director can switch the stage while recording.');
+    if (!this.canSetStage()) return this.say('Only the Shōgun (director) can switch the stage while recording.');
     this.set('stage', stage);
   }
 
@@ -662,7 +662,7 @@ export class Room {
 
   /** Anyone can make anyone (or nobody) the director, except while recording. */
   setDirector(id: PeerId | null) {
-    if (this.takeLocked()) return this.say("The director can't change while recording.");
+    if (this.takeLocked()) return this.say("The Shōgun (director) can't change while recording.");
     this.set('director', id);
     // The director's tile always leads the strip.
     if (id) this.set('order', [id, ...this.tiles(this.snapshot.peers).filter((x) => x !== id)]);

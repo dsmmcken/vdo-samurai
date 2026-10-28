@@ -435,8 +435,6 @@ button.chip:hover {
   background: var(--raised);
   box-shadow: 0 0.6cqw 2.2cqw rgba(0, 0, 0, 0.5);
   transition:
-    left 0.45s cubic-bezier(0.65, 0, 0.35, 1),
-    top 0.45s cubic-bezier(0.65, 0, 0.35, 1),
     transform 0.15s,
     box-shadow 0.15s;
   touch-action: none;
@@ -461,6 +459,13 @@ button.chip:hover {
 .pip-zone.c-br {
   left: calc(100cqw - var(--w) - var(--m));
   top: calc(56.25cqw - var(--h) - var(--m));
+}
+.pip.gliding {
+  transition:
+    left 0.45s cubic-bezier(0.65, 0, 0.35, 1),
+    top 0.45s cubic-bezier(0.65, 0, 0.35, 1),
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 .pip.movable {
   cursor: grab;

@@ -25,10 +25,13 @@ export function Popover({ anchor, onClose, children, align = 'center' }: { ancho
     // Defer so the click that opened us doesn't close us.
     const t = setTimeout(() => window.addEventListener('pointerdown', down), 0);
     window.addEventListener('keydown', key);
+    // Anchored to a spot on screen that a resize moves: just close.
+    window.addEventListener('resize', onClose);
     return () => {
       clearTimeout(t);
       window.removeEventListener('pointerdown', down);
       window.removeEventListener('keydown', key);
+      window.removeEventListener('resize', onClose);
     };
   }, [onClose]);
 

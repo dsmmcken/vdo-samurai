@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import type { Corner } from '../lib/types';
 import { Avatar } from './Avatar';
@@ -16,6 +16,22 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ x: number; y: number; dx: number; dy: number; near: Corner } | null>(null);
   const canMove = !s.recording || s.director === s.me;
+  // Glide only when the overlay moves to another corner (or snaps after a
+  // drop). Without this, resizing the window animates it too, because its
+  // position is in units of the stage's size.
+  const [gliding, setGliding] = useState(false);
+  const glideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const glide = () => {
+    setGliding(true);
+    if (glideTimer.current) clearTimeout(glideTimer.current);
+    glideTimer.current = setTimeout(() => setGliding(false), 500);
+  };
+  const lastCorner = useRef(s.corner);
+  useEffect(() => {
+    if (lastCorner.current !== s.corner) glide();
+    lastCorner.current = s.corner;
+  }, [s.corner]);
+  useEffect(() => () => void (glideTimer.current && clearTimeout(glideTimer.current)), []);
 
   const nearest = (cx: number, cy: number, frame: DOMRect): Corner =>
     `${cy < frame.top + frame.height / 2 ? 't' : 'b'}${cx < frame.left + frame.width / 2 ? 'l' : 'r'}` as Corner;
@@ -37,6 +53,7 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
   };
   const onUp = () => {
     if (!drag) return;
+    glide(); // snap from wherever it was dropped
     room.setCorner(drag.near);
     setDrag(null);
   };
@@ -47,7 +64,7 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
         CORNERS.map((c) => <div key={c} className={`pip-zone c-${c} ${drag.near === c ? 'near' : ''}`} aria-hidden />)}
       <div
         ref={ref}
-        className={`pip c-${s.corner} ${drag ? 'dragging' : ''} ${canMove ? 'movable' : ''}`}
+        className={`pip c-${s.corner} ${drag ? 'dragging' : ''} ${gliding ? 'gliding' : ''} ${canMove ? 'movable' : ''}`}
         style={drag ? { left: drag.x, top: drag.y } : undefined}
         onPointerDown={onDown}
         onPointerMove={onMove}

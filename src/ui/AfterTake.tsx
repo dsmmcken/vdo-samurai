@@ -23,7 +23,7 @@ export function AfterTake({ room, s, onDetails }: { room: Room; s: Snapshot; onD
   const title = !isDirector
     ? s.myUpload?.done
       ? 'Upload complete'
-      : 'Uploading to the director'
+      : 'Uploading to the Shōgun (director)'
     : r?.state === 'done'
       ? dm!.downloaded
         ? 'Saved'
@@ -46,7 +46,7 @@ export function AfterTake({ room, s, onDetails }: { room: Room; s: Snapshot; onD
         </button>
       </div>
 
-      {!isDirector && s.myUpload?.done && <p className="safe">Your recording is safely with the director. You can close this tab.</p>}
+      {!isDirector && s.myUpload?.done && <p className="safe">Your recording is safely with the Shōgun (director). You can close this tab.</p>}
       {!isDirector && s.myUpload && !s.myUpload.done && <p className="muted">Keep this tab open until your upload finishes.</p>}
 
       {rows.length > 0 && !(isDirector && r?.state === 'done') && <Race rows={rows} me={s.me} />}

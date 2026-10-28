@@ -28,9 +28,11 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
     const close = () => setMenu(null);
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', close);
+    window.addEventListener('resize', close);
     return () => {
       window.removeEventListener('pointerdown', close);
       window.removeEventListener('keydown', close);
+      window.removeEventListener('resize', close);
     };
   }, [menu]);
 
@@ -105,8 +107,8 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
             {!muted && <MicMeter stream={me ? s.cam : p?.cam ?? null} />}
             <div className="tile-badges">
               {s.director === id && (
-                <span className="badge crown" title="Director">
-                  <Helmet size={14} title="Director" />
+                <span className="badge crown" title="Shōgun (director)">
+                  <Helmet size={14} title="Shōgun (director)" />
                 </span>
               )}
               {hasScreen && (
@@ -128,7 +130,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
                   room.setDirector(s.me);
                 }}
               >
-                <Helmet size={14} /> Claim director
+                <Helmet size={14} /> Claim Shōgun
               </button>
             )}
             <div className="tile-name">
@@ -169,17 +171,17 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         <div className="glass popover menu-list context" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {s.director === menu.id ? (
             <button disabled={locked} onClick={() => (room.setDirector(null), setMenu(null))}>
-              <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Step down as director' : 'Remove as director'}
+              <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Step down as Shōgun (director)' : 'Remove as Shōgun (director)'}
             </button>
           ) : (
             <button disabled={locked} onClick={() => (room.setDirector(menu.id as PeerId), setMenu(null))}>
-              <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Become director' : `Make ${nameOf(s, menu.id)} director`}
+              <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Become Shōgun (director)' : `Make ${nameOf(s, menu.id)} Shōgun (director)`}
             </button>
           )}
           <button onClick={() => (onEditProfile(menu.rect, menu.id as PeerId), setMenu(null))}>
             <Pencil size={16} /> {menu.id === s.me ? 'Edit your name' : `Edit ${nameOf(s, menu.id)}'s name`}
           </button>
-          {locked && <p className="menu-note">The director can't change while recording</p>}
+          {locked && <p className="menu-note">The Shōgun (director) can't change while recording</p>}
         </div>
       )}
     </footer>

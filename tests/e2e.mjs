@@ -183,10 +183,10 @@ try {
 
   // Anyone can hand the chair to anyone from the right-click menu.
   await cam.locator('.tile', { hasText: 'Sam Screen' }).click({ button: 'right' });
-  await cam.getByRole('button', { name: 'Make Sam Screen director' }).click();
+  await cam.getByRole('button', { name: 'Make Sam Screen Shōgun (director)' }).click();
   await dir.waitForSelector('.tile:has-text("Sam Screen") .badge.crown');
   await cam.locator('.tile', { hasText: 'Dana Director' }).click({ button: 'right' });
-  await cam.getByRole('button', { name: 'Make Dana Director director' }).click();
+  await cam.getByRole('button', { name: 'Make Dana Director Shōgun (director)' }).click();
   await sam.waitForSelector('.tile:has-text("Dana Director") .badge.crown');
   log('director handed around via the context menu; first tile now', await firstTile(sam));
 
