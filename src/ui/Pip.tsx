@@ -140,6 +140,7 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
     const r = ref.current.getBoundingClientRect();
     const frame = ref.current.parentElement!.getBoundingClientRect();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setMenu(false); // picking it up closes the menu (not just hides it)
     setDrag({ x: r.left - frame.left, y: r.top - frame.top, dx: e.clientX - r.left, dy: e.clientY - r.top, near: s.corner });
   };
   const onMove = (e: React.PointerEvent) => {
@@ -155,6 +156,7 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
     // It's about to glide to its corner, possibly under the pointer: that
     // isn't a hover. The menu waits until it has come to rest.
     settleUntil.current = performance.now() + 500;
+    setMenu(false);
     room.setCorner(drag.near);
     setDrag(null);
   };
