@@ -17,6 +17,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const camRef = useRef<MediaStream | null>(null);
+  const handedOff = useRef(false); // the camera now belongs to the room
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +30,8 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
       .catch((e) => setError(`Camera or microphone unavailable: ${e.message || e.name}`));
     return () => {
       cancelled = true;
+      // Leaving the lobby without joining (e.g. browser back): release the camera.
+      if (!handedOff.current) camRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
@@ -42,6 +45,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
     rememberPassword(room, pw);
     const id = await claimIdentity(room);
     const r = new Room(id, room, pw, p);
+    handedOff.current = true;
     r.start(cam);
     (window as any).samurai = r; // handy from the devtools console
     onJoined(r, pw);

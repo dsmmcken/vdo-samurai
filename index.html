@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VDO Samurai</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <!-- Start the background download with the HTML, not after the app renders. -->
+    <link rel="preload" as="image" type="image/webp" href="/src/assets/vdo-samurai-bg.webp" fetchpriority="high" />
+    <style>
+      /* First paint, before any JavaScript: a ~0.7 KB blurred copy of the scene.
+         The full image (preloaded above) takes over once the app renders. */
+      html, body { margin: 0; height: 100%; background: #08080b; }
+      body {
+        background: radial-gradient(ellipse at center, rgba(8, 8, 11, 0.15) 0%, rgba(8, 8, 11, 0.7) 100%),
+          url('data:image/webp;base64,UklGRo4BAABXRUJQVlA4IIIBAACQCgCdASpAADAAPrlKnUqnJCKhsrksyOAXCWkAFHfhAxqV6bupUB2oOg6FKlmmpBMu4Z7vXx2YITpDy+Q+fvzNdMIdb2Sx+oPp+Vf2iIggYy7jk2LhmJXtzD1iKoAA/v2bSgYCREg+lZoDwcQR4mqO2Qz2Bp6HIFIACiLOepO+JaHtxdfRS2mVIDoFaqed42yC/GtfpGkNB+re3WnKIM6Hzj1XwI7uWXm7wMcAbVrf+AorPvr5XLtElfvfeDeI61xIVLk/QQKB8XdknC8+LMKnXR6Y+qwavTLXNLFs1pd9UWZGZ3iycw70JLOl34UrASuLlvYaTIgbj9073GbeORtd5QIGZQIDjt67iJBbntY+xg6iY/c26/vwzTJoRyOCsWtm9pZ89dXrSdnwKAu5FS8reyqeFX6WjVUXwlJXDw2cx4dwiDyg/zefiR3W9eqdjMBUGwxpGiv2a7CC4qy4jp2xSWjryuukWxNAaJ1zGYlat0VOqEFclzfBrvIyxnKGoywAAA==') center / cover no-repeat fixed, #08080b;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -29,7 +29,8 @@ body {
   /* UI text isn't selectable by accident; inputs and copyable text opt back in. */
   user-select: none;
   -webkit-user-select: none;
-  background: var(--bg);
+  /* Color only: the inline first-paint placeholder in index.html stays put. */
+  background-color: var(--bg);
   color: var(--fg);
   font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
@@ -216,13 +217,24 @@ button.chip:hover {
 
 /* ---------- home & lobby */
 .home {
+  position: relative;
+  isolation: isolate;
   min-height: 100%;
   display: grid;
   place-items: center;
   padding: 24px 16px;
+}
+/* The scene: full image (preloaded by index.html) over a tiny inline copy, so
+   something is always there; on a separate layer so it can ease in on load. */
+.home::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background:
     radial-gradient(ellipse at center, rgba(8, 8, 11, 0.15) 0%, rgba(8, 8, 11, 0.7) 100%),
-    url('../assets/vdo-samurai-bg.webp') center / cover no-repeat fixed,
+    url('../assets/vdo-samurai-bg.webp') center / cover no-repeat,
+    url('data:image/webp;base64,UklGRo4BAABXRUJQVlA4IIIBAACQCgCdASpAADAAPrlKnUqnJCKhsrksyOAXCWkAFHfhAxqV6bupUB2oOg6FKlmmpBMu4Z7vXx2YITpDy+Q+fvzNdMIdb2Sx+oPp+Vf2iIggYy7jk2LhmJXtzD1iKoAA/v2bSgYCREg+lZoDwcQR4mqO2Qz2Bp6HIFIACiLOepO+JaHtxdfRS2mVIDoFaqed42yC/GtfpGkNB+re3WnKIM6Hzj1XwI7uWXm7wMcAbVrf+AorPvr5XLtElfvfeDeI61xIVLk/QQKB8XdknC8+LMKnXR6Y+qwavTLXNLFs1pd9UWZGZ3iycw70JLOl34UrASuLlvYaTIgbj9073GbeORtd5QIGZQIDjt67iJBbntY+xg6iY/c26/vwzTJoRyOCsWtm9pZ89dXrSdnwKAu5FS8reyqeFX6WjVUXwlJXDw2cx4dwiDyg/zefiR3W9eqdjMBUGwxpGiv2a7CC4qy4jp2xSWjryuukWxNAaJ1zGYlat0VOqEFclzfBrvIyxnKGoywAAA==') center / cover no-repeat,
     var(--bg);
 }
 .home-card {
@@ -371,6 +383,7 @@ button.chip:hover {
 /* ---------- room */
 .room {
   --strip-h: 184px;
+  background: var(--bg);
   height: 100%;
   display: grid;
   grid-template-rows: 1fr var(--strip-h);
@@ -1176,4 +1189,57 @@ pre,
   padding: 8px 10px;
   color: var(--muted);
   font-size: 13px;
+}
+
+/* ---------- first load: quick entrance (only while <html class="boot">) */
+.boot .home::before {
+  animation: scene-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.boot .home-card {
+  animation: card-in 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both;
+}
+.boot .home-card > *,
+.boot .home-card form > * {
+  animation: item-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.boot .home-card > :nth-child(1) { animation-delay: 0.12s; }
+.boot .home-card > :nth-child(2) { animation-delay: 0.15s; }
+.boot .home-card > :nth-child(3), .boot .home-card form > :nth-child(1) { animation-delay: 0.18s; }
+.boot .home-card > :nth-child(4), .boot .home-card form > :nth-child(2) { animation-delay: 0.21s; }
+.boot .home-card > :nth-child(5), .boot .home-card form > :nth-child(3) { animation-delay: 0.24s; }
+.boot .home-card > :nth-child(n + 6) { animation-delay: 0.27s; }
+.boot .room {
+  animation: room-in 0.4s ease-out both;
+}
+@keyframes scene-in {
+  from {
+    opacity: 0.4;
+    transform: scale(1.05);
+  }
+}
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes room-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot .home::before,
+  .boot .home-card,
+  .boot .home-card > *,
+  .boot .home-card form > *,
+  .boot .room {
+    animation: none;
+  }
 }

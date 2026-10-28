@@ -388,6 +388,7 @@ try {
     log(`guest ${i + 1} OPFS:`, left.join(', ') || '(empty)');
   }
   await dir.screenshot({ path: 'test-results/director.png' });
+  await checkBackButton(browsers[2]);
   // Leave from the ⋯ menu goes back to the home screen.
   await cam.getByRole('button', { name: 'More' }).click();
   await cam.screenshot({ path: 'test-results/menu.png' });
@@ -486,4 +487,37 @@ async function checkOverlayAndCamOff(dir) {
     const c = px(Tc, 950, 530);
     log(`camera-off check (${dm.profiles[peer]?.name}): rgb(${c.join(',')}) ->`, isCam(c) ? 'camera still showing' : 'placeholder shown');
   } else log('camera-off check: no camera-off stretch recorded');
+}
+
+/** Browser Back from the lobby, and from a live call, must release camera and mic. */
+async function checkBackButton(browser) {
+  const page = await (await browser.newContext()).newPage();
+  await page.addInitScript(() => {
+    window.__tracks = [];
+    const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      const s = await gum(c);
+      window.__tracks.push(...s.getTracks());
+      return s;
+    };
+  });
+  const live = () => page.evaluate(() => window.__tracks.filter((t) => t.readyState === 'live').map((t) => t.kind));
+  await page.goto(`http://localhost:${PORT}/`);
+  await page.getByRole('button', { name: 'Create room' }).click();
+  await page.getByLabel('Full name').fill('Back Button');
+  await page.waitForFunction(() => window.__tracks.length > 0);
+  await page.goBack();
+  await page.waitForSelector('text=Create room');
+  await sleep(300);
+  log('back from the lobby, live tracks:', JSON.stringify(await live()));
+  await page.getByRole('button', { name: 'Create room' }).click();
+  await page.getByLabel('Full name').fill('Back Button');
+  await page.getByRole('button', { name: 'Join room' }).click();
+  await page.waitForSelector('.tray');
+  await sleep(1000);
+  await page.goBack();
+  await page.waitForSelector('text=Create room');
+  await sleep(500);
+  log('back from a live call, live tracks:', JSON.stringify(await live()), '| home page shown');
+  await page.close();
 }
