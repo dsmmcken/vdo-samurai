@@ -253,5 +253,5 @@ function RecIndicator({ s }: { s: Snapshot }) {
 
 export function nameOf(s: Snapshot, id: PeerId) {
   if (id === s.me) return s.profile.name || 'You';
-  return s.peers.get(id)?.presence?.profile.name || 'Someone';
+  return s.peers.get(id)?.presence?.profile.name || 'Guest';
 }

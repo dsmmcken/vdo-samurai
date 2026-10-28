@@ -7,7 +7,7 @@ export function RecordingDetails({ s, onClose }: { s: Snapshot; onClose: () => v
   const [copied, setCopied] = useState(false);
   const dm = s.directorTake;
   const sections: [string, string[]][] = dm?.reports
-    ? Object.entries(dm.reports).map(([id, lines]) => [id === 'render' ? 'Final render' : dm.profiles[id]?.name ?? id, lines])
+    ? Object.entries(dm.reports).map(([id, lines]) => [id === 'render' ? 'Final render' : dm.profiles[id]?.name || 'Guest', lines])
     : s.myReport
       ? [[s.profile.name || 'You', s.myReport]]
       : [];

@@ -1044,7 +1044,7 @@ export class Room {
         const announced = dm.announced.includes(peer);
         return {
           peer,
-          name: dm.profiles[peer]?.name || peer,
+          name: dm.profiles[peer]?.name || 'Guest',
           received: files.reduce((a, f) => a + f.received, 0),
           total: files.reduce((a, f) => a + f.size, 0),
           announced,

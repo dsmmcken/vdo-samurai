@@ -9,7 +9,7 @@ export function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; o
       className="stack profile-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (p.name.trim()) onSave({ name: p.name.trim(), subtitle: p.subtitle.trim() });
+        onSave({ name: p.name.trim(), subtitle: p.subtitle.trim() });
       }}
     >
       <label className="field">
@@ -24,7 +24,7 @@ export function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; o
         <button type="button" className="btn ghost sm" onClick={onCancel}>
           Cancel
         </button>
-        <button className="btn primary sm" disabled={!p.name.trim()}>
+        <button className="btn primary sm">
           Save
         </button>
       </div>

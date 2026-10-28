@@ -79,7 +79,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
 
   const join = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!cam || !profile.name.trim() || joining) return;
+    if (!cam || joining) return;
     setJoining(true);
     const p = { name: profile.name.trim(), subtitle: profile.subtitle.trim() };
     saveProfile(p);
@@ -96,7 +96,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
   // A reload (or a crash) mid-session shouldn't park you in the lobby: rejoin
   // as soon as the camera is back. The director's take resumes from storage.
   useEffect(() => {
-    if (cam && wasJoined(room) && profile.name.trim() && known !== null) join();
+    if (cam && wasJoined(room) && known !== null) join();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cam]);
 
@@ -124,11 +124,14 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
               </button>
             </div>
           )}
-          {/* Your lower third, at the same proportions as in the final 1080p video. */}
-          <div className="lt-preview" aria-label="Lower third preview">
-            <strong>{profile.name.trim() || 'Your name'}</strong>
-            {profile.subtitle.trim() && <span>{profile.subtitle.trim()}</span>}
-          </div>
+          {/* Your lower third, at the same proportions as in the final 1080p video
+              (none without a name, as in the final cut). */}
+          {profile.name.trim() && (
+            <div className="lt-preview" aria-label="Lower third preview">
+              <strong>{profile.name.trim()}</strong>
+              {profile.subtitle.trim() && <span>{profile.subtitle.trim()}</span>}
+            </div>
+          )}
         </div>
         <label className="field">
           <span>Full name</span>
@@ -137,7 +140,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
         <label className="field">
           <span>Subtitle</span>
           <input value={profile.subtitle} onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })} placeholder={example.subtitle} />
-          <small>Your lower third in the final video</small>
+          <small>Optional: your lower third in the final video (none without a name)</small>
         </label>
         {known === null && (
           <label className="field">
@@ -162,7 +165,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
             </small>
           </div>
         )}
-        <button className="btn primary" disabled={!cam || !profile.name.trim() || joining}>
+        <button className="btn primary" disabled={!cam || joining}>
           <Petals />
           <span className="label">{joining ? 'Joining…' : 'Join room'}</span>
         </button>

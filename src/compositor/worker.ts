@@ -86,7 +86,7 @@ async function render(m: DirectorManifest) {
     // the recorder lost the mic; say so instead of rendering silence quietly.
     if (at && vt) {
       const [aEnd, vEnd] = await Promise.all([at.computeDuration(), vt.computeDuration()]);
-      if (aEnd < vEnd - 1.5) post({ t: 'warn', message: `${m.profiles[f.peer]?.name ?? f.peer}: audio stops ${Math.round(vEnd - aEnd)} s before the video` });
+      if (aEnd < vEnd - 1.5) post({ t: 'warn', message: `${m.profiles[f.peer]?.name || 'Guest'}: audio stops ${Math.round(vEnd - aEnd)} s before the video` });
     }
     const start = f.offset / 1000;
     sources.push({ file: f, input, start, end: start + len, video: vt ? new VideoSampleSink(vt) : null, audio: at });
@@ -145,7 +145,7 @@ async function render(m: DirectorManifest) {
     const db = Math.max(-MAX_CUT_DB, Math.min(MAX_BOOST_DB, toTarget, headroom));
     gains.set(src.file.name, 10 ** (db / 20));
     const st = chain.stats();
-    const who = m.profiles[src.file.peer]?.name ?? src.file.peer;
+    const who = m.profiles[src.file.peer]?.name || 'Guest';
     const sign = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
     post({
       t: 'info',
