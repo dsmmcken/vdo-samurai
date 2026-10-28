@@ -13,6 +13,7 @@ import { Stage } from './Stage';
 import { TileStrip } from './TileStrip';
 import { RemoteAudio } from './Video';
 import { RecordingDetails } from './RecordingDetails';
+import { WaitingMusic } from './WaitingMusic';
 
 export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void }) {
   const s = useSyncExternalStore(room.subscribe, room.getSnapshot);
@@ -103,6 +104,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
       <AfterTake room={room} s={s} onDetails={() => setDetails(true)} />
       {details && <RecordingDetails s={s} onClose={() => setDetails(false)} />}
       {s.notice && <div className="glass toast">{s.notice}</div>}
+      <WaitingMusic s={s} />
 
       {[...s.peers.values()].map((p) => (
         <RemoteAudio key={p.id} stream={p.cam} sinkId={s.current.speaker} />

@@ -13,8 +13,8 @@ import { Room } from '../lib/room';
  */
 function readTarget() {
   const t = parseRoomHash();
-  if (t?.pw) {
-    rememberPassword(t.room, t.pw);
+  if (t && t.pw !== null) {
+    rememberPassword(t.room, t.pw); // may be '' (a room without a password)
     history.replaceState(null, '', `${location.pathname}${location.search}#${new URLSearchParams({ room: t.room })}`);
   }
   return t ? { room: t.room } : null;

@@ -53,7 +53,8 @@ export function saveProfile(p: Profile) {
 export function parseRoomHash(hash = location.hash): { room: string; pw: string | null } | null {
   const q = new URLSearchParams(hash.replace(/^#/, ''));
   const room = q.get('room');
-  return room ? { room, pw: q.get('pw') || null } : null;
+  // `pw=` (empty) is a deliberate "no password"; no `pw` at all means unknown.
+  return room ? { room, pw: q.has('pw') ? q.get('pw')! : null } : null;
 }
 
 /** Invites never carry the password; share it separately. */

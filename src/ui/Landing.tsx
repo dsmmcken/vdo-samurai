@@ -4,8 +4,8 @@ import { Info } from './icons';
 import { Popover } from './Popover';
 
 /**
- * Frame for the landing screens (create room, lobby): the logo top left, an
- * (i) with what this is bottom left, and the SDK credit bottom right.
+ * Frame for the landing screens (create room, lobby): the logo top left, and
+ * bottom right the SDK credit and an (i) with what this is.
  */
 export function Landing({ children }: { children: React.ReactNode }) {
   const [about, setAbout] = useState<DOMRect | null>(null);
@@ -24,13 +24,11 @@ export function Landing({ children }: { children: React.ReactNode }) {
         <Info size={18} />
       </button>
       {about && (
-        <Popover anchor={about} onClose={() => setAbout(null)} align="start">
+        <Popover anchor={about} onClose={() => setAbout(null)} align="end">
           <div className="about">
-            <p>
-              <strong>VDO Samurai</strong> is a recording studio in your browser.
-            </p>
-            <p>The live call uses tiny, low-CPU video. Everyone records full quality on their own machine, uploads it to the director peer to peer when the take ends, and the director’s browser cuts the final video.</p>
-            <p className="muted">Chrome recommended.</p>
+            <p>VDO Samurai is a browser app for recording conversations.</p>
+            <p>During the call, everyone sees small, light video, so nobody's laptop fan takes off. Meanwhile each browser records its own camera, mic and screen at full quality. When the director hits stop, those files go straight to the director, peer to peer, and their browser edits the final video.</p>
+            <p className="muted">Use Chrome. It's what we test on.</p>
           </div>
         </Popover>
       )}

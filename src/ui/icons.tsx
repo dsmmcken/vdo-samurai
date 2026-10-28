@@ -39,3 +39,5 @@ export const CamOff = svg(<path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V
 export const Check = svg(<path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z" />);
 export const Chevron = svg(<path d="M9.3 6.7 10.7 5.3 17.4 12l-6.7 6.7-1.4-1.4 5.3-5.3z" />);
 export const Speaker = svg(<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8v8a4.5 4.5 0 002.5-4zM14 3.2v2.1a7 7 0 010 13.4v2.1a9 9 0 000-17.6z" />);
+export const MusicNote = svg(<path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" />);
+export const MusicOff = svg(<path d="M4.27 3L3 4.27l9 9v.28A4 4 0 1014 17v-1.73L19.73 21 21 19.73 4.27 3zM14 7h4V3h-6v5.18l2 2V7z" />);

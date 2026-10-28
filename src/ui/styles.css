@@ -1259,7 +1259,7 @@ pre,
 }
 .landing-info {
   position: fixed;
-  left: 20px;
+  right: 20px;
   bottom: 20px;
   z-index: 2;
   width: 40px;
@@ -1268,8 +1268,8 @@ pre,
 }
 .landing-credit {
   position: fixed;
-  right: 24px;
-  bottom: 28px;
+  right: 74px;
+  bottom: 31px;
   z-index: 2;
   font-size: 12px;
   font-weight: 600;
@@ -1280,6 +1280,8 @@ pre,
 }
 .landing-credit:hover {
   color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .about {
   max-width: 300px;
@@ -1289,6 +1291,9 @@ pre,
 }
 .about p {
   margin: 0 0 8px;
+}
+.about p.muted {
+  color: var(--muted);
 }
 .about p:last-child {
   margin: 0;
@@ -1305,11 +1310,11 @@ pre,
     left: 16px;
   }
   .landing-credit {
-    right: 16px;
-    bottom: 26px;
+    right: 64px;
+    bottom: 25px;
   }
   .landing-info {
-    left: 14px;
+    right: 14px;
     bottom: 14px;
   }
 }
@@ -1317,4 +1322,79 @@ pre,
 .boot .landing-info,
 .boot .landing-credit {
   animation: item-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
+}
+
+/* ---------- waiting music (alone in a room) */
+.music-chip {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 35;
+  animation: music-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.music-chip svg {
+  color: var(--accent);
+}
+.music-chip:not(.muted) svg {
+  animation: music-bob 1.6s ease-in-out infinite;
+}
+.music-chip.muted {
+  color: var(--muted);
+}
+.music-chip.muted svg {
+  color: var(--muted);
+}
+@keyframes music-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes music-bob {
+  50% {
+    transform: translateY(-2px) rotate(-6deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .music-chip,
+  .music-chip svg {
+    animation: none !important;
+  }
+}
+
+/* Lower-third preview over the lobby camera: same geometry as the 1920x1080
+   render (worker.ts lowerThird), in units of the preview's width. */
+.preview {
+  position: relative;
+  container-type: inline-size;
+}
+.lt-preview {
+  position: absolute;
+  left: 3.33cqw;
+  bottom: 4.17cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35cqw;
+  max-width: 85%;
+  padding: 0.95cqw 1.46cqw 1.05cqw 1.875cqw;
+  background: rgba(12, 12, 18, 0.82);
+  border-left: 0.42cqw solid #0625c0;
+  color: #fff;
+  pointer-events: none;
+}
+.lt-preview strong {
+  font-size: 2.4cqw;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lt-preview span {
+  font-size: 1.46cqw;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

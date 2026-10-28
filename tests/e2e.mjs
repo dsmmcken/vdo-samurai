@@ -143,6 +143,7 @@ try {
   log('waiting for the mesh');
   for (const p of pages) await p.waitForFunction(() => document.querySelectorAll('.strip .tile:not(.end-tile)').length === 3, null, { timeout: 60000 });
   log('all three see three tiles');
+  log('waiting music chips with company:', await Promise.all(pages.map((p) => p.locator('.music-chip').count())));
 
   // Peer-to-peer audit: no TURN configured anywhere, every pair connected directly,
   // and nothing fetched from VDO.Ninja's TURN service.

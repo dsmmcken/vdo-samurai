@@ -38,7 +38,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
 
   const join = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!cam || !profile.name.trim() || !pw || joining) return;
+    if (!cam || !profile.name.trim() || joining) return;
     setJoining(true);
     const p = { name: profile.name.trim(), subtitle: profile.subtitle.trim() };
     saveProfile(p);
@@ -55,7 +55,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
   // A reload (or a crash) mid-session shouldn't park you in the lobby: rejoin
   // as soon as the camera is back. The director's take resumes from storage.
   useEffect(() => {
-    if (cam && wasJoined(room) && profile.name.trim() && pw) join();
+    if (cam && wasJoined(room) && profile.name.trim() && known !== null) join();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cam]);
 
@@ -65,6 +65,11 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
         <h1 className="room-title">{room}</h1>
         <div className="preview">
           {cam ? <Video stream={cam} mirror /> : <div className="preview-empty">{error ?? 'Starting camera…'}</div>}
+          {/* Your lower third, at the same proportions as in the final 1080p video. */}
+          <div className="lt-preview" aria-label="Lower third preview">
+            <strong>{profile.name.trim() || 'Your name'}</strong>
+            {profile.subtitle.trim() && <span>{profile.subtitle.trim()}</span>}
+          </div>
         </div>
         <label className="field">
           <span>Full name</span>
@@ -75,24 +80,30 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
           <input value={profile.subtitle} onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })} placeholder="Analyst, Babbage & Co." />
           <small>Your lower third in the final video</small>
         </label>
-        {!known && (
+        {known === null && (
           <label className="field">
             <span>Room password</span>
             <PasswordInput value={typedPw} onChange={(e) => setTypedPw(e.target.value)} />
-            <small>From whoever invited you</small>
+            <small>From whoever invited you; blank if the room has none</small>
           </label>
         )}
-        {known && (
+        {known !== null && (
           <div className="invite">
             <span>Invite link</span>
             <code>{inviteLink(room)}</code>
             <CopyButton text={inviteLink(room)} />
             <small>
-              Password, shared separately: <SecretText value={known} />
+              {known ? (
+                <>
+                  Password, shared separately: <SecretText value={known} />
+                </>
+              ) : (
+                'No password: anyone with the link can join'
+              )}
             </small>
           </div>
         )}
-        <button className="btn primary" disabled={!cam || !profile.name.trim() || !pw || joining}>
+        <button className="btn primary" disabled={!cam || !profile.name.trim() || joining}>
           <Petals />
           <span className="label">{joining ? 'Joining…' : 'Join room'}</span>
         </button>
