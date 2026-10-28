@@ -179,8 +179,22 @@ export class Room {
         continue;
       }
       if (dm && dm.take.director === this.me) {
+        // A file can finish arriving (and be confirmed to its sender, who then
+        // deletes it) just before a reload, before that was saved here. Trust
+        // what's on disk: every byte present means it's complete.
+        for (const f of Object.values(dm.files)) {
+          if (f.done) continue;
+          const onDisk = await fs.fileSize(takeId, f.name);
+          f.received = Math.min(onDisk, f.size);
+          if (f.size > 0 && onDisk >= f.size) f.done = true;
+        }
+        for (const peer of dm.announced) {
+          const files = Object.values(dm.files).filter((f) => f.peer === peer);
+          if (files.length && files.every((f) => f.done)) dm.finishedAt[peer] ??= now();
+        }
         this.dm = dm;
         this.render = dm.rendered ? await this.finishedRender(takeId) : { state: 'waiting', progress: 0, speed: 0 };
+        this.saveDm();
       }
       const mine = await fs.readJson<SenderManifest>(takeId, 'mine.json');
       if (mine && mine.take.director !== this.me) {

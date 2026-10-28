@@ -13,17 +13,42 @@ const SHAPES: { shape: PipShape; label: string; icon: React.ReactNode }[] = [
   { shape: 'rect', label: 'Rectangle', icon: <span className="shape-glyph rect" /> },
 ];
 
+// Overlay sizes in 1080p pixels (same as styles.css and the render).
+const DIMS: Record<PipShape, { w: number; h: number; r: number }> = {
+  rect: { w: 156, h: 195, r: 22 },
+  square: { w: 176, h: 176, r: 22 },
+  circle: { w: 184, h: 184, r: 92 },
+};
+const GAP = 18; // px from the shape's outline to each icon's centre
+const STEP = 30; // px between icons along that outline
+
 /**
- * Angles (degrees, y down) of an arc that opens toward the stage centre from a
- * corner. It fans 15° past each edge so the icons sit close without touching.
+ * Icon positions hugging the shape: walk an outline offset GAP outside it,
+ * centred on the inner corner (the one facing the stage centre), STEP apart.
+ * The path is the corner's rounding arc continued along the two straight
+ * edges, so icons follow a rectangle's or square's corner closely and, for a
+ * circle, arc along the circle itself. Returned in px relative to the box's
+ * top-left, for a box w x h with corner radius r.
  */
-function arc(corner: Corner, n: number) {
-  const across = corner.endsWith('r') ? 180 : 0; // toward the middle horizontally
-  const along = corner.startsWith('b') ? (across === 180 ? 270 : -90) : 90; // ...and vertically
-  const dir = Math.sign(along - across);
-  const from = across - 15 * dir;
-  const to = along + 15 * dir;
-  return Array.from({ length: n }, (_, i) => from + ((to - from) * i) / (n - 1));
+function hugPoints(corner: Corner, w: number, h: number, r: number, n: number): Pt[] {
+  const rho = r + GAP;
+  const quarter = (rho * Math.PI) / 2;
+  // Solve for the inner corner at the box's top-left, then mirror.
+  const at = (s: number): Pt => {
+    // s = 0 at the middle of the corner arc; + toward the top edge, - toward the left edge.
+    if (Math.abs(s) <= quarter / 2) {
+      const th = ((225 + (s / rho) * (180 / Math.PI)) * Math.PI) / 180;
+      return [r + rho * Math.cos(th), r + rho * Math.sin(th)];
+    }
+    const past = Math.abs(s) - quarter / 2;
+    return s > 0 ? [Math.min(w - r, r + past), -GAP] : [-GAP, Math.min(h - r, r + past)];
+  };
+  const mirrorX = corner.endsWith('l'); // inner corner is on the right
+  const mirrorY = corner.startsWith('t'); // ...or at the bottom
+  return Array.from({ length: n }, (_, i) => {
+    const [x, y] = at((i - (n - 1) / 2) * STEP);
+    return [mirrorX ? w - x : x, mirrorY ? h - y : y] as Pt;
+  });
 }
 
 type Pt = [number, number];
@@ -77,6 +102,14 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
   // the overlay and its icons: a "safe cone" that covers the way across to
   // them from any side. Leaving it (with a short grace) closes the menu.
   const [menu, setMenu] = useState(false);
+  const [scale, setScale] = useState(0); // stage px per 1080p px
+  useEffect(() => {
+    const frame = ref.current?.parentElement;
+    if (!frame) return;
+    const ro = new ResizeObserver(() => setScale(frame.clientWidth / 1920));
+    ro.observe(frame);
+    return () => ro.disconnect();
+  }, []);
   const actionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
@@ -122,11 +155,13 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
     setDrag(null);
   };
 
-  // Inner corner of the overlay (facing the stage centre), in % of its box.
-  const ix = s.corner.endsWith('r') ? '0%' : '100%';
-  const iy = s.corner.startsWith('b') ? '0%' : '100%';
-  const angles = arc(s.corner, 4);
-  const R = 40; // px from the inner corner to each icon's centre
+  // Icons start at the inner corner of the box (facing the stage centre) and
+  // pop out to points hugging the current shape.
+  const d = DIMS[shape];
+  const [w, h, r] = [d.w * scale, d.h * scale, d.r * scale];
+  const ox = s.corner.endsWith('r') ? 0 : w;
+  const oy = s.corner.startsWith('b') ? 0 : h;
+  const points = hugPoints(s.corner, w, h, r, 4);
 
   return (
     <>
@@ -135,21 +170,23 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
         ref={ref}
         className={`pip c-${s.corner} s-${shape} ${hidden ? 'hidden' : ''} ${drag ? 'dragging' : ''} ${canMove ? 'movable' : ''} ${menu && !drag && !hidden ? 'menu' : ''}`}
         style={drag ? { left: drag.x, top: drag.y } : undefined}
+        // Move as well as enter: after a drop the pointer is already over it.
         onPointerEnter={() => canMove && !hidden && setMenu(true)}
+        onPointerMove={() => !menu && !drag && canMove && !hidden && setMenu(true)}
       >
         <div className="pip-face" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} title={canMove && !hidden ? 'Drag to another corner' : undefined}>
           {off ? <Avatar name={name} /> : <Video stream={stream} mirror={mirror} />}
         </div>
 
         {canMove && !drag && !hidden && (
-          <div ref={actionsRef} className="pip-actions" style={{ '--ix': ix, '--iy': iy } as React.CSSProperties}>
+          <div ref={actionsRef} className="pip-actions" style={{ '--ix': `${ox}px`, '--iy': `${oy}px` } as React.CSSProperties}>
             {[...SHAPES.map((x) => ({ ...x, kind: 'shape' as const })), { shape: null, label: 'Hide', icon: <EyeOff size={17} />, kind: 'hide' as const }].map((a, i) => {
-              const rad = (angles[i] * Math.PI) / 180;
+              const [px, py] = points[i];
               return (
                 <button
                   key={a.label}
                   className={`pip-act ${a.kind === 'shape' && a.shape === shape ? 'on' : ''}`}
-                  style={{ '--dx': `${Math.cos(rad) * R}px`, '--dy': `${Math.sin(rad) * R}px`, '--i': i } as React.CSSProperties}
+                  style={{ '--dx': `${px - ox}px`, '--dy': `${py - oy}px`, '--i': i } as React.CSSProperties}
                   onClick={() => {
                     if (a.kind === 'hide') {
                       room.setPip({ hidden: true });
