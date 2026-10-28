@@ -407,6 +407,30 @@ button.chip:hover {
   width: 100%;
   height: 100%;
 }
+/* Ink over a shared screen (Ink.tsx): stacks under the camera overlay and
+   controls, and only takes the pointer while the pen is on. */
+.ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.ink.pen {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+/* Reactions (Reactions.tsx) float over everything on the stage, camera
+   overlay included, but under the controls. */
+.reactions {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+}
 .stage-empty {
   position: absolute;
   inset: 0;
@@ -546,10 +570,18 @@ html.resizing .pip-face {
   pointer-events: auto;
   transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1);
 }
+/* Hover grows the glyph from its own centre. It's kept off the button's
+   transform, which carries the pop-out from the overlay's corner: changing
+   that mid-flight would restart the arc and make it grow from the corner. */
+.pip-act > * {
+  transition: transform 0.15s ease-out;
+}
 .pip.menu .pip-act:hover {
   color: rgba(255, 255, 255, 0.95);
-  transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1.18);
   transition-delay: 0s;
+}
+.pip.menu .pip-act:hover > * {
+  transform: scale(1.18);
 }
 .pip-act.on {
   color: #fff;
@@ -789,6 +821,7 @@ html.resizing .pip-face {
   position: absolute;
   left: 50%;
   bottom: 14px;
+  z-index: 5;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -1469,11 +1502,14 @@ pre,
   font-size: 12px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.55);
-  text-decoration: none;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+.landing-credit a {
+  color: inherit;
+  text-decoration: none;
   transition: color 0.15s;
 }
-.landing-credit:hover {
+.landing-credit a:hover {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -1506,8 +1542,10 @@ pre,
     left: 16px;
   }
   .landing-credit {
+    left: 16px;
     right: 64px;
     bottom: 25px;
+    text-align: right;
   }
   .landing-info {
     right: 14px;
@@ -1614,4 +1652,208 @@ pre,
 .preview-controls .round {
   width: 38px;
   height: 38px;
+}
+
+/* ---------- reaction picker (ReactionPicker.tsx) */
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(352px, calc(100vw - 36px));
+  height: 400px;
+  padding: 4px;
+}
+.picker button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  font-family: 'Noto Color Emoji', system-ui, sans-serif;
+}
+.picker button:hover {
+  background: var(--glass-hover);
+}
+.picker button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.picker-search {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+}
+.picker-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.picker-quick,
+.picker-tabs,
+.picker-tones {
+  display: flex;
+  justify-content: space-between;
+}
+.picker-popular {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 2px;
+}
+.picker-quick button {
+  width: 38px;
+  height: 38px;
+  font-size: 26px;
+}
+/* Emoji cells: the glyph dead centre of its box (and its focus ring). */
+.picker .em {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+.picker .em > span {
+  display: block;
+}
+.picker-tabs {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+}
+.picker-tabs button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.picker-tabs button:hover,
+.picker-tabs button[aria-selected='true'] {
+  color: #fff;
+}
+.picker-grid {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.picker-grid h4,
+.picker-popular h4 {
+  margin: 6px 4px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+}
+.picker-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+}
+.picker-cells button {
+  height: 38px;
+  font-size: 25px;
+  line-height: 1;
+}
+/* Loading: skeleton circles where emoji go, until the picker's code and the
+   first pieces of the emoji font arrive (PickerShell, ReactionPicker). */
+.picker .skel {
+  display: block;
+  border-radius: 50%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.07) 30%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.07) 70%) 0 0 / 300% 100%;
+  animation: skel 1.4s ease-in-out infinite;
+}
+@keyframes skel {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.picker-cells .skel,
+.picker-quick .skel {
+  width: 28px;
+  height: 28px;
+  margin: 5px auto;
+}
+.picker-h-skel.skel {
+  width: 120px;
+  height: 10px;
+  margin: 8px 4px 6px;
+  border-radius: 5px;
+}
+.picker-tone-skel.skel {
+  width: 76px;
+  height: 18px;
+  border-radius: 9px;
+}
+.picker.loading .em > span {
+  visibility: hidden;
+}
+.picker.loading .em::after {
+  content: '';
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.07) 30%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.07) 70%) 0 0 / 300% 100%;
+  animation: skel 1.4s ease-in-out infinite;
+}
+.picker .em {
+  position: relative;
+}
+.picker-tabs button:disabled {
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .picker .skel,
+  .picker.loading .em::after {
+    animation: none;
+  }
+}
+.picker-grid .empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+}
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+}
+.picker-tones {
+  gap: 2px;
+}
+.picker .picker-tones button {
+  width: 27px;
+  height: 27px;
+  font-size: 16px;
+}
+.picker .picker-tones button.on {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.picker .picker-tone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  font-size: 15px;
+}
+.picker-tone-label {
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.picker-credit {
+  white-space: nowrap;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  text-decoration: none;
+}
+.picker-credit:hover {
+  color: var(--accent);
 }

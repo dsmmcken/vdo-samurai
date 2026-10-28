@@ -1,13 +1,15 @@
 import type { Room, Snapshot } from '../lib/room';
 import { Avatar } from './Avatar';
+import { Ink } from './Ink';
 import { Pip } from './Pip';
+import { Reactions } from './Reactions';
 import { endRows } from '../compositor/plan';
 import type { PeerId } from '../lib/types';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
 
 /** The main stage mirrors the final cut's layout, using the low-bitrate live streams. Controls overlay it. */
-export function Stage({ room, s, children }: { room: Room; s: Snapshot; children?: React.ReactNode }) {
+export function Stage({ room, s, pen, children }: { room: Room; s: Snapshot; pen: boolean; children?: React.ReactNode }) {
   const st = s.stage;
   const camOf = (id: PeerId) => (id === s.me ? s.cam : s.peers.get(id)?.cam ?? null);
   const screenOf = (id: PeerId) => (id === s.me ? s.screen : s.peers.get(id)?.screen ?? null);
@@ -47,6 +49,7 @@ export function Stage({ room, s, children }: { room: Room; s: Snapshot; children
     body = showScreen ? (
       <>
         <Video stream={screen} fit="contain" className="stage-video" />
+        <Ink room={room} pen={pen} name={(id) => nameOf(s, id)} />
         <Pip room={room} s={s} stream={cam} mirror={st.id === s.me} off={off(st.id)} head={headOf(st.id)} name={nameOf(s, st.id)} />
       </>
     ) : (
@@ -57,6 +60,7 @@ export function Stage({ room, s, children }: { room: Room; s: Snapshot; children
     <main className="stage" aria-label="Main stage">
       <div className="stage-frame">
         {body}
+        <Reactions room={room} />
         {st?.kind === 'peer' && present(st.id) && <span className="glass chip stage-name">{nameOf(s, st.id)}</span>}
         {children}
       </div>

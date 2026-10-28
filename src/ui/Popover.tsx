@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 /**
  * A small floating panel anchored above (or below) an element. Closes on
  * outside click or Escape. Not modal: the rest of the room keeps working.
+ * A press on the anchor itself is left to the anchor, whose click toggles the
+ * popover: closing here first would have that click open it again.
  */
 export function Popover({ anchor, onClose, children, align = 'center' }: { anchor: DOMRect; onClose: () => void; children: React.ReactNode; align?: 'center' | 'start' | 'end' }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -20,7 +22,8 @@ export function Popover({ anchor, onClose, children, align = 'center' }: { ancho
   }, [anchor, align]);
 
   useEffect(() => {
-    const down = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    const onAnchor = (e: PointerEvent) => e.clientX >= anchor.left && e.clientX <= anchor.right && e.clientY >= anchor.top && e.clientY <= anchor.bottom;
+    const down = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && !onAnchor(e) && onClose();
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     // Defer so the click that opened us doesn't close us.
     const t = setTimeout(() => window.addEventListener('pointerdown', down), 0);
@@ -33,7 +36,7 @@ export function Popover({ anchor, onClose, children, align = 'center' }: { ancho
       window.removeEventListener('keydown', key);
       window.removeEventListener('resize', onClose);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   return (
     <div ref={ref} className="glass popover" style={pos ? pos : { visibility: 'hidden', left: 0, top: 0 }} role="dialog">

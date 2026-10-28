@@ -5,15 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p . && vite build",
+    "build": "tsc -p . && vite build && node scripts/check-bundle.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p .",
-    "test:e2e": "vite build && node tests/e2e.mjs",
-    "build:kernels": "node scripts/build-kernels.mjs"
+    "test:e2e": "vite build && node scripts/check-bundle.mjs && node tests/e2e.mjs",
+    "build:kernels": "node scripts/build-kernels.mjs",
+    "build:emoji": "node scripts/build-emoji.mjs"
   },
   "dependencies": {
+    "@lottiefiles/dotlottie-web": "0.81.0",
     "@vdoninja/sdk": "1.6.2",
     "mediabunny": "1.62.1",
+    "perfect-freehand": "1.2.2",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },

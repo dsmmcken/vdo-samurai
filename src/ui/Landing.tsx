@@ -5,7 +5,7 @@ import { Popover } from './Popover';
 
 /**
  * Frame for the landing screens (create room, lobby): the logo top left, and
- * bottom right the SDK credit and an (i) with what this is.
+ * bottom right the credits and an (i) with what this is.
  */
 export function Landing({ children }: { children: React.ReactNode }) {
   const [about, setAbout] = useState<DOMRect | null>(null);
@@ -34,9 +34,15 @@ export function Landing({ children }: { children: React.ReactNode }) {
           </div>
         </Popover>
       )}
-      <a className="landing-credit" href="https://sdk.vdo.ninja/" target="_blank" rel="noopener noreferrer">
-        Built with VDO.Ninja SDK
-      </a>
+      <span className="landing-credit">
+        <a href="https://sdk.vdo.ninja/" target="_blank" rel="noopener noreferrer">
+          Built with VDO.Ninja SDK
+        </a>
+        {' · '}
+        <a href="https://googlefonts.github.io/noto-emoji-animation/" target="_blank" rel="noopener noreferrer">
+          Animated emoji: Noto, CC BY 4.0
+        </a>
+      </span>
     </main>
   );
 }

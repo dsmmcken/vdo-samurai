@@ -6,6 +6,10 @@
 //    take's start time is fixed on the director's clock, so every peer starts
 //    its recorder at the same instant, and records how late it actually started.
 //  - The director logs every stage change during a take; that log drives the edit.
+//  - Anyone can draw on a screen on stage; points go to everyone over our own
+//    channels and the director logs them for the final cut (ink.ts).
+//  - Emoji reactions work the same way, over the whole stage (reactions.ts);
+//    the director also keeps each emoji's animation, so the render is offline.
 //  - After the take, everyone uploads their files to the director over our own
 //    data channels, resumably, and deletes them once the director confirms.
 import { Mesh } from './mesh';
@@ -15,6 +19,8 @@ import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVi
 import { FaceWatch } from './face/watch';
 import { castSupport, ScreenCaster, ScreenView } from './screencast';
 import type { Head } from './framing';
+import { INK_COLORS, inkAlpha, PLAYBACK_MS, type InkPoint, type InkStroke } from './ink';
+import { fetchLottie, FLIGHT_MS, type Reaction } from './reactions';
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, testHook, type Recorder } from './recorder';
 import * as fs from './opfs';
 import type {
@@ -145,6 +151,25 @@ export class Room {
   private receiving = new Map<string, { ch: RTCDataChannel | null; at: number; stop?: () => Promise<void> }>();
   private render: RenderState | null = null;
   private worker: Worker | null = null;
+  /** This take's ink in take time, saved to ink.json: it can grow, so it stays out of the manifest. */
+  private inkLog: Record<string, InkStroke> = {};
+  private inkSave: ReturnType<typeof setTimeout> | null = null;
+
+  // Ink (everyone): strokes on the current stage, times on our clock.
+  private ink = new Map<string, InkStroke>();
+  /** Whose screen the ink is on ('' when no screen is on stage). */
+  private inkStage = '';
+  /** Our ink colour, a slot in INK_COLORS (claimInk). */
+  inkSlot = 0;
+  private pen: { id: string; stroke: InkStroke; out: InkPoint[]; timer: ReturnType<typeof setInterval> } | null = null;
+
+  /** This take's reactions in take time, saved to reactions.json, and each emoji's animation as it's saved next to it. */
+  private reactLog: Reaction[] = [];
+  private reactSave: ReturnType<typeof setTimeout> | null = null;
+  private lottieSaves = new Map<string, Promise<void>>();
+  // Reactions (everyone): in the air or about to be, times on our clock.
+  private reactions = new Map<string, Reaction>();
+  private reactWatchers = new Set<() => void>();
 
   private listeners = new Set<Listener>();
   private snapshot!: Snapshot;
@@ -223,6 +248,9 @@ export class Room {
           if (files.length && files.every((f) => f.done)) dm.finishedAt[peer] ??= now();
         }
         this.dm = dm;
+        this.inkLog = (await fs.readJson<Record<string, InkStroke>>(takeId, 'ink.json')) ?? {};
+        this.reactLog = (await fs.readJson<Reaction[]>(takeId, 'reactions.json')) ?? [];
+        for (const r of this.reactLog) this.saveLottie(takeId, r.cp);
         this.render = dm.rendered ? await this.finishedRender(takeId) : { state: 'waiting', progress: 0, speed: 0 };
         this.saveDm();
       }
@@ -372,6 +400,7 @@ export class Room {
     if (key === 'take') this.onTake();
     if (key === 'stage' || key === 'corner' || key === 'pip') this.logStage();
     if (key === 'stage') this.applyEncodings();
+    if (key === 'stage') this.onInkStage();
     this.changed();
   }
 
@@ -412,7 +441,24 @@ export class Room {
       screenStreamId: this.screen?.id ?? null,
       castRx: this.cast.receive,
       screenCast: !!this.caster,
+      ink: this.inkSlot,
     };
+  }
+
+  /**
+   * Everyone's ink gets its own colour. We keep ours unless someone with a
+   * smaller id holds it too; then we move to the least-used one. They settle
+   * the same way, so nobody shares a colour while there are colours spare.
+   */
+  private claimInk() {
+    const others = this.mesh.openLinks().flatMap((l) => {
+      const p = this.presences.get(l.peer);
+      return p?.ink === undefined ? [] : [{ peer: l.peer, c: p.ink }];
+    });
+    if (!others.some((o) => o.c === this.inkSlot && o.peer < this.me)) return;
+    const used = INK_COLORS.map((_, c) => others.filter((o) => o.c === c).length);
+    this.inkSlot = used.indexOf(Math.min(...used));
+    this.announce();
   }
 
   private announce() {
@@ -431,6 +477,7 @@ export class Room {
           this.applyEncodings(link);
         }
         if (this.dm && this.active) this.dm.profiles[peer] = m.presence.profile;
+        this.claimInk();
         this.changed();
         break;
       }
@@ -475,6 +522,12 @@ export class Room {
       case 'race':
         this.race = { takeId: m.takeId, rows: m.rows };
         this.changed();
+        break;
+      case 'ink':
+        this.onInk(peer, m);
+        break;
+      case 'react':
+        this.onReact(peer, m);
         break;
     }
   }
@@ -868,6 +921,9 @@ export class Room {
       for (const [id, p] of this.presences) this.dm.profiles[id] = p.profile;
       this.render = null;
       this.race = null;
+      this.inkLog = {};
+      this.reactLog = [];
+      this.lottieSaves.clear();
       this.saveDm();
     }
     // Wait for a clock estimate (late joiners), then start recording as the
@@ -982,6 +1038,12 @@ export class Room {
     if (this.dm?.take.id === take.id) {
       this.dm.take = take;
       this.saveDm();
+      // On disk before the render can start.
+      if (this.inkSave) clearTimeout(this.inkSave), (this.inkSave = null);
+      if (Object.keys(this.inkLog).length) await fs.writeJson(take.id, 'ink.json', this.inkLog).catch(() => {});
+      if (this.reactSave) clearTimeout(this.reactSave), (this.reactSave = null);
+      if (this.reactLog.length) await fs.writeJson(take.id, 'reactions.json', this.reactLog).catch(() => {});
+      await Promise.all(this.lottieSaves.values());
     }
     await this.finishMine(take);
   }
@@ -1362,5 +1424,164 @@ export class Room {
     for (const [id, p] of this.presences) dm.profiles[id] = p.profile;
     dm.profiles[this.me] = this.profile;
     this.saveDm();
+  }
+
+  // ------------------------------------------------------------------ ink
+
+  /** Ink belongs to the screen it was drawn on: a cut clears it. */
+  private onInkStage() {
+    const st = this.shared.stage.v;
+    const key = st?.kind === 'peer' && st.view === 'screen' ? st.id : '';
+    if (key === this.inkStage) return;
+    this.penUp();
+    this.ink.clear();
+    this.inkStage = key;
+  }
+
+  /** Strokes to draw at `t` (our clock); faded ones are dropped. */
+  liveInk(t = now()) {
+    for (const [id, s] of this.ink) {
+      // They left mid-stroke: it counts as lifted.
+      if (s.up === undefined && s.by !== this.me && !this.mesh.links.get(s.by)?.open) s.up = s.pts[s.pts.length - 1][2];
+      if (inkAlpha(s, s.by === this.me ? t : t - PLAYBACK_MS) <= 0) this.ink.delete(id);
+    }
+    return this.ink.values();
+  }
+
+  /** Pen down at (x, y), fractions of the shared picture. `pressure` only from a stylus; mouse and touch get it from their speed. */
+  penDown(x: number, y: number, pressure?: number) {
+    this.penUp();
+    if (!this.inkStage) return;
+    const id = `${this.me}:${rid(6)}`;
+    const stroke: InkStroke = { by: this.me, c: this.inkSlot, pts: [] };
+    this.ink.set(id, stroke);
+    this.pen = { id, stroke, out: [], timer: setInterval(() => this.flushPen(), 50) };
+    this.penMove(x, y, pressure);
+  }
+
+  penMove(x: number, y: number, pressure?: number) {
+    const p = this.pen;
+    if (!p) return;
+    const pt: InkPoint = [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4, Math.round(now())];
+    if (pressure !== undefined) pt.push(Math.round(pressure * 100) / 100);
+    p.stroke.pts.push(pt);
+    p.out.push(pt);
+  }
+
+  penUp() {
+    const p = this.pen;
+    if (!p) return;
+    clearInterval(p.timer);
+    p.stroke.up = Math.round(now());
+    this.pen = null;
+    this.flushPen(p);
+  }
+
+  /** New points go to everyone about every 50 ms, on our own channels (never the signaling server). */
+  private flushPen(p = this.pen) {
+    if (!p || (!p.out.length && p.stroke.up === undefined)) return;
+    const m = { t: 'ink', id: p.id, c: p.stroke.c, on: this.inkStage, p: p.out, up: p.stroke.up };
+    p.out = [];
+    this.mesh.broadcast(m);
+    this.logInk(this.me, m, 0);
+  }
+
+  /** Someone's points, stamped on their clock: ours live, take time in the director's log. */
+  private onInk(peer: PeerId, m: { id: string; c?: number; on: string; p: InkPoint[]; up?: number }) {
+    if (m.on !== this.inkStage) return; // drawn on a stage we've already cut away from
+    const off = this.offsetTo(peer) ?? 0;
+    let s = this.ink.get(m.id);
+    if (!s && !m.p.length) return;
+    if (!s) this.ink.set(m.id, (s = { by: peer, c: m.c, pts: [] }));
+    for (const [x, y, t, ...pr] of m.p) s.pts.push([x, y, t - off, ...pr]);
+    if (m.up !== undefined) s.up = m.up - off;
+    this.logInk(peer, m, off);
+  }
+
+  /** Director, during a take: log the points in take time (outside a take, ink is live only). */
+  private logInk(by: PeerId, m: { id: string; c?: number; p: InkPoint[]; up?: number }, off: number) {
+    const take = this.shared.take.v;
+    const dm = this.dm;
+    if (!take || take.stopAt || take.director !== this.me || dm?.take.id !== take.id) return;
+    const at = (t: number) => Math.round(t - off - take.startAt);
+    const s = (this.inkLog[m.id] ??= { by, c: m.c, pts: [] });
+    for (const [x, y, t, ...pr] of m.p) s.pts.push([x, y, at(t), ...pr]);
+    if (m.up !== undefined) s.up = at(m.up);
+    // Saved a second after drawing starts, and right away once a stroke is
+    // finished, so a reload loses at most the stroke still being drawn.
+    const save = () => {
+      if (this.inkSave) clearTimeout(this.inkSave);
+      this.inkSave = null;
+      if (this.dm === dm) fs.writeJson(dm.take.id, 'ink.json', this.inkLog).catch(() => {});
+    };
+    if (m.up !== undefined) save();
+    else this.inkSave ??= setTimeout(save, 1000);
+  }
+
+  // ------------------------------------------------------------------ reactions
+
+  /** Sends an emoji (a Noto codepoint) floating up everyone's stage, ours included. */
+  react(cp: string) {
+    const r: Reaction = { id: `${this.me}:${rid(6)}`, by: this.me, cp, at: Math.round(now()), seed: crypto.getRandomValues(new Uint32Array(1))[0] };
+    this.showReaction(r);
+    // Peer to peer on our own channels, like everything else.
+    this.mesh.broadcast({ t: 'react', id: r.id, cp, at: r.at, seed: r.seed });
+    this.logReaction(r);
+  }
+
+  /** Someone's reaction, stamped on their clock. */
+  private onReact(peer: PeerId, m: { id: string; cp: string; at: number; seed: number }) {
+    if (!/^[0-9a-f]{2,6}(_[0-9a-f]{2,6})*$/.test(m.cp) || this.reactions.has(m.id)) return;
+    const off = this.offsetTo(peer) ?? 0;
+    const r: Reaction = { id: m.id, by: peer, cp: m.cp, at: m.at - off, seed: m.seed >>> 0 };
+    // Live it starts on arrival at the latest, whatever the clocks say.
+    const t = now();
+    this.showReaction({ ...r, at: Math.max(t - 500, Math.min(t, r.at)) });
+    this.logReaction(r);
+  }
+
+  private showReaction(r: Reaction) {
+    this.reactions.set(r.id, r);
+    this.reactWatchers.forEach((fn) => fn());
+  }
+
+  /** Reactions to draw at `t` (our clock); landed ones are dropped. */
+  liveReactions(t = now()) {
+    for (const [id, r] of this.reactions) if (t >= r.at + FLIGHT_MS) this.reactions.delete(id);
+    return this.reactions.values();
+  }
+
+  /** Called whenever a reaction arrives (the overlay wakes up for it). */
+  watchReactions(fn: () => void) {
+    this.reactWatchers.add(fn);
+    return () => void this.reactWatchers.delete(fn);
+  }
+
+  /** Director, during a take: log it in take time, and keep the emoji's animation for the render. */
+  private logReaction(r: Reaction) {
+    const take = this.shared.take.v;
+    const dm = this.dm;
+    if (!take || take.stopAt || take.director !== this.me || dm?.take.id !== take.id) return;
+    this.reactLog.push({ ...r, at: Math.round(r.at - take.startAt) });
+    this.saveLottie(take.id, r.cp);
+    this.reactSave ??= setTimeout(() => {
+      this.reactSave = null;
+      if (this.dm === dm) fs.writeJson(dm.take.id, 'reactions.json', this.reactLog).catch(() => {});
+    }, 1000);
+  }
+
+  private saveLottie(takeId: string, cp: string) {
+    if (this.lottieSaves.has(cp)) return;
+    const save = async () => {
+      if (await fs.fileSize(takeId, `lottie-${cp}.json`)) return;
+      await fs.writeText(takeId, `lottie-${cp}.json`, await fetchLottie(cp));
+    };
+    this.lottieSaves.set(
+      cp,
+      save().catch((e) => {
+        console.warn('[reactions] could not keep', cp, e);
+        this.lottieSaves.delete(cp); // the next one tries again; the render falls back to Google
+      }),
+    );
   }
 }

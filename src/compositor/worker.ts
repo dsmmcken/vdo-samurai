@@ -2,7 +2,9 @@
 //
 // Picture: follows the director's stage log, drawn from everyone's full-quality
 // recordings. A screen on stage gets the presenter's camera as a rounded box in the
-// bottom-right corner; the end screen is a grid of every camera.
+// bottom-right corner, and any ink drawn on it (between the two, so the camera
+// stays clear and the lower third on top stays readable); the end screen is a
+// grid of every camera. Emoji reactions float over everything.
 // Sound: the director plus whoever is on stage (everyone on the end screen).
 import {
   ALL_FORMATS,
@@ -22,6 +24,8 @@ import {
 } from 'mediabunny';
 import type { Corner, DirectorManifest, PeerId, PipShape, PipStyle, Profile, RecFile } from '../lib/types';
 import { cropFor, glide, type Head } from '../lib/framing';
+import { drawInk, fitContain, type InkStroke } from '../lib/ink';
+import { drawReactions, lottieUrl, type Reaction, type Sprite } from '../lib/reactions';
 import { audible, gridFor, lowerThirds, segments, videoStart, type Segment } from './plan';
 import { LoudnessMeter } from './loudness';
 import { Limiter, VoiceChain } from './voice';
@@ -102,6 +106,8 @@ async function render(m: DirectorManifest) {
   // The output's time zero is take time t0.
   const t0 = videoStart(sources.filter((x) => x.video).map((x) => x.start));
   const thirds = lowerThirds(segs, t0);
+  const ink = await readInk(dir, segs);
+  const { reactions, sprite } = await readReactions(dir);
 
   // Output.
   const fh = await dir.getFileHandle('final.mp4', { create: true });
@@ -294,6 +300,7 @@ async function render(m: DirectorManifest) {
       const cam = await frameAt(st.id, 'cam', t);
       if (screen) {
         drawContain(ctx, screen, 0, 0, W, H);
+        drawInk(ctx, ink[segIdx], t * 1000, fitContain(screen.displayWidth, screen.displayHeight, W, H), { name: (id) => m.profiles[id]?.name || 'Guest' });
         const { x, y, w, h, r, alpha } = pipAt(t);
         if (alpha > 0.01) {
           const path = roundRect(x, y, w, h, r);
@@ -321,6 +328,8 @@ async function render(m: DirectorManifest) {
       if (lt && t >= lt.start && t < lt.end) lowerThird(ctx, m.profiles[st.id], t - lt.start, lt.end - lt.start);
     }
 
+    if (sprite) drawReactions(ctx, reactions, t * 1000, { x: 0, y: 0, w: W, h: H }, sprite);
+
     await video.add(k / FPS, 1 / FPS);
 
     const wall = (performance.now() - wallStart) / 1000;
@@ -343,6 +352,54 @@ async function render(m: DirectorManifest) {
 async function openTakeDir(takeId: string) {
   const root = await navigator.storage.getDirectory();
   return (await root.getDirectoryHandle('takes')).getDirectoryHandle(takeId);
+}
+
+/**
+ * The director's ink log (ink.json), split by segment: ink belongs to the
+ * stage it was drawn on and is gone after a cut. A stroke left unfinished
+ * (its author dropped out) counts as lifted at its last point.
+ */
+async function readInk(dir: FileSystemDirectoryHandle, segs: Segment[]) {
+  let log: Record<string, InkStroke> = {};
+  try {
+    log = JSON.parse(await (await (await dir.getFileHandle('ink.json')).getFile()).text());
+  } catch {
+    /* nobody drew */
+  }
+  const strokes = Object.values(log).filter((s) => s.pts.length);
+  return segs.map((seg) =>
+    strokes
+      .filter((s) => s.pts[0][2] >= seg.start * 1000 && s.pts[0][2] < seg.end * 1000)
+      .map((s) => ({ ...s, up: s.up ?? s.pts[s.pts.length - 1][2] })),
+  );
+}
+
+/**
+ * The director's reaction log (reactions.json), and the player to draw them,
+ * loaded only when there are any. Each emoji's animation was saved next to the
+ * log during the take; Google is only asked if one is missing.
+ */
+async function readReactions(dir: FileSystemDirectoryHandle): Promise<{ reactions: Reaction[]; sprite: Sprite | null }> {
+  let reactions: Reaction[] = [];
+  try {
+    reactions = JSON.parse(await (await (await dir.getFileHandle('reactions.json')).getFile()).text());
+  } catch {
+    /* nobody reacted */
+  }
+  if (!reactions.length) return { reactions, sprite: null };
+  const { Sprites } = await import('../lib/lottie');
+  const sprites = new Sprites(128, async (cp) => {
+    try {
+      return await (await (await dir.getFileHandle(`lottie-${cp}.json`)).getFile()).text();
+    } catch {
+      post({ t: 'warn', message: `the ${cp} reaction wasn't saved with the take; fetching it again` });
+      const r = await fetch(lottieUrl(cp));
+      if (!r.ok) throw new Error(`${cp}: ${r.status}`);
+      return r.text();
+    }
+  });
+  await Promise.all([...new Set(reactions.map((r) => r.cp))].map((cp) => sprites.load(cp)));
+  return { reactions, sprite: sprites.sprite };
 }
 
 /** End-screen order: tile order at take start, then anyone else who recorded a camera. */
@@ -557,10 +614,8 @@ function drawCover(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h:
 }
 
 function drawContain(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h: number) {
-  const scale = Math.min(w / f.displayWidth, h / f.displayHeight);
-  const dw = f.displayWidth * scale;
-  const dh = f.displayHeight * scale;
-  f.draw(ctx, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  const r = fitContain(f.displayWidth, f.displayHeight, w, h, x, y);
+  f.draw(ctx, r.x, r.y, r.w, r.h);
 }
 
 function roundRect(x: number, y: number, w: number, h: number, r: number) {

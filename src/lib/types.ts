@@ -21,6 +21,8 @@ export interface Presence {
   castRx?: boolean;
   /** Our screen goes to peers with castRx that way, not as a WebRTC track. */
   screenCast?: boolean;
+  /** Our ink colour: a slot in ink.ts's INK_COLORS, unique in the room. */
+  ink?: number;
 }
 
 /** What the main stage shows. A peer's screen falls back to their camera when they aren't sharing. */

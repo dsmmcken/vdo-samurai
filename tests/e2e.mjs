@@ -6,8 +6,10 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { flight, FLIGHT_MS } from '../src/lib/reactions.ts';
+import { inkColor } from '../src/lib/ink.ts';
 
-const PORT = 4179;
+const PORT = Number(process.env.PORT || 4179); // PORT=...: another one, when 4179 is busy
 const CHROME = process.env.CHROME || `${os.homedir()}/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`;
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -301,7 +303,29 @@ try {
   const cast = await sam.evaluate(() => ({ kb: Math.round((window.samurai.caster?.sent ?? 0) / 1024), tracks: [...window.samurai.mesh.links.values()].map((l) => l.pc.getSenders().filter((s) => s.track?.kind === 'video').length) }));
   log('screen arrives encoded once:', JSON.stringify(shown), 'Sam sent', cast.kb, 'KB per viewer; video senders per link', JSON.stringify(cast.tracks));
   if (shown.w !== 1920 || shown.h !== 1080) throw new Error(`screen on stage is ${shown.w}x${shown.h}, expected 1920x1080`);
+  // A guest picks up the pen and draws across Sam's screen: it reaches everyone,
+  // the director logs it, it fades, and the final cut has it (checkInk).
+  await cam.getByRole('button', { name: 'Draw on the screen' }).click();
+  const inkColour = inkColor(await cam.evaluate(() => ({ by: window.samurai.me, c: window.samurai.inkSlot })));
+  // Three people in the room, three different ink colours.
+  const slots = await Promise.all(pages.map((p) => p.evaluate(() => window.samurai.inkSlot)));
+  log('ink colour slots:', JSON.stringify(slots));
+  if (new Set(slots).size !== slots.length) throw new Error(`two people share an ink colour: ${slots}`);
+  const sv = await cam.locator('.stage-video').boundingBox();
+  await cam.mouse.move(sv.x + sv.width * 0.35, sv.y + sv.height * 0.35);
+  await cam.mouse.down();
+  await cam.mouse.move(sv.x + sv.width * 0.65, sv.y + sv.height * 0.35, { steps: 15 });
+  await cam.mouse.up();
+  await cam.keyboard.press('Escape');
+  const lifted = Date.now();
+  const inked = () => [...window.samurai.ink.values()].some((s) => s.up !== undefined && s.pts.length > 5);
+  for (const p of [dir, sam]) await p.waitForFunction(inked, null, { timeout: 5000 });
+  const logged = await dir.evaluate(() => Object.values(window.samurai.inkLog).map((s) => `${s.pts.length} points, ${Math.round(s.up - s.pts[0][2])} ms`));
+  log(`ink (${inkColour}) reached the director and Sam; director logged:`, JSON.stringify(logged));
+  await sam.waitForFunction(() => window.samurai.ink.size === 0, null, { timeout: 8000 });
+  log(`ink faded on Sam's stage ${((Date.now() - lifted) / 1000).toFixed(1)} s after the pen lifted`);
   await sleep(1500);
+  await react(cam, [dir, sam]);
   // The director drags the camera overlay to the top-left corner.
   const pip = await dir.locator('.pip').boundingBox();
   const frame = await dir.locator('.stage-frame').boundingBox();
@@ -394,6 +418,8 @@ try {
   log('saved test-results/final.mp4');
   await checkAlignment(dir);
   await checkOverlayAndCamOff(dir);
+  await checkReaction(dir);
+  await checkInk(dir, inkColour);
   if (process.env.FAIL_AUDIO || process.env.REPORT || process.env.DIRECTOR_SCREEN) {
     const dm = await dir.evaluate(() => window.samurai.dm);
     log('director report:\n  ' + dm.reports[dm.take.director].join('\n  '));
@@ -543,6 +569,112 @@ async function checkOverlayAndCamOff(dir) {
   const dur = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', 'test-results/final.mp4']).toString());
   const mid = px(dur - 0.5, 956, 536);
   log(`end screen centre pixel rgb(${mid.join(',')}) ->`, isCam(mid) ? 'a camera (3 cells?)' : 'gap between 2 cells');
+}
+
+/** The guest's stroke in the final cut: there just after the pen lifted, gone once it has faded. */
+async function checkInk(dir, colour) {
+  const { dm, ink } = await dir.evaluate(() => ({ dm: window.samurai.dm, ink: Object.values(window.samurai.inkLog) }));
+  const starts = Object.values(dm.files).map((f) => f.offset / 1000);
+  const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
+  const s = ink[0];
+  if (!s) throw new Error('no ink in the director log');
+  const [x, y] = s.pts[Math.floor(s.pts.length / 2)];
+  const px = (T) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', `crop=2:2:${Math.round(x * 1920) - 1}:${Math.round(y * 1080) - 1},scale=1:1`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'])];
+  const want = [1, 3, 5].map((i) => parseInt(colour.slice(i, i + 2), 16));
+  const isInk = (c) => c.reduce((a, v, i) => a + Math.abs(v - want[i]), 0) < 90;
+  const solid = px(s.up / 1000 + 0.5 - t0);
+  const gone = px(s.up / 1000 + 3.5 - t0);
+  log(`ink in the final cut at (${Math.round(x * 1920)},${Math.round(y * 1080)}): +0.5 s rgb(${solid.join(',')}) ${isInk(solid) ? 'INK' : 'no ink'}, +3.5 s rgb(${gone.join(',')}) ${isInk(gone) ? 'INK' : 'faded'}`);
+  if (!isInk(solid) || isInk(gone)) throw new Error('ink missing from the final cut, or not faded');
+}
+
+/** Names of the scripts, wasm and stylesheets a page has fetched that belong to reactions. */
+function reactionLoads(p) {
+  return p.evaluate(() =>
+    performance
+      .getEntriesByType('resource')
+      .map((e) => e.name)
+      .filter((n) => /ReactionPicker|lottie-|dotlottie-player|Noto\+Color\+Emoji/.test(n))
+      .map((n) => n.replace(/^.*\/(assets\/)?/, '').replace(/-[\w]{8}\.(js|wasm)$/, '.$1').slice(0, 40)),
+  );
+}
+
+/**
+ * A guest opens the picker, searches and sends a reaction: it floats up on
+ * every stage (drawn by the player, which only now loads), and the director
+ * logs it and keeps its animation for the render.
+ */
+async function react(guest, others) {
+  log('reaction files loaded before anyone reacts:', JSON.stringify(await Promise.all(pages.map(reactionLoads))));
+  await guest.getByRole('button', { name: 'Emoji reaction' }).click();
+  // The picker takes over from its loading stand-in first (an atomic fill can
+  // straddle that swap; typed keys can't, PickerShell hands them over).
+  await guest.locator('.picker:not(.loading) .picker-cells button').first().waitFor();
+  await guest.getByLabel('Search reactions').fill('congrats');
+  const top = await guest.locator('.picker-cells button').evaluateAll((b) => b.slice(0, 5).map((x) => x.textContent).join(' '));
+  await guest.screenshot({ path: 'test-results/picker.png' });
+  await guest.getByLabel('Search reactions').press('Enter');
+  await guest.keyboard.press('Escape');
+  const sent = Date.now();
+  const me = await guest.evaluate(() => window.samurai.me);
+  const got = (id) => [...window.samurai.reactions.values()].some((r) => r.by === id);
+  await guest.waitForFunction(got, me, { timeout: 5000 }).catch(() => {
+    throw new Error(`the guest's reaction never started on its own stage (picker shows: ${top || 'nothing'})`);
+  });
+  for (const p of others) await p.waitForFunction(got, me, { timeout: 5000 });
+  log(`reaction sent (search "congrats" top 5: ${top}); reached the director and Sam after ${Date.now() - sent} ms`);
+  // Drawn on every stage: some non-transparent pixels on the reactions canvas.
+  const drawn = () => {
+    const c = document.querySelector('canvas.reactions');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++;
+    return n > 500 && n;
+  };
+  for (const [i, p] of [guest, ...others].entries()) {
+    const px = await (await p.waitForFunction(drawn, null, { timeout: 8000 })).jsonValue();
+    log(`  ${['guest (sender)', 'director', 'Sam'][i]}: animated emoji on stage, ${px} px, ${Date.now() - sent} ms after sending`);
+  }
+  await others[0].screenshot({ path: 'test-results/reaction.png' });
+  log('reaction files loaded now:', JSON.stringify(await Promise.all(pages.map(reactionLoads))));
+  const logged = await pages[0].evaluate(() => window.samurai.reactLog.map((r) => `${r.cp} at ${r.at} ms`));
+  log('director logged reactions:', JSON.stringify(logged));
+  if (logged.length !== 1) throw new Error('the director should have logged one reaction');
+  await sleep(3000); // let it land
+}
+
+/** The reaction in the final cut: a busy patch of emoji along its flight path, flat screen there once it has landed. */
+async function checkReaction(dir) {
+  const { dm, r, files } = await dir.evaluate(async () => {
+    const dm = window.samurai.dm;
+    const d = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('takes')).getDirectoryHandle(dm.take.id);
+    const files = [];
+    for await (const [n] of d.entries()) if (/^(reactions|lottie-)/.test(n)) files.push(n);
+    return { dm, r: window.samurai.reactLog[0], files };
+  });
+  log('director OPFS keeps:', files.join(', '));
+  if (!files.includes(`lottie-${r.cp}.json`)) throw new Error("the reaction's animation wasn't saved with the take");
+  const starts = Object.values(dm.files).map((f) => f.offset / 1000);
+  const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
+  // Spread of brightness over the emoji's square: the screen there is one flat colour.
+  const spread = (ms, box) => {
+    const T = ms / 1000 - t0;
+    const raw = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', `crop=${box.s}:${box.s}:${box.x}:${box.y}`, '-pix_fmt', 'gray', '-f', 'rawvideo', '-']);
+    const mean = raw.reduce((a, v) => a + v, 0) / raw.length;
+    return Math.round(Math.sqrt(raw.reduce((a, v) => a + (v - mean) ** 2, 0) / raw.length));
+  };
+  // Three points on its path clear of the test screen's text and barcode, the
+  // lower third and the camera overlay; the same squares once it has landed.
+  const clear = (b) => b.y > 80 && !(b.y + b.s > 360 && b.y < 620 && b.x < 1150) && !(b.x < 520 && b.y + b.s > 850) && !(b.x + b.s > 1650 && b.y + b.s > 800);
+  const out = [];
+  for (let dt = 300; dt < 2600 && out.length < 3; dt += 100) {
+    const f = flight(r, r.at + dt);
+    const s = Math.round(f.size * 1080 * 0.6);
+    const box = { s, x: Math.round(f.x * 1920 - s / 2), y: Math.round(f.y * 1080 - s / 2) };
+    if (clear(box) && !out.some(([, b]) => Math.abs(b.y - box.y) < s)) out.push([dt, box, spread(r.at + dt, box), spread(r.at + FLIGHT_MS + 300, box)]);
+  }
+  log('reaction in the final cut (brightness spread over its path, then after it landed):', out.map(([dt, b, a, z]) => `+${dt} ms at (${b.x},${b.y}): ${a} -> ${z}`).join(' | '));
+  if (!out.length || !out.every(([, , a, z]) => a > 15 && z < 8)) throw new Error('reaction missing from the final cut');
 }
 
 /** Browser Back from the lobby, and from a live call, must release camera and mic. */

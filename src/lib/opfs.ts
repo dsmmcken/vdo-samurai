@@ -43,18 +43,21 @@ export async function readJson<T>(takeId: string, name: string): Promise<T | nul
 }
 
 /** Writes are serialized per file so overlapping saves can't interleave. */
-const jsonQueues = new Map<string, Promise<void>>();
-export function writeJson(takeId: string, name: string, value: unknown) {
+const writeQueues = new Map<string, Promise<void>>();
+export function writeText(takeId: string, name: string, body: string) {
   const key = `${takeId}/${name}`;
-  const body = JSON.stringify(value);
-  const next = (jsonQueues.get(key) ?? Promise.resolve()).then(async () => {
+  const next = (writeQueues.get(key) ?? Promise.resolve()).then(async () => {
     const h = await (await takeDir(takeId)).getFileHandle(name, { create: true });
     const w = await h.createWritable();
     await w.write(body);
     await w.close();
   });
-  jsonQueues.set(key, next.catch(() => {}));
+  writeQueues.set(key, next.catch(() => {}));
   return next;
+}
+
+export function writeJson(takeId: string, name: string, value: unknown) {
+  return writeText(takeId, name, JSON.stringify(value));
 }
 
 /** Appends chunks in order; `close()` resolves once everything is on disk. */

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { inviteLink, saveProfile } from '../lib/identity';
 import type { Room, Snapshot } from '../lib/room';
 import type { DeviceKind } from '../lib/media';
@@ -6,8 +6,9 @@ import type { PeerId } from '../lib/types';
 import { fmtClock } from '../lib/util';
 import { AfterTake } from './AfterTake';
 import { Countdown } from './Countdown';
-import { Cam, CamOff, Check, Chevron, Copy, Dot, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
+import { AddReaction, Cam, CamOff, Check, Chevron, Copy, Dot, Draw, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
 import { Popover } from './Popover';
+import { emojiFont, PickerShell } from './PickerShell';
 import { ProfileForm } from './ProfileForm';
 import { Stage } from './Stage';
 import { TileStrip } from './TileStrip';
@@ -15,12 +16,29 @@ import { RemoteAudio } from './Video';
 import { RecordingDetails } from './RecordingDetails';
 import { WaitingMusic } from './WaitingMusic';
 
+// The picker, its search and the emoji list load on first use (or hover).
+// Hovering the button starts on both the picker's code and its font.
+const loadPicker = () => (emojiFont.start(), import('./ReactionPicker'));
+const ReactionPicker = lazy(loadPicker);
+
 export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void }) {
   const s = useSyncExternalStore(room.subscribe, room.getSnapshot);
   const [edit, setEdit] = useState<{ at: DOMRect; id: PeerId } | null>(null);
   const [menuAt, setMenuAt] = useState<DOMRect | null>(null);
   const [details, setDetails] = useState(false);
+  const [reactAt, setReactAt] = useState<DOMRect | null>(null);
   const iAmDirector = s.director === s.me;
+  // Drawing is a pen you pick up (Esc puts it down): clicks on the stage stay
+  // clicks, and nobody inks the shared screen (and the recording) by accident.
+  const [pen, setPen] = useState(false);
+  const st = s.stage;
+  const inkable = st?.kind === 'peer' && st.view === 'screen' && !!(st.id === s.me ? s.screen : s.peers.get(st.id)?.screen);
+  useEffect(() => {
+    if (!pen) return;
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && setPen(false);
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [pen]);
 
   const record = async () => {
     const dm = s.directorTake;
@@ -31,7 +49,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
 
   return (
     <div className="room">
-      <Stage room={room} s={s}>
+      <Stage room={room} s={s} pen={pen && inkable}>
         <RecIndicator s={s} />
         {!s.director && !s.take && <div className="glass hint">One person must be Shōgun (director) to record. Claim it on your tile.</div>}
 
@@ -60,14 +78,33 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
                 <Dot size={26} />
               </button>
             ))}
+          {inkable && (
+            <button
+              className={`glass round ${pen ? 'on' : ''}`}
+              onClick={() => setPen(!pen)}
+              title={pen ? 'Stop drawing (Esc)' : 'Draw on the screen'}
+              aria-label={pen ? 'Stop drawing' : 'Draw on the screen'}
+            >
+              <Draw size={20} />
+            </button>
+          )}
+          <button
+            className={`glass round ${reactAt ? 'on' : ''}`}
+            onPointerEnter={loadPicker}
+            onClick={(e) => setReactAt(reactAt ? null : e.currentTarget.getBoundingClientRect())}
+            title="Emoji reaction"
+            aria-label="Emoji reaction"
+          >
+            <AddReaction size={20} />
+          </button>
           <ViewToggle room={room} s={s} />
-          <button className="glass round" onClick={(e) => setMenuAt(e.currentTarget.getBoundingClientRect())} title="More" aria-label="More">
+          <button className={`glass round ${menuAt ? 'on' : ''}`} onClick={(e) => setMenuAt(menuAt ? null : e.currentTarget.getBoundingClientRect())} title="More" aria-label="More">
             <More size={20} />
           </button>
         </div>
       </Stage>
 
-      <TileStrip room={room} s={s} onEditProfile={(at, id) => setEdit({ at, id })} />
+      <TileStrip room={room} s={s} onEditProfile={(at, id) => setEdit(edit?.id === id ? null : { at, id })} />
 
       {edit && (
         <Popover anchor={edit.at} onClose={() => setEdit(null)}>
@@ -81,6 +118,13 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
               setEdit(null);
             }}
           />
+        </Popover>
+      )}
+      {reactAt && (
+        <Popover anchor={reactAt} onClose={() => setReactAt(null)}>
+          <Suspense fallback={<PickerShell />}>
+            <ReactionPicker onPick={(cp) => room.react(cp)} />
+          </Suspense>
         </Popover>
       )}
       {menuAt && (
