@@ -10,12 +10,23 @@ import { Landing } from './Landing';
 import { Avatar } from './Avatar';
 import { Cam, CamOff, Mic, MicOff } from './icons';
 
+// Example names for the fields: one famous samurai per visit.
+const EXAMPLES = [
+  { name: 'Miyamoto Musashi', subtitle: 'Rōnin, Niten Ichi-ryū' },
+  { name: 'Tomoe Gozen', subtitle: 'Onna-musha, Minamoto clan' },
+  { name: 'Date Masamune', subtitle: 'Daimyō of Sendai' },
+  { name: 'Sanada Yukimura', subtitle: 'General, Sanada clan' },
+  { name: 'Uesugi Kenshin', subtitle: 'Dragon of Echigo' },
+  { name: 'Honda Tadakatsu', subtitle: 'General, Tokugawa clan' },
+];
+
 export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw: string) => void }) {
   // Whoever created the room already has the password; invitees type it here.
   const [known] = useState(() => recallPassword(room));
   const [typedPw, setTypedPw] = useState('');
   const pw = known ?? typedPw;
   const [profile, setProfile] = useState(loadProfile);
+  const [example] = useState(() => EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)]);
   const [cam, setCam] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
@@ -121,11 +132,11 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
         </div>
         <label className="field">
           <span>Full name</span>
-          <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} placeholder="Ada Lovelace" autoFocus />
+          <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} placeholder={example.name} autoFocus />
         </label>
         <label className="field">
           <span>Subtitle</span>
-          <input value={profile.subtitle} onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })} placeholder="Analyst, Babbage & Co." />
+          <input value={profile.subtitle} onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })} placeholder={example.subtitle} />
           <small>Your lower third in the final video</small>
         </label>
         {known === null && (

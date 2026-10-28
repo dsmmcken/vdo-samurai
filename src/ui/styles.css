@@ -1170,7 +1170,6 @@ pre,
 }
 .submenu {
   position: absolute;
-  right: calc(100% + 8px);
   top: -6px;
   min-width: 260px;
   max-width: 340px;
@@ -1182,6 +1181,38 @@ pre,
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 30px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
+}
+.submenu.right {
+  left: calc(100% + 8px);
+}
+.submenu.left {
+  right: calc(100% + 8px);
+}
+.submenu.over {
+  left: -6px;
+  right: -6px;
+  top: calc(100% - 4px);
+  min-width: 0;
+  z-index: 1;
+}
+.submenu.up {
+  top: auto;
+  bottom: -6px;
+}
+/* An invisible bridge across the gap, so moving the pointer into the submenu
+   doesn't leave the row and close it. */
+.submenu::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+}
+.submenu.right::before {
+  right: 100%;
+}
+.submenu.left::before {
+  left: 100%;
 }
 .submenu button span.dev {
   flex: 1;

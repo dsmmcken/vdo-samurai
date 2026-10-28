@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { inviteLink, saveProfile } from '../lib/identity';
 import type { Room, Snapshot } from '../lib/room';
 import type { DeviceKind } from '../lib/media';
@@ -165,17 +165,36 @@ function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; 
 /** A menu row that opens a side submenu listing devices of one kind, with a check on the current one. */
 function DeviceMenu({ room, s, kind, label, icon, close }: { room: Room; s: Snapshot; kind: DeviceKind; label: string; icon: React.ReactNode; close: () => void }) {
   const [open, setOpen] = useState(false);
+  // Opens to the right like a desktop menu; flips left / up if it would run off screen.
+  // When neither side has room, it takes the roomier side and narrows to fit.
+  const [side, setSide] = useState<{ left: boolean; up: boolean; width?: number; over?: boolean }>({ left: false, up: false });
+  const rowRef = useRef<HTMLDivElement>(null);
+  const show = () => {
+    const r = rowRef.current?.getBoundingClientRect();
+    if (r) {
+      const want = 260;
+      const right = window.innerWidth - r.right - 16;
+      const left = r.left - 16;
+      const goLeft = right < want && left > right;
+      const room = goLeft ? left : right;
+      // Too narrow for either side (phones): open over the menu itself.
+      if (room < 160) setSide({ left: false, up: false, over: true });
+      else setSide({ left: goLeft, up: r.top + 260 > window.innerHeight, width: room < want ? room : undefined });
+    }
+    setOpen(true);
+    room.refreshDevices();
+  };
   const list = kind === 'cam' ? s.devices.cams : kind === 'mic' ? s.devices.mics : s.devices.speakers;
   const current = s.current[kind] ?? (kind === 'speaker' ? 'default' : null);
   const name = (d: MediaDeviceInfo, i: number) => d.label || `${label} ${i + 1}`;
   return (
-    <div className="has-sub" onMouseEnter={() => (setOpen(true), room.refreshDevices())} onMouseLeave={() => setOpen(false)}>
-      <button onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open}>
+    <div ref={rowRef} className="has-sub" onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+      <button onClick={() => (open ? setOpen(false) : show())} aria-haspopup="menu" aria-expanded={open}>
         {icon} {label}
         <Chevron size={16} className="chev" />
       </button>
       {open && (
-        <div className="submenu" role="menu">
+        <div className={`submenu ${side.over ? 'over' : side.left ? 'left' : 'right'} ${side.up ? 'up' : ''}`} style={side.width ? { minWidth: side.width, width: side.width } : undefined} role="menu">
           {list.length === 0 && <div className="empty">{kind === 'speaker' ? 'This browser can’t choose speakers.' : 'No devices found.'}</div>}
           {list.map((d, i) => (
             <button
