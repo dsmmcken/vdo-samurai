@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8" /><body><script type="module">
+import { BlazeFace } from './blazeface.js';
+const det = await BlazeFace.load('blaze_face_short_range.tflite', { simd: new URLSearchParams(location.search).get('simd') !== '0' });
+const { tensors } = det.model;
+for (let i = 0; i < 5; i++) det.run();
+const byKind = {}; let macs = 0;
+const orig = det.plan;
+for (const op of orig) {
+  det.plan = [op];
+  const t = performance.now(); for (let i = 0; i < 20; i++) det.run(); const ms = (performance.now() - t) / 20;
+  const o = tensors[op.outputs[0]].shape, w = tensors[op.inputs[1]]?.shape;
+  const m = op.name === 'CONV_2D' ? o[1]*o[2]*o[3]*w[1]*w[2]*w[3] : op.name === 'DEPTHWISE_CONV_2D' ? o[1]*o[2]*o[3]*w[1]*w[2] : 0;
+  macs += m;
+  const k = op.name + (op.name === 'CONV_2D' ? (w[1] === 1 ? ' 1x1' : ` ${w[1]}x${w[2]}`) : '');
+  byKind[k] = (byKind[k] ?? 0) + ms;
+}
+det.plan = orig;
+window.result = { MMACs: +(macs / 1e6).toFixed(1), msByKind: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, +v.toFixed(2)])) };
+</script>

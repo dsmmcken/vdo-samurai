@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8" /><body><script type="module">
+// Same 128x128 image into both, so no resizing differs: the network outputs should match.
+import { FilesetResolver, FaceDetector } from './node_modules/@mediapipe/tasks-vision/vision_bundle.mjs';
+import { BlazeFace } from './blazeface.js';
+const img = new Image(); img.src = 'portrait.jpg'; await img.decode();
+const ours = await BlazeFace.load('blaze_face_short_range.tflite');
+const fs = await FilesetResolver.forVisionTasks('./node_modules/@mediapipe/tasks-vision/wasm');
+const mp = await FaceDetector.createFromOptions(fs, { baseOptions: { modelAssetPath: 'blaze_face_short_range.tflite', delegate: 'CPU' }, runningMode: 'IMAGE', minDetectionConfidence: 0.3 });
+const out = [];
+for (const [x, y, s] of [[10, 0, 128], [-20, 10, 160], [30, 20, 90]]) {
+  const c = new OffscreenCanvas(128, 128); const g = c.getContext('2d');
+  g.fillStyle = '#556'; g.fillRect(0, 0, 128, 128); g.drawImage(img, x, y, s * 0.8, s);
+  const bmp = await createImageBitmap(c);
+  const a = ours.detect(bmp, { minScore: 0.3 })[0], b = mp.detect(bmp).detections[0];
+  out.push({ ours: a && [a.x, a.y, a.w, a.score].map(v => +v.toFixed(3)), mp: b && [b.boundingBox.originX, b.boundingBox.originY, b.boundingBox.width, b.categories[0].score].map(v => +v.toFixed(3)) });
+}
+window.result = out;
+</script>

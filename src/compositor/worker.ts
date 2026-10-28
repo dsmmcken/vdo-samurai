@@ -21,6 +21,7 @@ import {
   type VideoSample,
 } from 'mediabunny';
 import type { Corner, DirectorManifest, PeerId, PipShape, PipStyle, Profile, RecFile } from '../lib/types';
+import { cropFor, glide, type Head } from '../lib/framing';
 import { audible, gridFor, lowerThirds, segments, videoStart, type Segment } from './plan';
 import { LoudnessMeter } from './loudness';
 import { Limiter, VoiceChain } from './voice';
@@ -191,6 +192,28 @@ async function render(m: DirectorManifest) {
   const camOff = (peer: PeerId, t: number) =>
     (m.camOff?.[peer] ?? []).some(([a, b]) => t * 1000 >= a && (b === null || t * 1000 < b));
 
+  // Auto-framing: each person's anchor over time (logged by their own
+  // browser), glided exactly as the live views glide.
+  const frameLogs = new Map(Object.entries(m.frames ?? {}).map(([p, log]) => [p, [...log].sort((a, b) => a[0] - b[0])]));
+  const framing = new Map<PeerId, { shown: Head | null; t: number }>();
+  const headAt = (peer: PeerId, t: number): Head | null => {
+    const log = frameLogs.get(peer);
+    if (!log?.length) return null;
+    let target = log[0][1]; // before the first entry: as framed when the take began
+    for (const [at, h] of log) {
+      if (at > t * 1000) break;
+      target = h;
+    }
+    const st = framing.get(peer);
+    if (!st?.shown || !target) {
+      framing.set(peer, { shown: target, t });
+      return target;
+    }
+    st.shown = glide(st.shown, target, Math.max(0, t - st.t));
+    st.t = t;
+    return st.shown;
+  };
+
   // Overlay geometry over time (corner, shape, hidden), from the stage log.
   // Each change glides / morphs / fades over the same time as on the live stage.
   type Geo = { x: number; y: number; w: number; h: number; r: number; alpha: number };
@@ -262,7 +285,7 @@ async function render(m: DirectorManifest) {
         const f = await frameAt(shown[i], 'cam', t);
         ctx.save();
         ctx.clip(roundRect(c.x, c.y, c.w, c.h, 24));
-        if (f) drawCover(ctx, f, c.x, c.y, c.w, c.h);
+        if (f) drawCover(ctx, f, c.x, c.y, c.w, c.h, headAt(shown[i], t));
         else placeholder(ctx, c.x, c.y, c.w, c.h, m.profiles[shown[i]]);
         ctx.restore();
       }
@@ -285,12 +308,12 @@ async function render(m: DirectorManifest) {
           ctx.fill(path);
           ctx.restore();
           ctx.clip(path);
-          if (cam) drawCover(ctx, cam, x, y, w, h);
+          if (cam) drawCover(ctx, cam, x, y, w, h, headAt(st.id, t));
           else placeholder(ctx, x, y, w, h, m.profiles[st.id]);
           ctx.restore();
         }
       } else if (cam) {
-        drawCover(ctx, cam, 0, 0, W, H);
+        drawCover(ctx, cam, 0, 0, W, H, headAt(st.id, t));
       } else {
         placeholder(ctx, 0, 0, W, H, m.profiles[st.id]);
       }
@@ -527,13 +550,10 @@ function concat(a: Float32Array, b: Float32Array) {
 
 type Ctx = OffscreenCanvasRenderingContext2D;
 
-function drawCover(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h: number) {
-  const sw = f.displayWidth;
-  const sh = f.displayHeight;
-  const scale = Math.max(w / sw, h / sh);
-  const cw = w / scale;
-  const ch = h / scale;
-  f.draw(ctx, (sw - cw) / 2, (sh - ch) / 2, cw, ch, x, y, w, h);
+/** Fills the box with the frame: centred "cover", or framed on `head` (auto-framing). */
+function drawCover(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h: number, head: Head | null = null) {
+  const c = cropFor(head, f.displayWidth, f.displayHeight, w / h);
+  f.draw(ctx, c.x, c.y, c.w, c.h, x, y, w, h);
 }
 
 function drawContain(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h: number) {

@@ -12,6 +12,8 @@ import { Mesh } from './mesh';
 import { saveProfile } from './identity';
 import type { Link } from './link';
 import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVideoTrack, screenEncoding, setDevicePref, type CamRole, type DeviceKind } from './media';
+import { FaceWatch } from './face/watch';
+import type { Head } from './framing';
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, type Recorder } from './recorder';
 import * as fs from './opfs';
 import type {
@@ -62,6 +64,8 @@ export interface Snapshot {
   profile: Profile;
   micMuted: boolean;
   camOff: boolean;
+  /** Our own auto-framing anchor (everyone else's is in their presence). */
+  head: Head | null;
   cam: MediaStream | null;
   devices: { cams: MediaDeviceInfo[]; mics: MediaDeviceInfo[]; speakers: MediaDeviceInfo[] };
   current: { cam: string | null; mic: string | null; speaker: string | null };
@@ -98,6 +102,8 @@ export class Room {
   private screen: MediaStream | null = null;
   private micMuted = false;
   private camOff = false;
+  private head: Head | null = null;
+  private faceWatch = new FaceWatch((h) => this.onHead(h));
   private presences = new Map<PeerId, Presence>();
   private clocks = new Map<PeerId, { samples: { rtt: number; offset: number }[] }>();
   private lamport = 0;
@@ -151,6 +157,7 @@ export class Room {
     this.micMuted = !!opts.micMuted;
     this.camOff = !!opts.camOff || cam.getVideoTracks().length === 0;
     cam.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
+    this.watchFace();
     this.refreshDevices();
     navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
     await this.restore();
@@ -162,6 +169,7 @@ export class Room {
 
   async leave() {
     this.timers.forEach(clearInterval);
+    this.faceWatch.stop();
     // Camera, mic and screen first: disconnecting from signaling can take a
     // moment, and the camera light shouldn't wait for it.
     this.cam?.getTracks().forEach((t) => t.stop());
@@ -259,6 +267,7 @@ export class Room {
       profile: this.profile,
       micMuted: this.micMuted,
       camOff: this.camOff,
+      head: this.head,
       cam: this.cam,
       devices: {
         cams: this.devices.filter((d) => d.kind === 'videoinput'),
@@ -369,6 +378,7 @@ export class Room {
       hasScreen: !!this.screen,
       micMuted: this.micMuted,
       camOff: this.camOff,
+      head: this.head,
       camStreamId: this.cam?.id ?? null,
       screenStreamId: this.screen?.id ?? null,
     };
@@ -405,7 +415,7 @@ export class Room {
         this.dmOnRec(peer, m.takeId, m.profile);
         break;
       case 'files':
-        this.dmOnFiles(peer, link, m.takeId, m.files, m.report, m.camOff);
+        this.dmOnFiles(peer, link, m.takeId, m.files, m.report, m.camOff, m.frames);
         break;
       case 'want':
         this.uploadQueue.push({ takeId: m.takeId, name: m.name, offset: m.offset });
@@ -574,7 +584,24 @@ export class Room {
       this.camOff = false;
     }
     this.logCamOff();
+    this.watchFace();
     this.pushAll();
+    this.announce();
+  }
+
+  // ------------------------------------------------------------------ auto-framing
+
+  /** Follow the current camera track; when it's off, the last framing stays. */
+  private watchFace() {
+    this.faceWatch.setTrack(this.camOff ? null : (this.cam?.getVideoTracks()[0] ?? null));
+  }
+
+  /** A new framing anchor: share it, and log it into the take for the final cut. */
+  private onHead(h: Head | null) {
+    this.head = h;
+    const a = this.active;
+    const m = a && this.mine.get(a.take.id);
+    if (a && m && !m.complete) (m.frames ??= []).push([this.toTake(a.take, now()), h]);
     this.announce();
   }
 
@@ -622,8 +649,10 @@ export class Room {
         old.stop();
       }
       this.cam?.addTrack(t);
-      if (kind === 'cam') rec?.setVideo?.(t);
-      else rec?.setAudio?.(t);
+      if (kind === 'cam') {
+        rec?.setVideo?.(t);
+        this.watchFace();
+      } else rec?.setAudio?.(t);
       this.note(this.active?.take.id ?? '', `${kind === 'cam' ? 'camera' : 'microphone'} switched to ${t.label || 'another device'}`);
       this.pushAll();
       this.announce();
@@ -762,7 +791,7 @@ export class Room {
     if (wait > 0) await sleep(wait);
     if (this.active !== a || a.stopping) return;
     a.began = true;
-    if (!this.mine.has(take.id)) this.mine.set(take.id, { take, files: [], acked: [], complete: false, camOff: this.camOff ? [[-PREROLL_MS, null]] : [] });
+    if (!this.mine.has(take.id)) this.mine.set(take.id, { take, files: [], acked: [], complete: false, camOff: this.camOff ? [[-PREROLL_MS, null]] : [], frames: [[-PREROLL_MS, this.head]] });
     const v = this.cam?.getVideoTracks()[0]?.getSettings();
     const au = this.cam?.getAudioTracks()[0]?.getSettings();
     this.note(take.id, `browser: ${navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/g)?.join(' ') ?? navigator.userAgent}; ${navigator.platform}`);
@@ -882,6 +911,7 @@ export class Room {
         if (!this.dm.announced.includes(this.me)) this.dm.announced.push(this.me);
         (this.dm.reports ??= {})[this.me] = m.report ?? [];
         (this.dm.camOff ??= {})[this.me] = m.camOff ?? [];
+        (this.dm.frames ??= {})[this.me] = m.frames ?? [];
         this.dm.finishedAt[this.me] = now();
         this.saveDm();
       }
@@ -898,7 +928,7 @@ export class Room {
     if (!m || !m.complete) return;
     const link = this.mesh.links.get(m.take.director);
     if (!link?.open) return; // retried when the director (re)connects
-    link.send({ t: 'files', takeId, files: m.files.filter((f) => f.size > 0), report: m.report ?? [], camOff: m.camOff ?? [] });
+    link.send({ t: 'files', takeId, files: m.files.filter((f) => f.size > 0), report: m.report ?? [], camOff: m.camOff ?? [], frames: m.frames ?? [] });
   }
 
   private async pumpUploads() {
@@ -989,7 +1019,7 @@ export class Room {
     this.saveDm();
   }
 
-  private async dmOnFiles(peer: PeerId, link: Link, takeId: string, files: RecFile[], report?: string[], camOff?: [number, number | null][]) {
+  private async dmOnFiles(peer: PeerId, link: Link, takeId: string, files: RecFile[], report?: string[], camOff?: [number, number | null][], frames?: [number, Head | null][]) {
     const dm = this.dm;
     if (dm?.take.id !== takeId) {
       // Not our take (or already discarded): tell them to let it go.
@@ -1000,6 +1030,7 @@ export class Room {
     if (!dm.announced.includes(peer)) dm.announced.push(peer);
     if (report) (dm.reports ??= {})[peer] = report;
     if (camOff) (dm.camOff ??= {})[peer] = camOff;
+    if (frames) (dm.frames ??= {})[peer] = frames;
     for (const f of files) {
       const have = dm.files[f.name];
       if (have?.done) {

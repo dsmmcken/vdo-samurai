@@ -105,7 +105,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
             }}
             onDragEnd={() => endDrag(false)}
           >
-            <Video stream={me ? s.cam : p?.cam ?? null} mirror={me} />
+            <Video stream={me ? s.cam : p?.cam ?? null} mirror={me} head={me ? s.head : p?.presence?.head ?? null} />
             {(me ? s.camOff : p?.presence?.camOff) && <Avatar name={nameOf(s, id)} />}
             {!muted && <MicMeter stream={me ? s.cam : p?.cam ?? null} />}
             <div className="tile-badges">

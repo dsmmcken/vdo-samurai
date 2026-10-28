@@ -1,3 +1,5 @@
+import type { Head } from './framing';
+
 export type PeerId = string;
 
 export interface Profile {
@@ -11,6 +13,8 @@ export interface Presence {
   hasScreen: boolean;
   micMuted: boolean;
   camOff?: boolean;
+  /** Auto-framing: where views of this camera centre the head (null: plain centred crop). */
+  head?: Head | null;
   camStreamId: string | null;
   screenStreamId: string | null;
 }
@@ -106,6 +110,8 @@ export interface DirectorManifest {
   reports?: Record<string, string[]>;
   /** Per person: stretches (ms since take start) with the camera turned off. */
   camOff?: Record<PeerId, [number, number | null][]>;
+  /** Per person: auto-framing anchor changes, [ms since take start, anchor]. */
+  frames?: Record<PeerId, [number, Head | null][]>;
 }
 
 /** A non-director's record of what it still has to upload. */
@@ -119,4 +125,6 @@ export interface SenderManifest {
   report?: string[];
   /** Stretches (ms since take start) when this person had their camera off. */
   camOff?: [number, number | null][];
+  /** This person's auto-framing anchor changes, [ms since take start, anchor]. */
+  frames?: [number, Head | null][];
 }

@@ -13,8 +13,9 @@ export function Stage({ room, s, children }: { room: Room; s: Snapshot; children
   const screenOf = (id: PeerId) => (id === s.me ? s.screen : s.peers.get(id)?.screen ?? null);
   const present = (id: PeerId) => id === s.me || s.peers.has(id);
   const off = (id: PeerId) => (id === s.me ? s.camOff : !!s.peers.get(id)?.presence?.camOff);
+  const headOf = (id: PeerId) => (id === s.me ? s.head : s.peers.get(id)?.presence?.head ?? null);
   const camView = (id: PeerId, className?: string) =>
-    off(id) ? <Avatar name={nameOf(s, id)} /> : <Video stream={camOf(id)} mirror={id === s.me} className={className} />;
+    off(id) ? <Avatar name={nameOf(s, id)} /> : <Video stream={camOf(id)} mirror={id === s.me} head={headOf(id)} className={className} />;
 
   let body: React.ReactNode;
   if (!st || (st.kind === 'peer' && !present(st.id))) {
@@ -46,7 +47,7 @@ export function Stage({ room, s, children }: { room: Room; s: Snapshot; children
     body = showScreen ? (
       <>
         <Video stream={screen} fit="contain" className="stage-video" />
-        <Pip room={room} s={s} stream={cam} mirror={st.id === s.me} off={off(st.id)} name={nameOf(s, st.id)} />
+        <Pip room={room} s={s} stream={cam} mirror={st.id === s.me} off={off(st.id)} head={headOf(st.id)} name={nameOf(s, st.id)} />
       </>
     ) : (
       camView(st.id, 'stage-video')

@@ -1,0 +1,5 @@
+node_modules/
+results/
+faces/
+portrait.jpg
+blaze_face_short_range.tflite

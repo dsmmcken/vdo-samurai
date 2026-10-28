@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>BlazeFace: ours vs MediaPipe</title>
+<body>
+<script type="module">
+  // Each test photo is placed in a 1280x720 "webcam" frame in several ways
+  // (right, left, small/far, tilted, dim, backlit). Three detectors look at
+  // every frame:
+  //   ours     - our runner, whole frame letterboxed into 128x128
+  //   tracked  - our runner via FaceTracker (search squares, then a close-up crop)
+  //   mediapipe- MediaPipe's FaceDetector, whole frame (its normal use)
+  // and a contact sheet with the boxes is saved for checking by eye.
+  import { FilesetResolver, FaceDetector } from './node_modules/@mediapipe/tasks-vision/vision_bundle.mjs';
+  import { BlazeFace } from './blazeface.js';
+  import { FaceTracker } from './tracker.js';
+
+  const MODEL = 'blaze_face_short_range.tflite';
+  const list = await (await fetch('faces/')).text().catch(() => '');
+  const names = ['portrait.jpg', ...[...list.matchAll(/href="([^"]+\.jpg)"/g)].map((m) => 'faces/' + m[1])];
+  const photos = [];
+  for (const src of [...new Set(names)]) {
+    const img = new Image();
+    img.src = src;
+    try { await img.decode(); photos.push([src.replace(/^faces\//, '').replace(/\.jpg$/, ''), img]); } catch {}
+  }
+
+  const scenes = [];
+  for (const [name, img] of photos) {
+    const fit = (hh) => [img.naturalWidth * (hh / img.naturalHeight), hh];
+    const [w, h] = fit(700), [sw, sh] = fit(380);
+    scenes.push([name, 'right', (g) => g.drawImage(img, 1260 - w, 10, w, h)]);
+    scenes.push([name, 'left', (g) => g.drawImage(img, 20, 10, w, h)]);
+    scenes.push([name, 'far', (g) => g.drawImage(img, 640 - sw / 2, 200, sw, sh)]);
+    scenes.push([name, 'tilted', (g) => { g.translate(900, 360); g.rotate(0.35); g.drawImage(img, -w / 2, -h / 2, w, h); }]);
+    scenes.push([name, 'dim', (g) => { g.drawImage(img, 1260 - w, 10, w, h); g.fillStyle = 'rgba(0,0,0,0.75)'; g.fillRect(0, 0, 1280, 720); }]);
+    scenes.push([name, 'backlit', (g) => {
+      g.fillStyle = '#fff'; g.fillRect(0, 0, 1280, 720);
+      g.filter = 'brightness(0.45)'; g.drawImage(img, 1260 - w, 10, w, h); g.filter = 'none';
+    }]);
+  }
+
+  const ours = await BlazeFace.load(MODEL);
+  const fs = await FilesetResolver.forVisionTasks('./node_modules/@mediapipe/tasks-vision/wasm');
+  const mp = await FaceDetector.createFromOptions(fs, { baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' }, runningMode: 'IMAGE' });
+
+  const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+  const T = { ours: [], trackSearch: [], trackFollow: [], mediapipe: [] };
+  const rows = [];
+  const found = { ours: 0, tracked: 0, mediapipe: 0 };
+  const COLS = 6, TW = 320, TH = 180;
+  const sheet = new OffscreenCanvas(TW * COLS, TH * Math.ceil(scenes.length / COLS));
+  const sg = sheet.getContext('2d');
+  const fmt = (f) => (f ? `${Math.round(f.x + f.w / 2)},${Math.round(f.y + f.h / 2)} s${Math.round(f.w)} ${f.score.toFixed(2)}` : '-');
+
+  for (const [n, [name, kind, draw]] of scenes.entries()) {
+    const frame = new OffscreenCanvas(1280, 720);
+    const g = frame.getContext('2d');
+    g.fillStyle = '#556';
+    g.fillRect(0, 0, 1280, 720);
+    draw(g);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const bmp = await createImageBitmap(frame);
+
+    let t = performance.now();
+    const a = ours.detect(bmp)[0];
+    T.ours.push(performance.now() - t);
+
+    const tracker = new FaceTracker(ours);
+    t = performance.now();
+    let tr = tracker.update(bmp); // search
+    T.trackSearch.push(performance.now() - t);
+    if (tr) {
+      t = performance.now();
+      tr = tracker.update(bmp); // follow
+      T.trackFollow.push(performance.now() - t);
+    }
+
+    t = performance.now();
+    const md = mp.detect(bmp).detections[0];
+    T.mediapipe.push(performance.now() - t);
+    const m = md && { x: md.boundingBox.originX, y: md.boundingBox.originY, w: md.boundingBox.width, h: md.boundingBox.height, score: md.categories[0].score };
+
+    found.ours += !!a; found.tracked += !!tr; found.mediapipe += !!m;
+    rows.push(`${(name + ' ' + kind).padEnd(46)} ours ${fmt(a).padEnd(22)} tracked ${fmt(tr).padEnd(22)} mediapipe ${fmt(m)}`);
+
+    const X = (n % COLS) * TW, Y = Math.floor(n / COLS) * TH, k = TW / 1280;
+    sg.drawImage(bmp, X, Y, TW, TH);
+    sg.lineWidth = 2;
+    for (const [f, col] of [[m, '#4af'], [tr, '#ffb7c5']]) {
+      if (!f) continue;
+      sg.strokeStyle = col;
+      sg.strokeRect(X + f.x * k, Y + f.y * k, f.w * k, f.h * k);
+    }
+    sg.fillStyle = '#000a'; sg.fillRect(X, Y + TH - 16, TW, 16);
+    sg.fillStyle = '#fff'; sg.font = '11px sans-serif';
+    sg.fillText(`${name.slice(0, 30)} ${kind}  ${tr ? '' : 'ours:miss '}${m ? '' : 'mp:miss'}`, X + 4, Y + TH - 4);
+  }
+  const blob = await sheet.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  const sheetData = await new Promise((done) => {
+    const r = new FileReader();
+    r.onload = () => done(r.result.split(',')[1]);
+    r.readAsDataURL(blob);
+  });
+  window.result = {
+    text: [
+      ...rows,
+      '',
+      `found (of ${scenes.length}): ours whole-frame ${found.ours}, ours tracked ${found.tracked}, mediapipe ${found.mediapipe}`,
+      `median ms: ours whole-frame ${median(T.ours).toFixed(1)}, tracker searching ${median(T.trackSearch).toFixed(1)}, tracker following ${median(T.trackFollow).toFixed(1)}, mediapipe ${median(T.mediapipe).toFixed(1)}`,
+    ].join('\n'),
+    sheet: sheetData,
+  };
+</script>
+</body>

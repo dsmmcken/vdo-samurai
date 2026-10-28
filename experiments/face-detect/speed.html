@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8" /><body><script type="module">
+// Network-only timing: our SIMD path, our plain-JS path, and MediaPipe on a 128x128 input.
+import { FilesetResolver, FaceDetector } from './node_modules/@mediapipe/tasks-vision/vision_bundle.mjs';
+import { BlazeFace } from './blazeface.js';
+const img = new Image(); img.src = 'portrait.jpg'; await img.decode();
+const c = new OffscreenCanvas(128, 128); const g = c.getContext('2d'); g.fillStyle = '#556'; g.fillRect(0, 0, 128, 128); g.drawImage(img, 10, 0, 102, 128);
+const bmp = await createImageBitmap(c);
+const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+const out = {};
+for (const simd of [true, false]) {
+  const d = await BlazeFace.load('blaze_face_short_range.tflite', { simd });
+  const net = [], all = []; let r;
+  for (let i = 0; i < 60; i++) { const t = performance.now(); r = d.detect(bmp); all.push(performance.now() - t); net.push(d.timing.net); }
+  out[simd ? 'ours SIMD' : 'ours plain JS'] = { simdActive: !!d.k, totalMs: +median(all).toFixed(2), networkMs: +median(net).toFixed(2), memoryMB: +(d.memoryBytes / 1e6).toFixed(1), face: r[0] && [r[0].x, r[0].y, r[0].w, r[0].score].map((v) => +v.toFixed(3)) };
+}
+const fs = await FilesetResolver.forVisionTasks('./node_modules/@mediapipe/tasks-vision/wasm');
+const mp = await FaceDetector.createFromOptions(fs, { baseOptions: { modelAssetPath: 'blaze_face_short_range.tflite', delegate: 'CPU' }, runningMode: 'IMAGE' });
+const t = []; let r;
+for (let i = 0; i < 60; i++) { const a = performance.now(); r = mp.detect(bmp); t.push(performance.now() - a); }
+const b = r.detections[0];
+out.mediapipe = { totalMs: +median(t).toFixed(2), face: [b.boundingBox.originX, b.boundingBox.originY, b.boundingBox.width, b.categories[0].score] };
+window.result = out;
+</script>

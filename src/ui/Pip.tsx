@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import type { Corner, PipShape } from '../lib/types';
+import type { Head } from '../lib/framing';
 import { Avatar } from './Avatar';
 import { EyeOff, Eye } from './icons';
 import { Video } from './Video';
@@ -92,7 +93,7 @@ const corners = (r: DOMRect, pad = 0): Pt[] => [
  *   corner.
  * Anyone can change it before a take; during a take, only the Shōgun.
  */
-export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Snapshot; stream: MediaStream | null; mirror: boolean; off: boolean; name: string }) {
+export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; s: Snapshot; stream: MediaStream | null; mirror: boolean; off: boolean; head: Head | null; name: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ x: number; y: number; dx: number; dy: number; near: Corner } | null>(null);
   const canMove = !s.recording || s.director === s.me;
@@ -182,7 +183,7 @@ export function Pip({ room, s, stream, mirror, off, name }: { room: Room; s: Sna
         onPointerMove={() => !menu && !drag && canMove && !hidden && performance.now() > settleUntil.current && setMenu(true)}
       >
         <div className="pip-face" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} title={canMove && !hidden ? 'Drag to another corner' : undefined}>
-          {off ? <Avatar name={name} /> : <Video stream={stream} mirror={mirror} />}
+          {off ? <Avatar name={name} /> : <Video stream={stream} mirror={mirror} head={head} />}
         </div>
 
         {canMove && !drag && !hidden && (

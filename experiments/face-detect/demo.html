@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Face framing experiment</title>
+<style>
+  :root { color-scheme: dark; --pink: #ffb7c5; --blue: #4af; }
+  body { margin: 0; padding: 16px; background: #111; color: #ddd; font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 16px; margin: 0 0 12px; font-weight: 600; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .panel { flex: 1 1 420px; min-width: 0; }
+  .panel h2 { font-size: 13px; font-weight: 500; color: #999; margin: 0 0 6px; }
+  .cam { position: relative; }
+  video, canvas { display: block; width: 100%; border-radius: 10px; background: #000; }
+  .mirror { transform: scaleX(-1); }
+  #overlay { position: absolute; inset: 0; height: 100%; background: none; }
+  #framed.circle { width: 60%; aspect-ratio: 1; border-radius: 50%; margin: 0 auto; }
+  .controls { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
+  .stats { font: 12px/1.6 ui-monospace, monospace; color: #aaa; white-space: pre; }
+  .tune output { display: inline-block; min-width: 4.5em; color: #aaa; font: 12px ui-monospace, monospace; }
+  .tune input { vertical-align: middle; }
+  .hint { color: #888; font-size: 12px; margin: -4px 0 12px; }
+  .key { display: inline-block; width: 10px; height: 10px; border: 2px solid; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  button { background: #222; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+</style>
+<body>
+  <h1>Face framing experiment: our BlazeFace runner (230 KB model + 1.6 KB engine)</h1>
+  <div class="controls">
+    <button id="start">Start camera</button>
+    <label>Detect <select id="rate"><option>2</option><option>4</option><option selected>10</option><option>30</option></select> times/s</label>
+    <label>Framing <select id="shape"><option value="circle" selected>Circle overlay</option><option value="stage">16:9 stage</option></select></label>
+    <label><input type="checkbox" id="compare" /> Also run MediaPipe (blue)</label>
+    <span><span class="key" style="color: var(--pink)"></span>ours</span>
+  </div>
+  <div class="controls tune">
+    <label title="How far your head can drift from where the frame put it before the frame follows. Moves inside this are ignored entirely.">Dead zone <input type="range" id="dead" min="0" max="0.3" step="0.01" value="0.12" /> <output></output></label>
+    <label title="How long your head must stay outside the dead zone before the frame starts following. Stops quick leans and glances from moving it.">Wait before moving <input type="range" id="settle" min="0" max="1.5" step="0.05" value="0.4" /> <output></output></label>
+    <label title="How quickly the frame glides to its new position once it moves.">Glide <input type="range" id="glide" min="0.05" max="0.8" step="0.01" value="0.3" /> <output></output></label>
+    <label title="How tightly the head fills the frame.">Head size <input type="range" id="fill" min="0.3" max="0.9" step="0.01" value="0.6" /> <output></output></label>
+  </div>
+  <p class="hint">Dead zone: how far you can move (as a share of the frame) before the frame follows; smaller moves are ignored. Hover a slider for more.</p>
+  <div class="row">
+    <div class="panel">
+      <h2>Camera, with what the detector sees</h2>
+      <div class="cam"><video id="video" class="mirror" muted playsinline></video><canvas id="overlay" class="mirror"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Auto-framed result</h2>
+      <canvas id="framed" class="mirror"></canvas>
+    </div>
+  </div>
+  <p class="stats" id="stats"></p>
+
+<script type="module">
+  import { BlazeFace } from './blazeface.js';
+  import { FaceTracker } from './tracker.js';
+
+  const $ = (id) => document.getElementById(id);
+  const video = $('video'), overlay = $('overlay'), framed = $('framed');
+  const og = overlay.getContext('2d'), fg = framed.getContext('2d');
+
+  const det = await BlazeFace.load('blaze_face_short_range.tflite');
+  const tracker = new FaceTracker(det);
+  let mp = null; // MediaPipe, loaded only when compared
+  let face = null, mpFace = null;
+  const times = [], mpTimes = [];
+
+  // ---- framing ----
+  // 1. Head, not face: BlazeFace's box hugs eyes, nose and mouth. The head
+  //    reaches well above it (forehead, hair) and a little below and wider.
+  // 2. Smooth the measurements (a One Euro filter: heavy smoothing when
+  //    still, light when moving) so detector wobble never reaches the frame.
+  // 3. Dead zone + wait: the frame only starts following once the head has
+  //    been clearly away from where the frame put it for a moment; then it
+  //    follows until the head is still again. Zoom changes need a bigger,
+  //    separate margin, so the frame doesn't "breathe".
+  // 4. If the face is lost, the frame stays exactly where it was.
+  const FRAMING = {
+    circle: { aspect: 1, headY: 0.46, maxZoom: 3.5 }, // head centre at 46% from the top
+    stage: { aspect: 16 / 9, headY: 0.42, maxZoom: 2.5, fillScale: 0.6 },
+  };
+  const ZOOM_MARGIN = 0.2; // re-zoom only when head size is off by more than this
+  const REST = 0.012, REST_S = 0.4; // following ends after REST_S below REST movement (of the crop)
+
+  let DEAD_ZONE, SETTLE_S, GLIDE_S, FILL;
+  const tune = () => {
+    DEAD_ZONE = +$('dead').value;
+    SETTLE_S = +$('settle').value;
+    GLIDE_S = +$('glide').value;
+    FILL = +$('fill').value;
+    $('dead').nextElementSibling.value = `${Math.round(DEAD_ZONE * 100)}%`;
+    $('settle').nextElementSibling.value = `${SETTLE_S.toFixed(2)} s`;
+    $('glide').nextElementSibling.value = `~${(GLIDE_S * 3).toFixed(1)} s`;
+    $('fill').nextElementSibling.value = `${Math.round(FILL * 100)}%`;
+    if (head && video.videoWidth) { target = wanted(head, video.videoWidth, video.videoHeight); following = false; }
+  };
+  for (const id of ['dead', 'settle', 'glide', 'fill']) $(id).oninput = tune;
+
+  /** The whole head, estimated from the face box: centre and height. */
+  function headOf(f) {
+    return { cx: f.x + f.w / 2, cy: f.y + f.h * 0.15, size: f.h * 1.85 };
+  }
+
+  // One Euro filter (Casiez et al. 2012), one per value.
+  class OneEuro {
+    constructor(minCutoff = 0.6, beta = 0.004, dCutoff = 1) { Object.assign(this, { minCutoff, beta, dCutoff, x: null, dx: 0, t: 0 }); }
+    filter(v, t) {
+      if (this.x === null) { this.x = v; this.t = t; return v; }
+      const dt = Math.max(1e-3, (t - this.t) / 1000);
+      this.t = t;
+      const a = (cutoff) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
+      const dx = (v - this.x) / dt;
+      this.dx += a(this.dCutoff) * (dx - this.dx);
+      const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
+      this.x += a(cutoff) * (v - this.x);
+      return this.x;
+    }
+  }
+  const filters = { cx: new OneEuro(), cy: new OneEuro(), size: new OneEuro(0.3, 0.002) };
+
+  let head = null; // smoothed head estimate
+  let target = null, current = null, movingSince = 0, following = false, restingSince = 0, lastWant = null;
+
+  /** The crop that frames head `hd`; `fixedH` keeps a given crop height (no re-zoom). */
+  function wanted(hd, W, H, fixedH) {
+    const cfg = FRAMING[$('shape').value];
+    const fill = FILL * (cfg.fillScale ?? 1);
+    let h = fixedH ?? Math.min(H, Math.max(H / cfg.maxZoom, hd.size / fill));
+    let w = h * cfg.aspect;
+    if (w > W) { w = W; h = w / cfg.aspect; }
+    const x = Math.min(W - w, Math.max(0, hd.cx - w / 2));
+    const y = Math.min(H - h, Math.max(0, hd.cy - h * cfg.headY));
+    return { x, y, w, h };
+  }
+  function full(W, H) {
+    const a = FRAMING[$('shape').value].aspect;
+    const w = Math.min(W, H * a), h = w / a;
+    return { x: (W - w) / 2, y: (H - h) / 2, w, h };
+  }
+  const centreOff = (a, b) => Math.max(Math.abs(a.x + a.w / 2 - (b.x + b.w / 2)) / b.w, Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) / b.h);
+  const sizeOff = (a, b) => Math.abs(a.h / b.h - 1);
+
+  function aim(now, W, H) {
+    if (!face) return; // lost: hold the frame exactly where it is
+    const hd = headOf(face);
+    head = { cx: filters.cx.filter(hd.cx, now), cy: filters.cy.filter(hd.cy, now), size: filters.size.filter(hd.size, now) };
+    const want = wanted(head, W, H);
+    if (!target || target.first) target = want;
+    else if (following) {
+      const still = lastWant && centreOff(want, lastWant) < REST && sizeOff(want, lastWant) < REST * 2;
+      if (!still) restingSince = 0;
+      else if (!restingSince) restingSince = now;
+      else if (now - restingSince >= REST_S * 1000) following = false;
+      // Follow position; keep the zoom unless the size is clearly off.
+      target = sizeOff(want, target) > ZOOM_MARGIN ? want : wanted(head, W, H, target.h);
+    } else if (centreOff(wanted(head, W, H, target.h), target) > DEAD_ZONE || sizeOff(want, target) > ZOOM_MARGIN) {
+      movingSince ||= now;
+      if (now - movingSince >= SETTLE_S * 1000) { following = true; movingSince = 0; restingSince = 0; }
+    } else movingSince = 0;
+    lastWant = want;
+  }
+
+  // ---- loops ----
+  async function detectLoop() {
+    if (video.readyState >= 2) {
+      const t = performance.now();
+      face = tracker.update(video);
+      times.push(performance.now() - t);
+      if (times.length > 30) times.shift();
+      if ($('compare').checked) {
+        if (!mp) {
+          const { FilesetResolver, FaceDetector } = await import('./node_modules/@mediapipe/tasks-vision/vision_bundle.mjs');
+          const fs = await FilesetResolver.forVisionTasks('./node_modules/@mediapipe/tasks-vision/wasm');
+          mp = await FaceDetector.createFromOptions(fs, { baseOptions: { modelAssetPath: 'blaze_face_short_range.tflite', delegate: 'CPU' }, runningMode: 'VIDEO' });
+        }
+        const t2 = performance.now();
+        const d = mp.detectForVideo(video, t2).detections[0];
+        mpTimes.push(performance.now() - t2);
+        if (mpTimes.length > 30) mpTimes.shift();
+        mpFace = d && { x: d.boundingBox.originX, y: d.boundingBox.originY, w: d.boundingBox.width, h: d.boundingBox.height };
+      } else mpFace = null;
+      aim(performance.now(), video.videoWidth, video.videoHeight);
+    }
+    setTimeout(detectLoop, 1000 / +$('rate').value);
+  }
+
+  let lastFrame = performance.now();
+  function drawLoop(now) {
+    const W = video.videoWidth, H = video.videoHeight;
+    if (W) {
+      const dt = (now - lastFrame) / 1000;
+      lastFrame = now;
+      target ??= { ...full(W, H), first: true };
+      current ??= { ...target };
+      const k = 1 - Math.exp(-dt / GLIDE_S);
+      for (const p of ['x', 'y', 'w', 'h']) current[p] += (target[p] - current[p]) * k;
+      window.framingState = { face, head, current, following }; // for headless checks
+
+      overlay.width = W; overlay.height = H;
+      og.lineWidth = 4;
+      for (const [f, col] of [[mpFace, '#4af'], [face, '#ffb7c5']]) {
+        if (!f) continue;
+        og.strokeStyle = col;
+        og.strokeRect(f.x, f.y, f.w, f.h);
+        if (f.keypoints) { og.fillStyle = col; for (const [x, y] of f.keypoints) og.fillRect(x - 3, y - 3, 6, 6); }
+      }
+      if (head) {
+        og.setLineDash([8, 6]); og.strokeStyle = '#ffb7c5'; og.lineWidth = 2;
+        og.beginPath(); og.ellipse(head.cx, head.cy, head.size * 0.4, head.size / 2, 0, 0, Math.PI * 2); og.stroke();
+      }
+      og.setLineDash([12, 8]); og.strokeStyle = '#fff8'; og.lineWidth = 2;
+      og.strokeRect(current.x, current.y, current.w, current.h);
+      og.setLineDash([]);
+
+      const circle = $('shape').value === 'circle';
+      framed.classList.toggle('circle', circle);
+      framed.width = circle ? 480 : 640; framed.height = circle ? 480 : 360;
+      fg.drawImage(video, current.x, current.y, current.w, current.h, 0, 0, framed.width, framed.height);
+
+      const med = (a) => (a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0);
+      const hz = +$('rate').value;
+      $('stats').textContent =
+        `camera ${W}x${H}   detecting ${hz}/s   ${tracker.runs === 2 ? 'searching (2 runs)' : 'tracking (1 run)'}\n` +
+        `ours:      ${med(times).toFixed(1)} ms per detection  ≈ ${((med(times) * hz) / 10).toFixed(1)}% of one CPU core` +
+        (face ? `   face ${Math.round(face.w)}px  score ${face.score.toFixed(2)}` : '   no face') +
+        (mpTimes.length && $('compare').checked ? `\nmediapipe: ${med(mpTimes).toFixed(1)} ms per detection  ≈ ${((med(mpTimes) * hz) / 10).toFixed(1)}% of one CPU core` : '');
+    }
+    requestAnimationFrame(drawLoop);
+  }
+
+  $('start').onclick = async () => {
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    await video.play();
+    $('start').hidden = true;
+    detectLoop();
+    requestAnimationFrame(drawLoop);
+  };
+  $('shape').onchange = () => { target = head ? wanted(head, video.videoWidth, video.videoHeight) : null; current = target && { ...target }; following = false; movingSince = 0; };
+  tune();
+</script>
+</body>
+</html>
