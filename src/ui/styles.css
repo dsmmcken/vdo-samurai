@@ -1291,6 +1291,7 @@ pre,
 }
 .about p {
   margin: 0 0 8px;
+  text-wrap: pretty; /* no single word stranded on the last line */
 }
 .about p.muted {
   color: var(--muted);
