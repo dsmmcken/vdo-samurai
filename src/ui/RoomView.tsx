@@ -32,7 +32,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
     <div className="room">
       <Stage room={room} s={s}>
         <RecIndicator s={s} />
-        {!s.director && !s.take && <div className="glass hint">Nobody is directing yet. Click Claim director on your tile to take over.</div>}
+        {!s.director && !s.take && <div className="glass hint">No director yet. Claim it on your tile.</div>}
 
         <div className="tray">
           <button className={`glass round ${s.micMuted ? 'off' : ''}`} onClick={() => room.toggleMic()} title={s.micMuted ? 'Unmute' : 'Mute'} aria-label={s.micMuted ? 'Unmute' : 'Mute'}>

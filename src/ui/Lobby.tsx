@@ -6,6 +6,7 @@ import { CopyButton } from './CopyButton';
 import { Video } from './Video';
 import { Petals } from './Petals';
 import { PasswordInput, SecretText } from './Secret';
+import { Landing } from './Landing';
 
 export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw: string) => void }) {
   // Whoever created the room already has the password; invitees type it here.
@@ -59,11 +60,9 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
   }, [cam]);
 
   return (
-    <main className="home">
+    <Landing>
       <form className="home-card lobby" onSubmit={join}>
-        <h1 className="brand small">
-          <span aria-hidden>⚔</span> {room}
-        </h1>
+        <h1 className="room-title">{room}</h1>
         <div className="preview">
           {cam ? <Video stream={cam} mirror /> : <div className="preview-empty">{error ?? 'Starting camera…'}</div>}
         </div>
@@ -74,13 +73,13 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
         <label className="field">
           <span>Subtitle</span>
           <input value={profile.subtitle} onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })} placeholder="Analyst, Babbage & Co." />
-          <small>Your name and subtitle appear as a lower third the first time you're on screen in the final video.</small>
+          <small>Your lower third in the final video</small>
         </label>
         {!known && (
           <label className="field">
             <span>Room password</span>
             <PasswordInput value={typedPw} onChange={(e) => setTypedPw(e.target.value)} />
-            <small>Ask whoever invited you. A wrong password puts you in a different, empty room.</small>
+            <small>From whoever invited you</small>
           </label>
         )}
         {known && (
@@ -89,7 +88,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
             <code>{inviteLink(room)}</code>
             <CopyButton text={inviteLink(room)} />
             <small>
-              The link doesn't include the password. Tell people separately: <SecretText value={known} />
+              Password, shared separately: <SecretText value={known} />
             </small>
           </div>
         )}
@@ -98,7 +97,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
           <span className="label">{joining ? 'Joining…' : 'Join room'}</span>
         </button>
       </form>
-    </main>
+    </Landing>
   );
 }
 

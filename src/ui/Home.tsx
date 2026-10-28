@@ -3,9 +3,10 @@ import { rid, roomSlug } from '../lib/util';
 import { browserGaps } from '../lib/identity';
 import { Petals } from './Petals';
 import { PasswordInput } from './Secret';
+import { Landing } from './Landing';
 
-const ROOM_RULE = '3–40 characters: letters, numbers, dashes or underscores.';
-const PW_RULE = 'At least 8 characters.';
+const ROOM_RULE = '3–40 letters, numbers, - or _';
+const PW_RULE = '8+ characters';
 
 export function Home() {
   const [room, setRoom] = useState(roomSlug);
@@ -26,32 +27,26 @@ export function Home() {
   const pwBad = !pwOk && (tried || pw.length > 0);
 
   return (
-    <main className="home">
+    <Landing>
       <div className="home-card">
-        <h1 className="brand">
-          <span aria-hidden>⚔</span> VDO Samurai
-        </h1>
-        <p className="lead">Meet with tiny, low-CPU video. Everyone records full quality on their own machine, and the director’s browser cuts the final video.</p>
         <form onSubmit={create} className="stack" noValidate>
           <label className="field">
             <span>Room name</span>
             <input value={room} onChange={(e) => setRoom(e.target.value.trim())} spellCheck={false} aria-invalid={roomBad} />
-            <small className={roomBad ? 'error' : ''}>{roomBad && room.length > 40 ? `Too long. ${ROOM_RULE}` : ROOM_RULE}</small>
+            <small className={roomBad ? 'error' : ''}>{roomBad && room.length > 40 ? `Too long: ${ROOM_RULE}` : ROOM_RULE}</small>
           </label>
           <label className="field">
             <span>Password</span>
             <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} aria-invalid={pwBad} />
-            <small className={pwBad ? 'error' : ''}>
-              {pwBad ? `${PW_RULE} ${8 - pw.length} more to go.` : `${PW_RULE} It never goes in the invite link; you tell people separately.`}
-            </small>
+            <small className={pwBad ? 'error' : ''}>{pwBad ? `${PW_RULE} (${8 - pw.length} more)` : `${PW_RULE}, not in the invite link`}</small>
           </label>
           <button className="btn primary">
             <Petals />
             <span className="label">Create room</span>
           </button>
         </form>
-        {gaps.length > 0 && <p className="soft-note">VDO Samurai is built for Chrome first. In this browser, {gaps.join(', ')} may not work.</p>}
+        {gaps.length > 0 && <p className="soft-note">Best in Chrome: {gaps.join(', ')} may not work here.</p>}
       </div>
-    </main>
+    </Landing>
   );
 }

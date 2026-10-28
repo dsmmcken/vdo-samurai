@@ -1239,7 +1239,82 @@ pre,
   .boot .home-card,
   .boot .home-card > *,
   .boot .home-card form > *,
-  .boot .room {
+  .boot .room,
+  .boot .landing-logo,
+  .boot .landing-info,
+  .boot .landing-credit {
     animation: none;
   }
+}
+
+/* ---------- landing frame */
+.landing-logo {
+  position: fixed;
+  top: 22px;
+  left: 24px;
+  height: 34px;
+  width: auto;
+  z-index: 2;
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.5));
+}
+.landing-info {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.landing-credit {
+  position: fixed;
+  right: 24px;
+  bottom: 28px;
+  z-index: 2;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  transition: color 0.15s;
+}
+.landing-credit:hover {
+  color: var(--accent);
+}
+.about {
+  max-width: 300px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.about p {
+  margin: 0 0 8px;
+}
+.about p:last-child {
+  margin: 0;
+}
+.room-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .landing-logo {
+    height: 26px;
+    top: 16px;
+    left: 16px;
+  }
+  .landing-credit {
+    right: 16px;
+    bottom: 26px;
+  }
+  .landing-info {
+    left: 14px;
+    bottom: 14px;
+  }
+}
+.boot .landing-logo,
+.boot .landing-info,
+.boot .landing-credit {
+  animation: item-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
 }
