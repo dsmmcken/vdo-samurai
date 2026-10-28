@@ -42,7 +42,7 @@ const PIP_SHAPES: Record<PipShape, { w: number; h: number; r: number }> = {
   square: { w: 176, h: 176, r: 22 },
   circle: { w: 184, h: 184, r: 92 },
 };
-const CORNER_MOVE_S = 0.45; // glide between corners, same as the live stage
+const CORNER_MOVE_S = 0.4; // glide / morph time, same as the live stage (position and size together)
 
 // Audio polish (see voice.ts): each person goes through high-pass, de-esser,
 // leveler and compressor, then is normalized to the spoken-word standard; the

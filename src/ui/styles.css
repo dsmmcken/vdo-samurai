@@ -442,11 +442,14 @@ button.chip:hover {
   width: var(--w);
   height: var(--h);
   z-index: 3;
+  /* Position and size share one duration and easing, so during a shape change
+     left + width (and top + height) stay constant: the outer corner holds
+     still and it grows / shrinks toward the stage centre. */
   transition:
-    left 0.45s cubic-bezier(0.65, 0, 0.35, 1),
-    top 0.45s cubic-bezier(0.65, 0, 0.35, 1),
-    width 0.35s cubic-bezier(0.65, 0, 0.35, 1),
-    height 0.35s cubic-bezier(0.65, 0, 0.35, 1);
+    left 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    top 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    width 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    height 0.4s cubic-bezier(0.65, 0, 0.35, 1);
 }
 .pip-face {
   position: absolute;
@@ -457,14 +460,14 @@ button.chip:hover {
   box-shadow: 0 0.6cqw 2.2cqw rgba(0, 0, 0, 0.5);
   touch-action: none;
   transition:
-    border-radius 0.35s cubic-bezier(0.65, 0, 0.35, 1),
+    border-radius 0.4s cubic-bezier(0.65, 0, 0.35, 1),
     transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 0.25s,
     box-shadow 0.15s;
 }
 .pip.hidden {
   /* Corner changes while hidden are instant (it reappears where you ask). */
-  transition: width 0.35s, height 0.35s;
+  transition: width 0.4s, height 0.4s;
   pointer-events: none;
 }
 .pip.hidden .pip-face {
