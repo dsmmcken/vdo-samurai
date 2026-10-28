@@ -16,6 +16,7 @@ import { captureStatus, fileExtension, markCaptureBroken, startRecorder, type Re
 import * as fs from './opfs';
 import type {
   Corner,
+  PipStyle,
   DirectorManifest,
   PeerId,
   Presence,
@@ -72,6 +73,7 @@ export interface Snapshot {
   director: PeerId | null;
   stage: Stage | null;
   corner: Corner;
+  pip: PipStyle;
   take: Take | null;
   /** Take start/stop on our own clock. */
   takeStartLocal: number | null;
@@ -104,6 +106,7 @@ export class Room {
     order: { v: [], ts: 0, by: '' },
     stage: { v: null, ts: 0, by: '' },
     corner: { v: 'br', ts: 0, by: '' },
+    pip: { v: { shape: 'rect', hidden: false }, ts: 0, by: '' },
     take: { v: null, ts: 0, by: '' },
   };
 
@@ -261,6 +264,7 @@ export class Room {
       director: this.shared.director.v,
       stage: this.shared.stage.v,
       corner: this.shared.corner.v,
+      pip: this.shared.pip.v,
       take,
       takeStartLocal: take && dir !== null ? take.startAt - dir : null,
       takeStopLocal: take?.stopAt && dir !== null ? take.stopAt - dir : null,
@@ -306,7 +310,7 @@ export class Room {
     const take = this.shared.take.v;
     const locked = take && !take.stopAt;
     // During a take only the director can move the stage, and nobody can take the chair.
-    if ((key === 'stage' || key === 'corner') && locked && st.by !== take.director) return;
+    if ((key === 'stage' || key === 'corner' || key === 'pip') && locked && st.by !== take.director) return;
     if (key === 'director' && locked && st.v !== take.director) return;
     if (key === 'order' && locked) return;
     (this.shared as any)[key] = st;
@@ -316,7 +320,7 @@ export class Room {
 
   private onShared(key: SharedKey) {
     if (key === 'take') this.onTake();
-    if (key === 'stage' || key === 'corner') this.logStage();
+    if (key === 'stage' || key === 'corner' || key === 'pip') this.logStage();
     if (key === 'stage') this.applyEncodings();
     this.changed();
   }
@@ -612,6 +616,13 @@ export class Room {
     } catch (e) {
       this.say(`Couldn't switch ${kind === 'cam' ? 'camera' : 'microphone'}: ${(e as Error).message}`);
     }
+  }
+
+  /** Change the overlay's shape or hide / show it; same rule as moving it. */
+  setPip(pip: Partial<PipStyle>) {
+    if (!this.canSetStage()) return this.say('Only the Shōgun (director) can change the overlay while recording.');
+    const next = { ...this.shared.pip.v, ...pip };
+    if (next.shape !== this.shared.pip.v.shape || next.hidden !== this.shared.pip.v.hidden) this.set('pip', next);
   }
 
   /** Move the presenter's camera overlay; anyone before a take, only the director during one. */
@@ -1130,7 +1141,7 @@ export class Room {
     const st = this.shared.stage.v;
     if (!dm || !st || !this.active?.began || this.active.take.id !== dm.take.id) return;
     if (this.shared.take.v?.stopAt) return;
-    dm.stageLog.push({ t: Math.max(0, now() - dm.take.startAt), stage: st, corner: this.shared.corner.v });
+    dm.stageLog.push({ t: Math.max(0, now() - dm.take.startAt), stage: st, corner: this.shared.corner.v, pip: this.shared.pip.v });
     for (const [id, p] of this.presences) dm.profiles[id] = p.profile;
     dm.profiles[this.me] = this.profile;
     this.saveDm();

@@ -46,10 +46,11 @@ const fakeScreen = () => {
       g.fillText(`SCREEN ${n++}`, 200, 560);
       // Wall clock in 10 ms units as 24 black/white blocks: lets the test read
       // exactly when each output frame was captured.
+      // (starts at x=360: clear of the camera overlay in any top corner)
       const v = Math.floor(Date.now() / 10) & 0xffffff;
       for (let b = 0; b < 24; b++) {
         g.fillStyle = (v >> b) & 1 ? '#fff' : '#000';
-        g.fillRect(b * 60, 0, 60, 60);
+        g.fillRect(360 + b * 50, 0, 50, 60);
       }
     }, 16);
     return c.captureStream(30);
@@ -301,6 +302,13 @@ try {
   await sam.waitForSelector('.pip.c-tl', { timeout: 5000 });
   const cornerAt = Date.now();
   log('overlay moved to top-left (synced to a guest)');
+  // ...and becomes a circle, from the hover menu.
+  const face = await dir.locator('.pip-face').boundingBox();
+  await sleep(600);
+  await dir.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
+  await dir.getByRole('button', { name: 'Circle overlay' }).click();
+  await sam.waitForSelector('.pip.s-circle', { timeout: 5000 });
+  log('overlay is a circle for a guest too');
   await sleep(1500);
   await dir.screenshot({ path: 'test-results/stage-director.png' });
   await sam.screenshot({ path: 'test-results/stage-guest.png' });
@@ -436,7 +444,7 @@ async function checkAlignment(dir) {
   const errs = [];
   for (const dt of [1, 1.5, 2, 2.5]) {
     const T = screenEv.t / 1000 + dt - t0;
-    const px = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', file, '-frames:v', '1', '-vf', 'crop=1440:60:0:0,scale=24:1:flags=area', '-pix_fmt', 'gray', '-f', 'rawvideo', '-']);
+    const px = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', file, '-frames:v', '1', '-vf', 'crop=1200:60:360:0,scale=24:1:flags=area', '-pix_fmt', 'gray', '-f', 'rawvideo', '-']);
     let v = 0;
     for (let b = 0; b < 24; b++) if (px[b] > 128) v |= 1 << b;
     const captured = v * 10;
@@ -484,6 +492,8 @@ async function checkOverlayAndCamOff(dir) {
   const samEnd = dm.stageLog.find((e) => e.t > moved.t && !(e.stage.kind === 'peer' && e.stage.view === 'screen'));
   const T = (samEnd.t / 1000 - 0.8) - t0; // late in Sam's segment, after the glide
   // Overlay box centres in 1920x1080: top-left (32+78, 32+97), bottom-right (1920-32-78, 1080-32-97)
+  // Circle at top-left: (40,40) is inside its bounding box but outside the circle.
+  log('overlay shape check:', isCam(px(T, 120, 120)) ? 'camera at circle centre' : 'NO camera at centre', '|', isCam(px(T, 36, 36)) ? 'camera in box corner (not a circle)' : 'screen in box corner (circle)');
   log('overlay corner check:', isCam(px(T, 106, 125)) ? 'camera at top-left' : 'NOT at top-left', '|', isCam(px(T, 1806, 947)) ? 'still at bottom-right' : 'bottom-right is screen');
   log('render report:\n  ' + (dm.reports.render ?? []).join('\n  '));
   const off = dm.camOff && Object.entries(dm.camOff).find(([, iv]) => iv.length);

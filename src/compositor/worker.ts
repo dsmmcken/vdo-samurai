@@ -20,7 +20,7 @@ import {
   canEncodeVideo,
   type VideoSample,
 } from 'mediabunny';
-import type { Corner, DirectorManifest, PeerId, Profile, RecFile } from '../lib/types';
+import type { Corner, DirectorManifest, PeerId, PipShape, PipStyle, Profile, RecFile } from '../lib/types';
 import { audible, gridFor, lowerThirds, segments, videoStart, type Segment } from './plan';
 import { LoudnessMeter } from './loudness';
 import { Limiter, VoiceChain } from './voice';
@@ -35,7 +35,13 @@ const LOWER_THIRD = '#0625c0';
 
 // Presenter overlay while a screen is on stage: a portrait rounded rectangle,
 // the same distance from the right and bottom edges.
-const PIP = { w: 156, h: 195, margin: 32, radius: 22 };
+const PIP = { margin: 32 };
+// Overlay shapes in 1080p pixels (same as the live stage's CSS).
+const PIP_SHAPES: Record<PipShape, { w: number; h: number; r: number }> = {
+  rect: { w: 156, h: 195, r: 22 },
+  square: { w: 176, h: 176, r: 22 },
+  circle: { w: 184, h: 184, r: 92 },
+};
 const CORNER_MOVE_S = 0.45; // glide between corners, same as the live stage
 
 // Audio polish (see voice.ts): each person goes through high-pass, de-esser,
@@ -185,31 +191,40 @@ async function render(m: DirectorManifest) {
   const camOff = (peer: PeerId, t: number) =>
     (m.camOff?.[peer] ?? []).some(([a, b]) => t * 1000 >= a && (b === null || t * 1000 < b));
 
-  // Overlay corner over time, with a glide whenever it moves.
-  const cornerLog = [...m.stageLog].sort((a, b) => a.t - b.t).filter((e) => e.corner);
-  const cornerXY = (c: Corner) => ({
-    x: c.endsWith('l') ? PIP.margin : W - PIP.w - PIP.margin,
-    y: c.startsWith('t') ? PIP.margin : H - PIP.h - PIP.margin,
-  });
-  const pipAt = (t: number) => {
-    // Start where the overlay already was when the take began (no glide-in).
-    let cur: Corner = cornerLog[0]?.corner ?? 'br';
-    let prev: Corner = cur;
+  // Overlay geometry over time (corner, shape, hidden), from the stage log.
+  // Each change glides / morphs / fades over the same time as on the live stage.
+  type Geo = { x: number; y: number; w: number; h: number; r: number; alpha: number };
+  const geoOf = (corner: Corner, pip: PipStyle): Geo => {
+    const { w, h, r } = PIP_SHAPES[pip.shape];
+    const g = { x: corner.endsWith('l') ? PIP.margin : W - w - PIP.margin, y: corner.startsWith('t') ? PIP.margin : H - h - PIP.margin, w, h, r, alpha: 1 };
+    if (!pip.hidden) return g;
+    // Hidden: shrink to 40% about its centre and fade out.
+    return { x: g.x + w * 0.3, y: g.y + h * 0.3, w: w * 0.4, h: h * 0.4, r: r * 0.4, alpha: 0 };
+  };
+  const pipLog = [...m.stageLog]
+    .sort((a, b) => a.t - b.t)
+    .filter((e) => e.corner || e.pip)
+    .map((e) => ({ t: e.t / 1000, corner: e.corner ?? 'br', pip: e.pip ?? { shape: 'rect' as PipShape, hidden: false } }));
+  const same = (a: Geo, b: Geo) => a.x === b.x && a.y === b.y && a.w === b.w && a.alpha === b.alpha;
+  const pipAt = (t: number): Geo => {
+    // Start as the overlay was when the take began (no animation in).
+    let cur = pipLog.length ? geoOf(pipLog[0].corner, pipLog[0].pip) : geoOf('br', { shape: 'rect', hidden: false });
+    let prev = cur;
     let since = -Infinity;
-    for (const e of cornerLog) {
-      if (e.t / 1000 > t) break;
-      if (e.corner !== cur) {
+    for (const e of pipLog) {
+      if (e.t > t) break;
+      const g = geoOf(e.corner, e.pip);
+      if (!same(g, cur)) {
         prev = cur;
-        cur = e.corner!;
-        since = e.t / 1000;
+        cur = g;
+        since = e.t;
       }
     }
-    const to = cornerXY(cur);
     const k = Math.min(1, (t - since) / CORNER_MOVE_S);
-    if (k >= 1) return to;
-    const from = cornerXY(prev);
+    if (k >= 1) return cur;
     const e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2; // ease in-out
-    return { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+    const lerp = (a: number, b: number) => a + (b - a) * e;
+    return { x: lerp(prev.x, cur.x), y: lerp(prev.y, cur.y), w: lerp(prev.w, cur.w), h: lerp(prev.h, cur.h), r: lerp(prev.r, cur.r), alpha: lerp(prev.alpha, cur.alpha) };
   };
   const total = Math.max(1, Math.round((duration - t0) * FPS));
   const wallStart = performance.now();
@@ -256,21 +271,24 @@ async function render(m: DirectorManifest) {
       const cam = await frameAt(st.id, 'cam', t);
       if (screen) {
         drawContain(ctx, screen, 0, 0, W, H);
-        const { x, y } = pipAt(t);
-        const path = roundRect(x, y, PIP.w, PIP.h, PIP.radius);
-        // No border: a soft shadow lifts it off the screen.
-        ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = 40;
-        ctx.shadowOffsetY = 10;
-        ctx.fillStyle = BG;
-        ctx.fill(path);
-        ctx.restore();
-        ctx.save();
-        ctx.clip(path);
-        if (cam) drawCover(ctx, cam, x, y, PIP.w, PIP.h);
-        else placeholder(ctx, x, y, PIP.w, PIP.h, m.profiles[st.id]);
-        ctx.restore();
+        const { x, y, w, h, r, alpha } = pipAt(t);
+        if (alpha > 0.01) {
+          const path = roundRect(x, y, w, h, r);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          // No border: a soft shadow lifts it off the screen.
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.5)';
+          ctx.shadowBlur = 40;
+          ctx.shadowOffsetY = 10;
+          ctx.fillStyle = BG;
+          ctx.fill(path);
+          ctx.restore();
+          ctx.clip(path);
+          if (cam) drawCover(ctx, cam, x, y, w, h);
+          else placeholder(ctx, x, y, w, h, m.profiles[st.id]);
+          ctx.restore();
+        }
       } else if (cam) {
         drawCover(ctx, cam, 0, 0, W, H);
       } else {

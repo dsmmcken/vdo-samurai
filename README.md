@@ -19,7 +19,7 @@ VDO.Ninja's hosted signaling server is only used so people can find each other. 
 
 Rules for the edit:
 - The picture follows the director's stage log.
-- A screen on stage gets the presenter's camera as a small portrait rounded rectangle with a soft shadow, 32 px in from a corner. Anyone can drag it to another corner before a take (only the director during one); the move glides live and in the final cut.
+- A screen on stage gets the presenter's camera as a small overlay with a soft shadow, 32 px in from a corner: rounded rectangle, square or circle, or hidden. Hovering it pops out the shape / hide icons; dragging moves it to another corner. Anyone can change it before a take (only the Shōgun during one); changes glide / morph live for everyone and in the final cut.
 - While someone's camera is off, their initials show instead of black video, live and in the final cut.
 - The end screen is a grid of every camera, with no names.
 - Each person's name and subtitle show as a lower third for 5 s the first time they're on stage.

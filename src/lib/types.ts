@@ -21,6 +21,13 @@ export type Stage = { kind: 'peer'; id: PeerId; view: 'cam' | 'screen' } | { kin
 /** Where the presenter's camera overlay sits when a screen is on stage. */
 export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
+/** The overlay's shape, and whether it's hidden (hiding keeps the last shape). */
+export type PipShape = 'rect' | 'square' | 'circle';
+export interface PipStyle {
+  shape: PipShape;
+  hidden: boolean;
+}
+
 export interface Take {
   id: string;
   director: PeerId;
@@ -43,6 +50,7 @@ export interface SharedState {
   stage: Stamped<Stage | null>;
   take: Stamped<Take | null>;
   corner: Stamped<Corner>;
+  pip: Stamped<PipStyle>;
 }
 export type SharedKey = keyof SharedState;
 
@@ -51,6 +59,7 @@ export interface StageEvent {
   t: number;
   stage: Stage;
   corner?: Corner;
+  pip?: PipStyle;
 }
 
 /** A recorded file, as described by the peer that recorded it. */
