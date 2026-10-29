@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { rid, roomSlug } from '../lib/util';
 import { browserGaps } from '../lib/identity';
+import { passwordCheck } from '../lib/passcheck';
 import { Petals } from './Petals';
 import { PasswordInput } from './Secret';
 import { Landing } from './Landing';
@@ -14,10 +15,12 @@ export function Home() {
   const roomOk = /^[\w-]{3,40}$/.test(room);
   const gaps = browserGaps();
 
-  const create = (e: React.FormEvent) => {
+  const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setTried(true);
-    if (roomOk) location.hash = new URLSearchParams({ room, pw }).toString();
+    if (!roomOk) return;
+    const check = await passwordCheck(pw);
+    location.hash = new URLSearchParams({ room, ...(check && { hash: check }), pw }).toString();
   };
 
   // Rules show as hints; they turn into errors once you've typed something invalid or tried to submit.
@@ -35,7 +38,7 @@ export function Home() {
           <label className="field">
             <span>Password (optional)</span>
             <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} />
-            <small>{pw ? 'Not in the invite link; share it separately' : 'Optional. If blank, anyone with the room name can join'}</small>
+            <small>{pw ? 'Not in the invite link (only a check of it); share it separately' : 'Optional. If blank, anyone with the room name can join'}</small>
           </label>
           <button className="btn primary">
             <Petals />

@@ -39,7 +39,9 @@ export interface RecorderEvents {
 }
 
 // The camera mostly ends up small (a tile or the overlay); the screen keeps detail for text.
-const BITRATE = { cam: 2_500_000, screen: 5_000_000 };
+// High quality is the point: the final cut is for YouTube at 1080p, where its
+// recommendation is 8 Mbps, so the sources match it.
+const BITRATE = { cam: 8_000_000, screen: 8_000_000 };
 
 /** Test-only switches, set from the e2e test via localStorage. */
 export function testHook(name: string): number | undefined {

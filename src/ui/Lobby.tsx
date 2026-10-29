@@ -5,7 +5,8 @@ import { Room } from '../lib/room';
 import { CopyButton } from './CopyButton';
 import { Video } from './Video';
 import { Petals } from './Petals';
-import { PasswordInput, SecretText } from './Secret';
+import { PasswordInput, SecretText, usePasswordCheck } from './Secret';
+import { checkMatches, passwordCheck } from '../lib/passcheck';
 import { Landing } from './Landing';
 import { Avatar } from './Avatar';
 import { MicMeter } from './MicMeter';
@@ -22,11 +23,17 @@ const EXAMPLES = [
   { name: 'Amano Shizuka', subtitle: 'Strategist' },
 ];
 
-export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw: string) => void }) {
+export function Lobby({ room, check, onJoined }: { room: string; check: string | null; onJoined: (r: Room, pw: string) => void }) {
   // Whoever created the room already has the password; invitees type it here.
   const [known] = useState(() => recallPassword(room));
   const [typedPw, setTypedPw] = useState('');
   const pw = known ?? typedPw;
+  const pwCheck = usePasswordCheck(pw);
+  // An invite carries a check of the password, so a typo is caught here rather
+  // than landing you alone in another room. Old links without one can't tell.
+  // Only a failed Join says anything, and editing clears it.
+  const checking = known === null && !!check;
+  const [pwBad, setPwBad] = useState(false);
   const [profile, setProfile] = useState(loadProfile);
   const [example] = useState(() => EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)]);
   const [cam, setCam] = useState<MediaStream | null>(null);
@@ -82,6 +89,7 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
   const join = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!cam || joining) return;
+    if (checking && !checkMatches(await passwordCheck(pw), check)) return setPwBad(true);
     setJoining(true);
     const p = { name: profile.name.trim(), subtitle: profile.subtitle.trim() };
     saveProfile(p);
@@ -148,15 +156,26 @@ export function Lobby({ room, onJoined }: { room: string; onJoined: (r: Room, pw
         {known === null && (
           <label className="field">
             <span>Room password</span>
-            <PasswordInput value={typedPw} onChange={(e) => setTypedPw(e.target.value)} />
-            <small>From whoever invited you; blank if the room has none</small>
+            <PasswordInput
+              value={typedPw}
+              onChange={(e) => {
+                setTypedPw(e.target.value);
+                setPwBad(false);
+              }}
+              aria-invalid={pwBad}
+            />
+            {pwBad ? (
+              <small className="error">{typedPw.trim() ? "That's not this room's password" : 'This room needs a password'}</small>
+            ) : (
+              !checking && <small>Blank if the room has none</small>
+            )}
           </label>
         )}
         {known !== null && (
           <div className="invite">
             <span>Invite link</span>
-            <code>{inviteLink(room)}</code>
-            <CopyButton text={inviteLink(room)} />
+            <code>{inviteLink(room, pwCheck)}</code>
+            <CopyButton text={inviteLink(room, pwCheck)} />
             <small>
               {known ? (
                 <>

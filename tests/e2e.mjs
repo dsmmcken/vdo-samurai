@@ -108,7 +108,7 @@ const fakeScreen = () => {
 const room = `e2e-${rand()}`;
 const pw = `${rand()}${rand()}`;
 const url = `http://localhost:${PORT}/#room=${room}&pw=${pw}`;
-const urlNoPw = `http://localhost:${PORT}/#room=${room}`; // the third person types the password
+let invite = null; // the third person opens the director's invite link and types the password
 const people = [
   ['Dana Director', 'Host'],
   ['Sam Screen', 'Presenter'],
@@ -135,9 +135,20 @@ try {
     // A guest's upload goes silent partway (channel open, no error); the director must notice and ask again.
     if (process.env.FREEZE_UPLOAD && i === 1) await page.addInitScript(() => localStorage.setItem('samurai:test:freezeUploadAt', '1000000'));
     if (process.env.DIRECTOR_SCREEN && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:stillScreen', '1'));
-    await page.goto(i === 2 ? urlNoPw : url);
-    if (i === 2) await page.getByLabel('Room password').fill(pw);
-    if (i === 0) await page.screenshot({ path: 'test-results/lobby.png' });
+    await page.goto(i === 2 ? invite : url);
+    if (i === 0) {
+      await page.screenshot({ path: 'test-results/lobby.png' });
+      invite = await page.locator('.invite code').textContent();
+      log('invite carries a password check, not the password:', /[#&]hash=[0-9a-f]{6}(&|$)/.test(invite) && !invite.includes(pw));
+    }
+    if (i === 2) {
+      // A wrong password is caught in the lobby instead of joining a different room.
+      await page.getByLabel('Room password').fill(`${pw}x`);
+      await page.getByRole('button', { name: 'Join room' }).click();
+      log('wrong password refused:', await page.getByText("That's not this room's password").waitFor({ timeout: 5000 }).then(() => true, () => false), 'still in lobby:', (await page.locator('.lobby').count()) === 1);
+      await page.getByLabel('Room password').fill(pw);
+      log('error clears on edit, no "correct" hint:', (await page.locator('.field small.error').count()) === 0);
+    }
     await page.getByLabel('Full name').fill(name);
     await page.getByLabel('Subtitle').fill(subtitle);
     await page.getByRole('button', { name: 'Join room' }).click();
@@ -403,6 +414,25 @@ try {
 
   for (const p of [sam, cam]) await p.waitForSelector('.safe', { timeout: 120000 });
   log('both guests told it is safe to close');
+  // The transfer log: the director's own lines plus each guest's, forwarded.
+  await dir.waitForTimeout(2500); // guests forward every 2 s
+  const xlogs = await dir.evaluate(() => window.samurai.getSnapshot().transferLogs.map((l) => ({ who: l.who, n: l.lines.length, key: l.lines.filter((x) => /saved|finished|FAILED|STALLED|messages|queued [0-9]|not yet on disk|channel open/.test(x)) })));
+  log('transfer logs on the director:', xlogs.map((l) => `${l.who}: ${l.n} lines`).join(', '));
+  for (const l of xlogs) for (const k of l.key) log(`  [${l.who}] ${k}`);
+  await dir.locator('.after').screenshot({ path: 'test-results/after-panel.png' });
+  await dir.locator('.after .text-link, .after .problems').first().click(); // 'Transfer log' in the header, or 'N problems · Details'
+  log('details modal shows transfer sections:', await dir.locator('.details h3', { hasText: 'Transfers' }).count());
+  await dir.keyboard.press('Escape');
+  await dir.locator('.modal-backdrop').click({ position: { x: 5, y: 5 } }).catch(() => {});
+  // The panel can't be closed while it's the only sign of progress: never on
+  // the director's; a guest's leaves by itself (out to the right, with a puff)
+  // once everyone's upload is in.
+  log('director panel has no close button:', (await dir.locator('.after [aria-label="Close"]').count()) === 0);
+  await sam.waitForSelector('.after.leaving', { timeout: 10000 });
+  await sam.waitForTimeout(350);
+  await sam.screenshot({ path: 'test-results/after-leaving.png', clip: { x: 760, y: 0, width: 520, height: 260 } });
+  await sam.waitForSelector('.after', { state: 'detached', timeout: 5000 });
+  log('guest panel left by itself once everyone was done');
   await dir.waitForSelector('a:has-text("Download MP4")', { timeout: Number(process.env.RENDER_TIMEOUT || 600000) });
   log('render done');
 
@@ -416,6 +446,28 @@ try {
   fs.mkdirSync('test-results', { recursive: true });
   fs.writeFileSync('test-results/final.mp4', Buffer.from(b64, 'base64'));
   log('saved test-results/final.mp4');
+  // YouTube's upload spec wants the index (moov) before the media (mdat): "fast start".
+  {
+    const mp4 = fs.readFileSync('test-results/final.mp4');
+    const boxes = [];
+    for (let at = 0; at + 8 <= mp4.length && boxes.length < 8; ) {
+      let size = mp4.readUInt32BE(at);
+      boxes.push(mp4.toString('latin1', at + 4, at + 8));
+      if (size === 1) size = Number(mp4.readBigUInt64BE(at + 8));
+      if (size < 8) break;
+      at += size;
+    }
+    log('top-level boxes:', boxes.join(' '), '| moov before mdat:', boxes.indexOf('moov') >= 0 && boxes.indexOf('moov') < boxes.indexOf('mdat'));
+    log('streams:', execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name,profile,bit_rate,sample_rate,channels', '-of', 'compact=p=0', 'test-results/final.mp4']).toString().trim().replace(/\n/g, ' | '));
+  }
+  // Downloaded: the panel goes; Recording details keeps a download until the next take.
+  await dir.getByRole('link', { name: /Download MP4/ }).click();
+  await dir.waitForSelector('.after', { state: 'detached', timeout: 5000 });
+  await dir.getByRole('button', { name: 'More' }).click();
+  await dir.getByRole('button', { name: 'Recording details' }).click();
+  log('after download the panel left; details offer:', await dir.locator('.final-cut').textContent());
+  await dir.screenshot({ path: 'test-results/details-final-cut.png', clip: { x: 300, y: 60, width: 680, height: 220 } });
+  await dir.getByRole('button', { name: 'Close' }).click();
   await checkAlignment(dir);
   await checkOverlayAndCamOff(dir);
   await checkReaction(dir);

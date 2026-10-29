@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { forgetJoined, parseRoomHash, releaseIdentity, rememberPassword } from '../lib/identity';
+import { forgetJoined, parseRoomHash, releaseIdentity, rememberPassword, roomFragment } from '../lib/identity';
 import { Home } from './Home';
 import { Lobby } from './Lobby';
 import { RoomView } from './RoomView';
@@ -9,15 +9,16 @@ import { Room } from '../lib/room';
 /**
  * Reads the room from the URL. A password in the link (from Create room) is
  * moved into this tab's storage and stripped from the address bar, so the URL
- * you'd copy and share never carries it.
+ * you'd copy and share never carries it. The password's check stays: it's
+ * what lets the lobby tell an invitee their password is wrong.
  */
 function readTarget() {
   const t = parseRoomHash();
   if (t && t.pw !== null) {
     rememberPassword(t.room, t.pw); // may be '' (a room without a password)
-    history.replaceState(null, '', `${location.pathname}${location.search}#${new URLSearchParams({ room: t.room })}`);
+    history.replaceState(null, '', `${location.pathname}${location.search}#${roomFragment(t.room, t.check)}`);
   }
-  return t ? { room: t.room } : null;
+  return t ? { room: t.room, check: t.check } : null;
 }
 
 /** Animates a screen change with the View Transitions API where the browser has it. */
@@ -36,7 +37,7 @@ async function leaveRoom(room: Room) {
 
 export function App() {
   const [target, setTarget] = useState(readTarget);
-  const [joined, setJoined] = useState<{ room: Room; pw: string } | null>(null);
+  const [joined, setJoined] = useState<{ room: Room; pw: string; check: string | null } | null>(null);
   const joinedRef = useRef(joined);
   joinedRef.current = joined;
 
@@ -52,7 +53,7 @@ export function App() {
         const busy = s.recording || (s.myUpload && !s.myUpload.done);
         if (busy && !confirm(s.recording ? 'A take is recording. Leave the room anyway?' : "Your upload isn't finished. Leave anyway? It resumes if you come back.")) {
           // Stay: put the room's link back in the address bar.
-          history.pushState(null, '', `${location.pathname}${location.search}#${new URLSearchParams({ room: cur.room.roomName })}`);
+          history.pushState(null, '', `${location.pathname}${location.search}#${roomFragment(cur.room.roomName, cur.check)}`);
           return;
         }
         void leaveRoom(cur.room);
@@ -69,7 +70,7 @@ export function App() {
   }, []);
 
   if (!target) return <Home />;
-  if (!joined) return <Lobby room={target.room} onJoined={(room, pw) => transition(() => setJoined({ room, pw }))} />;
+  if (!joined) return <Lobby room={target.room} check={target.check} onJoined={(room, pw) => transition(() => setJoined({ room, pw, check: target.check }))} />;
   const { room } = joined;
   const leave = async () => {
     await leaveRoom(room);

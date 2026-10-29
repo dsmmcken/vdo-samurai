@@ -1,5 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { passwordCheck } from '../lib/passcheck';
 import { Eye, EyeOff } from './icons';
+
+/** The invite-link check for a password ('' for none); null while it's hashed. */
+export function usePasswordCheck(pw: string) {
+  const [check, setCheck] = useState<{ pw: string; check: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    passwordCheck(pw).then((c) => live && setCheck({ pw, check: c }));
+    return () => {
+      live = false;
+    };
+  }, [pw]);
+  return check?.pw === pw ? check.check : null;
+}
 
 /** Password input with a show/hide eye. */
 export function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement>) {

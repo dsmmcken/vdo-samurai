@@ -49,18 +49,27 @@ export function saveProfile(p: Profile) {
   }
 }
 
-/** `#room=<name>`, plus `&pw=` only on the link Create room hands to its own lobby (stripped on arrival). */
-export function parseRoomHash(hash = location.hash): { room: string; pw: string | null } | null {
+/**
+ * `#room=<name>`, plus `&hash=` (a check of the password, never the password
+ * itself) on invites to a room with one, plus `&pw=` only on the link Create
+ * room hands to its own lobby (stripped on arrival).
+ */
+export function parseRoomHash(hash = location.hash): { room: string; check: string | null; pw: string | null } | null {
   const q = new URLSearchParams(hash.replace(/^#/, ''));
   const room = q.get('room');
   // `pw=` (empty) is a deliberate "no password"; no `pw` at all means unknown.
-  return room ? { room, pw: q.has('pw') ? q.get('pw')! : null } : null;
+  return room ? { room, check: q.get('hash') || null, pw: q.has('pw') ? q.get('pw')! : null } : null;
 }
 
-/** Invites never carry the password; share it separately. */
-export function inviteLink(room: string) {
+/** The link fragment for a room, with its password check when it has one. */
+export function roomFragment(room: string, check?: string | null) {
+  return new URLSearchParams(check ? { room, hash: check } : { room }).toString();
+}
+
+/** Invites never carry the password (share it separately), only its check. */
+export function inviteLink(room: string, check?: string | null) {
   const u = new URL(location.href);
-  u.hash = new URLSearchParams({ room }).toString();
+  u.hash = roomFragment(room, check);
   return u.toString();
 }
 

@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import type { Snapshot } from '../lib/room';
+import type { Room, Snapshot } from '../lib/room';
+import { fmtBytes } from '../lib/util';
+import { finalCutName } from './AfterTake';
 import { Close, Copy } from './icons';
 
-/** Everyone's recorder log for the take (the director sees all; others see their own). */
-export function RecordingDetails({ s, onClose }: { s: Snapshot; onClose: () => void }) {
+/**
+ * Everyone's recorder log for the take (the director sees all; others see
+ * their own), then the file-transfer logs (xferlog.ts).
+ */
+export function RecordingDetails({ room, s, onClose }: { room: Room; s: Snapshot; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const dm = s.directorTake;
   const sections: [string, string[]][] = dm?.reports
@@ -11,7 +16,10 @@ export function RecordingDetails({ s, onClose }: { s: Snapshot; onClose: () => v
     : s.myReport
       ? [[s.profile.name || 'You', s.myReport]]
       : [];
+  for (const { who, lines } of s.transferLogs) sections.push([`Transfers · ${who}`, lines]);
   const text = sections.map(([who, lines]) => `## ${who}\n${lines.join('\n')}`).join('\n\n');
+  // The latest final cut stays downloadable here until the next take replaces it.
+  const cut = dm && s.render?.state === 'done' && s.render.url ? s.render : null;
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -22,6 +30,14 @@ export function RecordingDetails({ s, onClose }: { s: Snapshot; onClose: () => v
             <Close size={16} />
           </button>
         </div>
+        {cut && (
+          <div className="final-cut">
+            <span>Final cut{cut.bytes ? ` · ${fmtBytes(cut.bytes)}` : ''}</span>
+            <a className="btn primary sm" href={cut.url} download={finalCutName(room, dm!.take.id)} onClick={() => room.markDownloaded()}>
+              Download final cut
+            </a>
+          </div>
+        )}
         {sections.length === 0 ? (
           <p className="muted">Nothing recorded yet. Details appear here once a take starts.</p>
         ) : (
@@ -32,7 +48,7 @@ export function RecordingDetails({ s, onClose }: { s: Snapshot; onClose: () => v
                   <h3>{who}</h3>
                   <pre>
                     {lines.map((l, i) => (
-                      <div key={i} className={/ERROR/.test(l) ? 'bad' : /WARNING/.test(l) ? 'warn' : ''}>
+                      <div key={i} className={/ERROR|FAILED/.test(l) ? 'bad' : /WARNING|STALLED/.test(l) ? 'warn' : ''}>
                         {l}
                       </div>
                     ))}

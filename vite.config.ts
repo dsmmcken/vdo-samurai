@@ -11,4 +11,5 @@ export default defineConfig({
   // Same for the reaction player, loaded with the first reaction.
   optimizeDeps: { include: ['react', 'react-dom/client', '@vdoninja/sdk', 'mediabunny', '@lottiefiles/dotlottie-web'] },
   build: { target: 'es2022' },
+  server: { port: 8080 },
 });

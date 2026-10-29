@@ -33,6 +33,10 @@ import { Limiter, VoiceChain } from './voice';
 const W = 1920;
 const H = 1080;
 const FPS = 30;
+// Above YouTube's 8 Mbps for 1080p30 (it sets no upper limit): every encode
+// loses a little, and this one starts from 8 Mbps sources that YouTube will
+// encode again.
+const VIDEO_BITRATE = 12_000_000;
 const RATE = 48000;
 const AUDIO_BLOCK = RATE / 2; // mix half a second at a time
 const BG = '#0d0d12';
@@ -77,6 +81,20 @@ interface Source {
   audio: Awaited<ReturnType<Input['getPrimaryAudioTrack']>>;
 }
 
+/**
+ * 192 kbps, not YouTube's 384 for stereo: our sound is mono voices (recorded
+ * as 128 kbps Opus) placed identically in both channels, which AAC codes
+ * almost as mono, and YouTube streams it at about 128 kbps anyway. 192 leaves
+ * headroom for this re-encode, and is the most Windows' AAC encoder takes.
+ * AAC first, since it plays everywhere (editors, QuickTime); Opus only where
+ * there's no AAC encoder at all (Linux).
+ */
+async function pickAudio(): Promise<{ codec: 'aac' | 'opus'; bitrate: number }> {
+  for (const bitrate of [192_000, 160_000, 128_000])
+    if (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: RATE, bitrate })) return { codec: 'aac', bitrate };
+  return { codec: 'opus', bitrate: 192_000 };
+}
+
 async function render(m: DirectorManifest) {
   if (!(await canEncodeVideo('avc', { width: W, height: H }))) throw new Error('This browser cannot encode H.264 video.');
   const dir = await openTakeDir(m.take.id);
@@ -112,15 +130,22 @@ async function render(m: DirectorManifest) {
   // Output.
   const fh = await dir.getFileHandle('final.mp4', { create: true });
   const writable = await fh.createWritable();
-  const output = new Output({ format: new Mp4OutputFormat(), target: new StreamTarget(writable as any) });
+  // YouTube's upload spec (support.google.com/youtube/answer/1722171): the
+  // index (moov) at the front, "fast start". Streaming to disk, that means
+  // reserving room for it up front, sized from the packet counts we know now.
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'reserve' }), target: new StreamTarget(writable as any) });
+  const span = Math.max(1, duration - t0) + 2;
+  const spare = (n: number) => Math.ceil(n * 1.33) + 64; // the library's advice: about a third spare
   const canvas = new OffscreenCanvas(W, H);
   const ctx = canvas.getContext('2d')!;
-  const video = new CanvasSource(canvas, { codec: 'avc', bitrate: 8_000_000, keyFrameInterval: 2 });
-  output.addVideoTrack(video, { frameRate: FPS });
+  const video = new CanvasSource(canvas, { codec: 'avc', bitrate: VIDEO_BITRATE, keyFrameInterval: 2 });
+  output.addVideoTrack(video, { frameRate: FPS, maximumPacketCount: spare(span * FPS) });
   const audioSources = sources.filter((s) => s.audio);
-  const audioCodec = (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: RATE })) ? 'aac' : 'opus';
-  const audio = audioSources.length ? new AudioSampleSource({ codec: audioCodec, bitrate: 160_000 }) : null;
-  if (audio) output.addAudioTrack(audio);
+  const { codec: audioCodec, bitrate: audioBitrate } = await pickAudio();
+  const audio = audioSources.length ? new AudioSampleSource({ codec: audioCodec, bitrate: audioBitrate }) : null;
+  post({ t: 'info', message: `final cut: H.264 ${VIDEO_BITRATE / 1e6} Mbps${audio ? `, ${audioCodec.toUpperCase()} ${audioBitrate / 1000} kbps stereo` : ', no audio'}` });
+  // Packets of 1024 (AAC) or 960 (Opus) samples: count the smaller.
+  if (audio) output.addAudioTrack(audio, { maximumPacketCount: spare((span * RATE) / 960) });
   await output.start();
 
   const cursors = new Map<string, VideoCursor>();

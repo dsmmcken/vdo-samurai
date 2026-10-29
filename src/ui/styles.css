@@ -1168,6 +1168,74 @@ html.resizing .pip-face {
   z-index: 30;
   background: rgba(14, 14, 19, 0.82);
 }
+/* Done: a small wind-up, then out to the right, leaving a puff behind. */
+.after.leaving {
+  pointer-events: none;
+  animation: after-out 0.5s cubic-bezier(0.55, 0, 0.75, 0) forwards;
+}
+@keyframes after-out {
+  20% {
+    transform: translateX(-8px);
+  }
+  100% {
+    transform: translateX(calc(100% + 40px)) scale(0.96);
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+.after-puff {
+  position: fixed;
+  top: 70px;
+  right: 30px;
+  z-index: 31;
+  pointer-events: none;
+}
+.after-puff span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.12) 55%, transparent 72%);
+  opacity: 0;
+  animation: puff 0.65s ease-out both;
+}
+@keyframes puff {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.5);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .after.leaving {
+    animation: after-fade 0.3s forwards;
+  }
+  .after-puff {
+    display: none;
+  }
+}
+@keyframes after-fade {
+  to {
+    opacity: 0;
+  }
+}
+/* Recording details: the latest final cut, downloadable until the next take. */
+.final-cut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
 .after-head {
   display: flex;
   justify-content: space-between;
@@ -1176,6 +1244,24 @@ html.resizing .pip-face {
 .after h2 {
   margin: 0;
   font-size: 15px;
+}
+.after-head h2 {
+  flex: 1;
+}
+/* Small, quiet text action (e.g. the transfer log in the upload panel header). */
+.text-link {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  margin-right: 4px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.text-link:hover {
+  color: inherit;
+  text-decoration: underline;
 }
 .after p {
   margin: 10px 0 0;

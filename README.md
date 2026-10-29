@@ -29,7 +29,7 @@ Rules for the edit:
 
 ```sh
 npm install
-npm run dev          # http://localhost:5173
+npm run dev          # http://localhost:8080
 npm run build        # static site in dist/
 ```
 

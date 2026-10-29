@@ -97,6 +97,8 @@ export interface RaceRow {
   announced: boolean;
   done: boolean;
   finishedAt?: number;
+  /** Bytes a second over the last few seconds, while it's arriving. */
+  rate?: number;
 }
 
 /** Everything the compositor needs, saved by the director in OPFS. */

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import type { RaceRow } from '../lib/types';
 import { fmtBytes } from '../lib/util';
@@ -8,14 +8,47 @@ import { problemCount } from './RecordingDetails';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
-/** After the director stops: the upload race for everyone, plus the final cut for the director. */
+/** How long the panel takes to slide out and puff away. */
+const LEAVE_MS = 1000;
+
+/**
+ * After the director stops: the upload race for everyone, plus the final cut
+ * for the director. It can't be closed while it's the only sign of progress:
+ * a guest can close it once their own upload is in, and it leaves by itself
+ * once everyone's is. The director's ends with Download or Discard, and leaves
+ * once downloaded (Recording details keeps a download until the next take).
+ */
 export function AfterTake({ room, s, onDetails }: { room: Room; s: Snapshot; onDetails: () => void }) {
   const [hidden, setHidden] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<string | null>(null);
+  /** The take the director just downloaded here (a reload of a downloaded take shows nothing). */
+  const [saved, setSaved] = useState<string | null>(null);
   const dm = s.directorTake;
   const isDirector = !!dm?.take.stopAt;
   const takeId = isDirector ? dm!.take.id : s.take?.stopAt ? s.take.id : null;
-  if (!takeId || hidden === takeId) return null;
   const rows = s.race ?? [];
+  const mineDone = !isDirector && !!s.myUpload?.done;
+  const everyoneDone = rows.length > 0 && rows.every((r) => r.done);
+
+  // A moment to see the last "Done", then off to the right.
+  useEffect(() => {
+    if (!takeId || !mineDone || !everyoneDone || leaving === takeId) return;
+    const t = setTimeout(() => setLeaving(takeId), 2500);
+    return () => clearTimeout(t);
+  }, [takeId, mineDone, everyoneDone, leaving]);
+  useEffect(() => {
+    if (!takeId || saved !== takeId || leaving === takeId) return;
+    const t = setTimeout(() => setLeaving(takeId), 1200);
+    return () => clearTimeout(t);
+  }, [takeId, saved, leaving]);
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => setHidden(leaving), LEAVE_MS);
+    return () => clearTimeout(t);
+  }, [leaving]);
+
+  if (!takeId || hidden === takeId) return null;
+  if (isDirector && dm!.downloaded && saved !== takeId) return null;
   // Only uploaders see the race. A director who discarded their take sees nothing.
   if (!isDirector && (s.take?.director === s.me || (!rows.length && !s.myUpload))) return null;
 
@@ -34,32 +67,67 @@ export function AfterTake({ room, s, onDetails }: { room: Room; s: Snapshot; onD
           ? 'Collecting recordings'
           : 'Preparing';
 
-  // Closing a downloaded take also clears it from this browser.
-  const close = () => (isDirector && dm?.downloaded ? room.discardTake() : setHidden(takeId));
+  const gone = leaving === takeId;
 
   return (
-    <aside className="glass panel after" aria-label={title}>
-      <div className="after-head">
-        <h2>{title}</h2>
-        <button className="icon-btn" onClick={close} aria-label="Close" title={isDirector && dm?.downloaded ? 'Close and clear storage' : 'Hide'}>
-          <Close size={16} />
-        </button>
-      </div>
+    <>
+      <aside className={`glass panel after ${gone ? 'leaving' : ''}`} aria-label={title}>
+        <div className="after-head">
+          <h2>{title}</h2>
+          {s.transferLogs.length > 0 && problemCount(s) === 0 && (
+            <button className="text-link" onClick={onDetails}>
+              Transfer log
+            </button>
+          )}
+          {mineDone && (
+            <button className="icon-btn" onClick={() => setLeaving(takeId)} aria-label="Close" title="Close">
+              <Close size={16} />
+            </button>
+          )}
+        </div>
 
-      {!isDirector && s.myUpload?.done && <p className="safe">Your recording is safely with the Shōgun (director). You can close this tab.</p>}
-      {!isDirector && s.myUpload && !s.myUpload.done && <p className="muted">Keep this tab open until your upload finishes.</p>}
+        {!isDirector && s.myUpload?.done && <p className="safe">Your recording is safely with the Shōgun (director). You can close this tab.</p>}
+        {!isDirector && s.myUpload && !s.myUpload.done && <p className="muted">Keep this tab open until your upload finishes.</p>}
 
-      {rows.length > 0 && !(isDirector && r?.state === 'done') && <Race rows={rows} me={s.me} />}
+        {rows.length > 0 && !(isDirector && r?.state === 'done') && <Race rows={rows} me={s.me} />}
 
-      {isDirector && <DirectorFinish room={room} s={s} />}
-      {problemCount(s) > 0 && (
-        <button className="problems" onClick={onDetails}>
-          {problemCount(s)} recording {problemCount(s) === 1 ? 'problem' : 'problems'} · Details
-        </button>
+        {isDirector && <DirectorFinish room={room} s={s} onSaved={() => setSaved(takeId)} />}
+        {problemCount(s) > 0 && (
+          <button className="problems" onClick={onDetails}>
+            {problemCount(s)} recording {problemCount(s) === 1 ? 'problem' : 'problems'} · Details
+          </button>
+        )}
+      </aside>
+      {gone && (
+        <div className="after-puff" aria-hidden>
+          {PUFFS.map(([x, y, size], i) => (
+            <span
+              key={i}
+              style={
+                {
+                  '--dx': `${x}px`,
+                  '--dy': `${y}px`,
+                  width: size,
+                  height: size,
+                  animationDelay: `${0.25 + i * 0.04}s`,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+        </div>
       )}
-    </aside>
+    </>
   );
 }
+
+/** The puff where the panel leaves: soft clouds drifting out from the edge (dx, dy, size). */
+const PUFFS: [number, number, number][] = [
+  [-30, -18, 54],
+  [-10, 14, 64],
+  [-46, 10, 40],
+  [6, -26, 44],
+  [-24, 30, 36],
+];
 
 function Race({ rows, me }: { rows: RaceRow[]; me: string }) {
   const finished = rows.filter((r) => r.done).sort((a, b) => (a.finishedAt ?? 0) - (b.finishedAt ?? 0));
@@ -75,7 +143,9 @@ function Race({ rows, me }: { rows: RaceRow[]; me: string }) {
             <span className="bar">
               <span style={{ width: `${Math.round(frac(r) * 100)}%` }} className={r.done ? 'done' : ''} />
             </span>
-            <span className="amt">{r.done ? 'Done' : r.announced ? `${Math.floor(frac(r) * 100)}% · ${fmtBytes(r.total)}` : 'Waiting'}</span>
+            <span className="amt">
+              {r.done ? 'Done' : r.announced ? `${Math.floor(frac(r) * 100)}% · ${fmtBytes(r.total)}${r.rate ? ` · ${(r.rate / 1024 ** 2).toFixed(1)} MB/s` : ''}` : 'Waiting'}
+            </span>
           </li>
         );
       })}
@@ -87,7 +157,7 @@ function frac(r: { received: number; total: number; done: boolean }) {
   return r.done ? 1 : r.total ? r.received / r.total : 0;
 }
 
-function DirectorFinish({ room, s }: { room: Room; s: Snapshot }) {
+function DirectorFinish({ room, s, onSaved }: { room: Room; s: Snapshot; onSaved: () => void }) {
   const r = s.render;
   const dm = s.directorTake!;
   const waiting = (s.race ?? []).filter((x) => !x.done).length;
@@ -138,18 +208,22 @@ function DirectorFinish({ room, s }: { room: Room; s: Snapshot }) {
     <div className="render">
       <video className="final-preview" src={r.url} controls />
       <div className="row">
-        <a className="btn primary" href={r.url} download={`${room.roomName}-${dm.take.id}.mp4`} onClick={() => room.markDownloaded()}>
+        <a
+          className="btn primary"
+          href={r.url}
+          download={finalCutName(room, dm.take.id)}
+          onClick={() => {
+            room.markDownloaded();
+            onSaved();
+          }}
+        >
           <Petals />
-          <span className="label">{dm.downloaded ? 'Download again' : `Download MP4${r.bytes ? ` · ${fmtBytes(r.bytes)}` : ''}`}</span>
+          <span className="label">{`Download MP4${r.bytes ? ` · ${fmtBytes(r.bytes)}` : ''}`}</span>
         </a>
-        {dm.downloaded ? (
-          <button className="btn ghost" onClick={() => room.discardTake()}>
-            Clear and close
-          </button>
-        ) : (
-          discard
-        )}
+        {!dm.downloaded && discard}
       </div>
     </div>
   );
 }
+
+export const finalCutName = (room: Room, takeId: string) => `${room.roomName}-${takeId}.mp4`;

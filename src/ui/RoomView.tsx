@@ -10,6 +10,7 @@ import { AddReaction, Cam, CamOff, Check, Chevron, Copy, Dot, Draw, Info, Leave,
 import { Popover } from './Popover';
 import { emojiFont, PickerShell } from './PickerShell';
 import { ProfileForm } from './ProfileForm';
+import { usePasswordCheck } from './Secret';
 import { Stage } from './Stage';
 import { TileStrip } from './TileStrip';
 import { RemoteAudio } from './Video';
@@ -146,7 +147,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
 
       <Countdown startLocal={s.recording ? s.takeStartLocal : null} />
       <AfterTake room={room} s={s} onDetails={() => setDetails(true)} />
-      {details && <RecordingDetails s={s} onClose={() => setDetails(false)} />}
+      {details && <RecordingDetails room={room} s={s} onClose={() => setDetails(false)} />}
       {s.notice && <div className="glass toast">{s.notice}</div>}
       <WaitingMusic s={s} />
 
@@ -177,6 +178,7 @@ function ViewToggle({ room, s }: { room: Room; s: Snapshot }) {
 }
 
 function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; s: Snapshot; close: () => void; onEdit: () => void; onDetails: () => void; onLeave: () => void }) {
+  const check = usePasswordCheck(room.password);
   const relayed = [...s.peers.values()].filter((p) => p.route === 'relay').length;
   const status =
     s.meshStatus === 'error' ? "Can't reach VDO.Ninja" : s.meshStatus === 'connecting' ? 'Connecting…' : `${s.peers.size + 1} here · ${relayed ? `${relayed} relayed` : 'all peer-to-peer'}`;
@@ -188,7 +190,7 @@ function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; 
           {s.meshStatus === 'connected' && <span className="status-dot" />} {status}
         </span>
       </div>
-      <CopyItem text={inviteLink(room.roomName)} label="Copy invite link" close={close} />
+      <CopyItem text={inviteLink(room.roomName, check)} label="Copy invite link" close={close} />
       {room.password && <CopyItem text={room.password} label="Copy password" close={close} />}
       <button onClick={onEdit}>
         <Pencil size={16} /> Edit your name

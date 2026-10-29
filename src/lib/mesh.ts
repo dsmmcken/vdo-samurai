@@ -7,6 +7,7 @@
 // transfers all run on our Links, peer to peer.
 import VDONinja from '@vdoninja/sdk';
 import { Link } from './link';
+import { SALT } from './passcheck';
 import type { PeerId } from './types';
 import { rid } from './util';
 
@@ -38,7 +39,7 @@ export class Mesh {
   async start() {
     // turnServers:false: never fetch or use VDO.Ninja's TURN relays, even for
     // this small bootstrap link. Pairs that can't connect directly just don't.
-    const sdk = (this.sdk = new VDONinja({ salt: 'vdo.ninja', password: this.password, turnServers: false } as any));
+    const sdk = (this.sdk = new VDONinja({ salt: SALT, password: this.password, turnServers: false } as any));
     sdk.addEventListener('dataChannelOpen', (e: any) => {
       // The side that "viewed" the other opens our app channel.
       this.log(`dataChannelOpen ${e.detail.type} ${e.detail.streamID}`);

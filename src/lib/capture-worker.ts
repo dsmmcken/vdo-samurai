@@ -78,7 +78,7 @@ async function record(job: Start) {
   await output.start();
   // Counters for the recording report.
   const stats = { framesIn: 0, framesOut: 0, framesRepeated: 0, audioIn: 0, audioOut: 0, audioGaps: 0, audioDriftMs: 0 };
-  post({ t: 'info', message: `encoders: video ${video ? 'avc 5 Mbps' : 'none'}, audio ${audio ? audioCodec : 'none'}` });
+  post({ t: 'info', message: `encoders: video ${video ? `avc ${job.videoBitrate / 1e6} Mbps` : 'none'}, audio ${audio ? `${audioCodec} 128 kbps` : 'none'}` });
 
   // Timing, kept deliberately simple: we never trust absolute timestamps from
   // the browser (on Windows the first mic chunks came 6 s off). Instead:
