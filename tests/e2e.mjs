@@ -286,7 +286,20 @@ try {
   await cam.locator('.tile', { hasText: 'Sam Screen' }).click();
   await cam.waitForSelector('.toast');
 
-  await sleep(4000); // director cam
+  // Ink works on a camera too, not just a shared screen: a guest draws across
+  // the director's camera (it's in the final cut too: checkInk).
+  await sleep(1500); // director cam
+  await cam.getByRole('button', { name: 'Draw on the stage' }).click();
+  const camInkColour = inkColor(await cam.evaluate(() => ({ by: window.samurai.me, c: window.samurai.inkSlot })));
+  const fr = await cam.locator('.stage-frame').boundingBox();
+  await cam.mouse.move(fr.x + fr.width * 0.35, fr.y + fr.height * 0.55);
+  await cam.mouse.down();
+  await cam.mouse.move(fr.x + fr.width * 0.65, fr.y + fr.height * 0.55, { steps: 15 });
+  await cam.mouse.up();
+  await cam.keyboard.press('Escape');
+  await dir.waitForFunction(() => [...window.samurai.ink.values()].some((s) => s.up !== undefined && s.pts.length > 5), null, { timeout: 5000 });
+  log("ink on the director's camera reached the director");
+  await sleep(2500);
   if (process.env.DIRECTOR_SCREEN) {
     // The director shares their own screen mid-take and flips the stage to it
     // with the Camera | Screen toggle, then back.
@@ -316,7 +329,7 @@ try {
   if (shown.w !== 1920 || shown.h !== 1080) throw new Error(`screen on stage is ${shown.w}x${shown.h}, expected 1920x1080`);
   // A guest picks up the pen and draws across Sam's screen: it reaches everyone,
   // the director logs it, it fades, and the final cut has it (checkInk).
-  await cam.getByRole('button', { name: 'Draw on the screen' }).click();
+  await cam.getByRole('button', { name: 'Draw on the stage' }).click();
   const inkColour = inkColor(await cam.evaluate(() => ({ by: window.samurai.me, c: window.samurai.inkSlot })));
   // Three people in the room, three different ink colours.
   const slots = await Promise.all(pages.map((p) => p.evaluate(() => window.samurai.inkSlot)));
@@ -488,7 +501,8 @@ try {
   await checkOverlayAndCamOff(dir);
   await checkReaction(dir);
   await checkReactionNames(cam, dir);
-  await checkInk(dir, inkColour);
+  await checkInk(dir, camInkColour, 0, "on the director's camera");
+  await checkInk(dir, inkColour, 1, "on Sam's screen");
   if (process.env.FAIL_AUDIO || process.env.REPORT || process.env.DIRECTOR_SCREEN) {
     const dm = await dir.evaluate(() => window.samurai.dm);
     log('director report:\n  ' + dm.reports[dm.take.director].join('\n  '));
@@ -641,20 +655,21 @@ async function checkOverlayAndCamOff(dir) {
 }
 
 /** The guest's stroke in the final cut: there just after the pen lifted, gone once it has faded. */
-async function checkInk(dir, colour) {
-  const { dm, ink } = await dir.evaluate(() => ({ dm: window.samurai.dm, ink: Object.values(window.samurai.inkLog) }));
+/** The `which`-th stroke of the take (in time order) is in the final cut, then fades. */
+async function checkInk(dir, colour, which, where) {
+  const { dm, ink } = await dir.evaluate(() => ({ dm: window.samurai.dm, ink: Object.values(window.samurai.inkLog).sort((a, b) => a.pts[0][2] - b.pts[0][2]) }));
   const starts = Object.values(dm.files).map((f) => f.offset / 1000);
   const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
-  const s = ink[0];
-  if (!s) throw new Error('no ink in the director log');
+  const s = ink[which];
+  if (!s) throw new Error(`no ink ${where} in the director log`);
   const [x, y] = s.pts[Math.floor(s.pts.length / 2)];
   const px = (T) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', `crop=2:2:${Math.round(x * 1920) - 1}:${Math.round(y * 1080) - 1},scale=1:1`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'])];
   const want = [1, 3, 5].map((i) => parseInt(colour.slice(i, i + 2), 16));
   const isInk = (c) => c.reduce((a, v, i) => a + Math.abs(v - want[i]), 0) < 90;
   const solid = px(s.up / 1000 + 0.5 - t0);
   const gone = px(s.up / 1000 + 3.5 - t0);
-  log(`ink in the final cut at (${Math.round(x * 1920)},${Math.round(y * 1080)}): +0.5 s rgb(${solid.join(',')}) ${isInk(solid) ? 'INK' : 'no ink'}, +3.5 s rgb(${gone.join(',')}) ${isInk(gone) ? 'INK' : 'faded'}`);
-  if (!isInk(solid) || isInk(gone)) throw new Error('ink missing from the final cut, or not faded');
+  log(`ink ${where} in the final cut at (${Math.round(x * 1920)},${Math.round(y * 1080)}): +0.5 s rgb(${solid.join(',')}) ${isInk(solid) ? 'INK' : 'no ink'}, +3.5 s rgb(${gone.join(',')}) ${isInk(gone) ? 'INK' : 'faded'}`);
+  if (!isInk(solid) || isInk(gone)) throw new Error(`ink ${where} missing from the final cut, or not faded`);
 }
 
 /** Names of the scripts, wasm and stylesheets a page has fetched that belong to reactions. */

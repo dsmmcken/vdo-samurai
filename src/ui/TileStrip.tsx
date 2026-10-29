@@ -156,7 +156,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && room.clickTile('end')}
       >
         <Grid size={34} />
-        <div className="tile-name">End screen</div>
+        <div className="tile-name">Multicam</div>
       </div>
 
       {menu && menu.id !== 'end' && (

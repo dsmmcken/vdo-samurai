@@ -30,10 +30,9 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
   const [reactAt, setReactAt] = useState<DOMRect | null>(null);
   const iAmDirector = s.director === s.me;
   // Drawing is a pen you pick up (Esc puts it down): clicks on the stage stay
-  // clicks, and nobody inks the shared screen (and the recording) by accident.
+  // clicks, and nobody inks the stage (and the recording) by accident. It works
+  // on whatever's on stage, so the controls don't shift as the stage changes.
   const [pen, setPen] = useState(false);
-  const st = s.stage;
-  const inkable = st?.kind === 'peer' && st.view === 'screen' && !!(st.id === s.me ? s.screen : s.peers.get(st.id)?.screen);
   useEffect(() => {
     if (!pen) return;
     const key = (e: KeyboardEvent) => e.key === 'Escape' && setPen(false);
@@ -50,7 +49,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
 
   return (
     <div className="room">
-      <Stage room={room} s={s} pen={pen && inkable}>
+      <Stage room={room} s={s} pen={pen}>
         <RecIndicator s={s} />
         {!s.director && !s.take && (
           <div className="glass director-call">
@@ -86,16 +85,14 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
                 <Dot size={26} />
               </button>
             ))}
-          {inkable && (
-            <button
-              className={`glass round ${pen ? 'on' : ''}`}
-              onClick={() => setPen(!pen)}
-              title={pen ? 'Stop drawing (Esc)' : 'Draw on the screen'}
-              aria-label={pen ? 'Stop drawing' : 'Draw on the screen'}
-            >
-              <Draw size={20} />
-            </button>
-          )}
+          <button
+            className={`glass round ${pen ? 'on' : ''}`}
+            onClick={() => setPen(!pen)}
+            title={pen ? 'Stop drawing (Esc)' : 'Draw on the stage'}
+            aria-label={pen ? 'Stop drawing' : 'Draw on the stage'}
+          >
+            <Draw size={20} />
+          </button>
           <button
             className={`glass round ${reactAt ? 'on' : ''}`}
             onPointerEnter={loadPicker}

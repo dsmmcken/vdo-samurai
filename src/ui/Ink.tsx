@@ -4,17 +4,21 @@ import { drawInk, fitContain, PLAYBACK_MS, type InkStroke } from '../lib/ink';
 import type { PeerId } from '../lib/types';
 
 /**
- * Ink over the screen on stage: a transparent canvas, redrawn every animation
- * frame with the same drawInk as the render. It sits under the camera overlay
- * and the controls, and only takes the pointer while the pen is on.
+ * Ink over the stage: a transparent canvas, redrawn every animation frame with
+ * the same drawInk as the render. On a shared screen it lies on the screen's
+ * picture (under the camera overlay); on anything else, on the whole stage.
+ * It sits under the controls, and only takes the pointer while the pen is on.
  */
-export function Ink({ room, pen, name }: { room: Room; pen: boolean; name: (id: PeerId) => string }) {
+export function Ink({ room, pen, name, onScreen }: { room: Room; pen: boolean; name: (id: PeerId) => string; onScreen: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const names = useRef(name);
   names.current = name;
-  /** The shared picture inside the stage (the letterboxed video content), in CSS px. */
+  const screen = useRef(onScreen);
+  screen.current = onScreen;
+  /** Where ink lies, in CSS px: the screen's letterboxed picture, or the whole stage. */
   const picture = () => {
     const c = ref.current!;
+    if (!screen.current) return { x: 0, y: 0, w: c.clientWidth, h: c.clientHeight };
     const v = c.parentElement?.querySelector<HTMLVideoElement>('video.stage-video');
     return fitContain(v?.videoWidth || 16, v?.videoHeight || 9, c.clientWidth, c.clientHeight);
   };

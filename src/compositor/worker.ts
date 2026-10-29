@@ -280,6 +280,9 @@ async function render(m: DirectorManifest) {
     const lerp = (a: number, b: number) => a + (b - a) * e;
     return { x: lerp(prev.x, cur.x), y: lerp(prev.y, cur.y), w: lerp(prev.w, cur.w), h: lerp(prev.h, cur.h), r: lerp(prev.r, cur.r), alpha: lerp(prev.alpha, cur.alpha) };
   };
+  // Ink lies on a shared screen's picture, or on the whole frame for anything else.
+  const FULL = { x: 0, y: 0, w: W, h: H };
+  const inkNames = { name: (id: PeerId) => m.profiles[id]?.name || 'Guest' };
   const total = Math.max(1, Math.round((duration - t0) * FPS));
   const wallStart = performance.now();
   let audioUntil = t0; // take time
@@ -320,12 +323,13 @@ async function render(m: DirectorManifest) {
         else placeholder(ctx, c.x, c.y, c.w, c.h, m.profiles[shown[i]]);
         ctx.restore();
       }
+      drawInk(ctx, ink[segIdx], t * 1000, FULL, inkNames);
     } else {
       const screen = st.view === 'screen' ? await frameAt(st.id, 'screen', t) : null;
       const cam = await frameAt(st.id, 'cam', t);
       if (screen) {
         drawContain(ctx, screen, 0, 0, W, H);
-        drawInk(ctx, ink[segIdx], t * 1000, fitContain(screen.displayWidth, screen.displayHeight, W, H), { name: (id) => m.profiles[id]?.name || 'Guest' });
+        drawInk(ctx, ink[segIdx], t * 1000, fitContain(screen.displayWidth, screen.displayHeight, W, H), inkNames);
         const { x, y, w, h, r, alpha } = pipAt(t);
         if (alpha > 0.01) {
           const path = roundRect(x, y, w, h, r);
@@ -344,10 +348,11 @@ async function render(m: DirectorManifest) {
           else placeholder(ctx, x, y, w, h, m.profiles[st.id]);
           ctx.restore();
         }
-      } else if (cam) {
-        drawCover(ctx, cam, 0, 0, W, H, headAt(st.id, t));
       } else {
-        placeholder(ctx, 0, 0, W, H, m.profiles[st.id]);
+        if (cam) drawCover(ctx, cam, 0, 0, W, H, headAt(st.id, t));
+        else placeholder(ctx, 0, 0, W, H, m.profiles[st.id]);
+        // Ink on a camera: over the whole picture, under the lower third.
+        drawInk(ctx, ink[segIdx], t * 1000, FULL, inkNames);
       }
       const lt = thirds.get(st.id);
       if (lt && t >= lt.start && t < lt.end) lowerThird(ctx, m.profiles[st.id], t - lt.start, lt.end - lt.start);

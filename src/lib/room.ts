@@ -223,8 +223,8 @@ export class Room {
 
   // Ink (everyone): strokes on the current stage, times on our clock.
   private ink = new Map<string, InkStroke>();
-  /** Whose screen the ink is on ('' when no screen is on stage). */
-  private inkStage = '';
+  /** What's on stage, as ink sees it (a cut clears the ink): 'empty', 'end', or 'id:cam' / 'id:screen'. */
+  private inkStage = 'empty';
   /** Our ink colour, a slot in INK_COLORS (claimInk). */
   inkSlot = 0;
   private pen: { id: string; stroke: InkStroke; out: InkPoint[]; timer: ReturnType<typeof setInterval> } | null = null;
@@ -1793,10 +1793,10 @@ export class Room {
 
   // ------------------------------------------------------------------ ink
 
-  /** Ink belongs to the screen it was drawn on: a cut clears it. */
+  /** Ink belongs to what's on stage when it's drawn (a screen, a camera, the end screen, or nothing): a cut clears it. */
   private onInkStage() {
     const st = this.shared.stage.v;
-    const key = st?.kind === 'peer' && st.view === 'screen' ? st.id : '';
+    const key = !st ? 'empty' : st.kind === 'end' ? 'end' : `${st.id}:${st.view}`;
     if (key === this.inkStage) return;
     this.penUp();
     this.ink.clear();
@@ -1816,7 +1816,6 @@ export class Room {
   /** Pen down at (x, y), fractions of the shared picture. `pressure` only from a stylus; mouse and touch get it from their speed. */
   penDown(x: number, y: number, pressure?: number) {
     this.penUp();
-    if (!this.inkStage) return;
     const id = `${this.me}:${rid(6)}`;
     const stroke: InkStroke = { by: this.me, c: this.inkSlot, pts: [] };
     this.ink.set(id, stroke);

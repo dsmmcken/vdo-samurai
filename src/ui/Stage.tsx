@@ -49,17 +49,20 @@ export function Stage({ room, s, pen, children }: { room: Room; s: Snapshot; pen
     body = showScreen ? (
       <>
         <Video stream={screen} fit="contain" className="stage-video" />
-        <Ink room={room} pen={pen} name={(id) => nameOf(s, id)} />
+        <Ink room={room} pen={pen} name={(id) => nameOf(s, id)} onScreen />
         <Pip room={room} s={s} stream={cam} mirror={st.id === s.me} off={off(st.id)} head={headOf(st.id)} name={nameOf(s, st.id)} />
       </>
     ) : (
       camView(st.id, 'stage-video')
     );
   }
+  // Ink over anything else on stage (a camera, the end screen, or nothing yet).
+  const onScreen = st?.kind === 'peer' && present(st.id) && st.view === 'screen' && !!screenOf(st.id);
   return (
     <main className="stage" aria-label="Main stage">
       <div className="stage-frame">
         {body}
+        {!onScreen && <Ink room={room} pen={pen} name={(id) => nameOf(s, id)} onScreen={false} />}
         <Reactions room={room} name={(id) => nameOf(s, id)} />
         {st?.kind === 'peer' && present(st.id) && <span className="glass chip stage-name">{nameOf(s, st.id)}</span>}
         {children}
