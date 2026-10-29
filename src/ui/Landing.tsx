@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import logo from '../assets/logo.svg';
-import { Info } from './icons';
+import { GitHub, Info } from './icons';
 import { Popover } from './Popover';
 
 /**
@@ -31,7 +31,12 @@ export function Landing({ children }: { children: React.ReactNode }) {
               <strong>VDO Samurai is for recording high‑quality, multi‑person demo videos.</strong>
             </p>
             <p>During the call, everyone sees small, lightweight video plus whatever's on the main stage. Meanwhile each browser records its own camera, mic and screen at full quality. When recording stops, those files transfer peer to peer to the Shōgun (director), whose machine renders the final video in high quality.</p>
-            <p className="muted">Tested on Chrome.</p>
+            <p className="muted about-foot">
+              Tested on Chrome.
+              <a href="https://github.com/dsmmcken/vdo-samurai" target="_blank" rel="noopener noreferrer">
+                <GitHub size={14} /> GitHub
+              </a>
+            </p>
           </div>
         </Popover>
       )}

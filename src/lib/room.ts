@@ -20,7 +20,7 @@ import { FaceWatch } from './face/watch';
 import { castSupport, ScreenCaster, ScreenView } from './screencast';
 import type { Head } from './framing';
 import { INK_COLORS, inkAlpha, PLAYBACK_MS, type InkPoint, type InkStroke } from './ink';
-import { fetchLottie, FLIGHT_MS, type Reaction } from './reactions';
+import { fetchLottie, FLIGHT_MS, NAME_COOLDOWN_MS, type Reaction } from './reactions';
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, testHook, type Recorder } from './recorder';
 import * as fs from './opfs';
 import { InPlaceWriter } from './inplace';
@@ -210,6 +210,8 @@ export class Room {
 
   /** This take's reactions in take time, saved to reactions.json, and each emoji's animation as it's saved next to it. */
   private reactLog: Reaction[] = [];
+  /** When we last sent each emoji, for NAME_COOLDOWN_MS. */
+  private lastSent = new Map<string, number>();
   private reactSave: ReturnType<typeof setTimeout> | null = null;
   private lottieSaves = new Map<string, Promise<void>>();
   // Reactions (everyone): in the air or about to be, times on our clock.
@@ -1712,18 +1714,21 @@ export class Room {
 
   /** Sends an emoji (a Noto codepoint) floating up everyone's stage, ours included. */
   react(cp: string) {
-    const r: Reaction = { id: `${this.me}:${rid(6)}`, by: this.me, cp, at: Math.round(now()), seed: crypto.getRandomValues(new Uint32Array(1))[0] };
+    const at = Math.round(now());
+    const named = at - (this.lastSent.get(cp) ?? -Infinity) >= NAME_COOLDOWN_MS;
+    this.lastSent.set(cp, at);
+    const r: Reaction = { id: `${this.me}:${rid(6)}`, by: this.me, cp, at, seed: crypto.getRandomValues(new Uint32Array(1))[0], named };
     this.showReaction(r);
     // Peer to peer on our own channels, like everything else.
-    this.mesh.broadcast({ t: 'react', id: r.id, cp, at: r.at, seed: r.seed });
+    this.mesh.broadcast({ t: 'react', id: r.id, cp, at: r.at, seed: r.seed, named });
     this.logReaction(r);
   }
 
   /** Someone's reaction, stamped on their clock. */
-  private onReact(peer: PeerId, m: { id: string; cp: string; at: number; seed: number }) {
+  private onReact(peer: PeerId, m: { id: string; cp: string; at: number; seed: number; named?: boolean }) {
     if (!/^[0-9a-f]{2,6}(_[0-9a-f]{2,6})*$/.test(m.cp) || this.reactions.has(m.id)) return;
     const off = this.offsetTo(peer) ?? 0;
-    const r: Reaction = { id: m.id, by: peer, cp: m.cp, at: m.at - off, seed: m.seed >>> 0 };
+    const r: Reaction = { id: m.id, by: peer, cp: m.cp, at: m.at - off, seed: m.seed >>> 0, named: m.named === true };
     // Live it starts on arrival at the latest, whatever the clocks say.
     const t = now();
     this.showReaction({ ...r, at: Math.max(t - 500, Math.min(t, r.at)) });

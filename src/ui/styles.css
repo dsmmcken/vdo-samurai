@@ -1616,6 +1616,23 @@ pre,
 .about p:last-child {
   margin: 0;
 }
+.about-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.about-foot a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  text-decoration: none;
+}
+.about-foot a:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
 .room-title {
   margin: 0;
   font-size: 17px;

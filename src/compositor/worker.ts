@@ -353,7 +353,7 @@ async function render(m: DirectorManifest) {
       if (lt && t >= lt.start && t < lt.end) lowerThird(ctx, m.profiles[st.id], t - lt.start, lt.end - lt.start);
     }
 
-    if (sprite) drawReactions(ctx, reactions, t * 1000, { x: 0, y: 0, w: W, h: H }, sprite);
+    if (sprite) drawReactions(ctx, reactions, t * 1000, { x: 0, y: 0, w: W, h: H }, sprite, (id) => m.profiles[id]?.name || 'Guest');
 
     await video.add(k / FPS, 1 / FPS);
 

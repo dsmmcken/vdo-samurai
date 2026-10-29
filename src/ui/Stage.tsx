@@ -60,7 +60,7 @@ export function Stage({ room, s, pen, children }: { room: Room; s: Snapshot; pen
     <main className="stage" aria-label="Main stage">
       <div className="stage-frame">
         {body}
-        <Reactions room={room} />
+        <Reactions room={room} name={(id) => nameOf(s, id)} />
         {st?.kind === 'peer' && present(st.id) && <span className="glass chip stage-name">{nameOf(s, st.id)}</span>}
         {children}
       </div>

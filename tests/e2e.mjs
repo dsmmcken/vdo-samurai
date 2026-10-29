@@ -471,6 +471,7 @@ try {
   await checkAlignment(dir);
   await checkOverlayAndCamOff(dir);
   await checkReaction(dir);
+  await checkReactionNames(cam, dir);
   await checkInk(dir, inkColour);
   if (process.env.FAIL_AUDIO || process.env.REPORT || process.env.DIRECTOR_SCREEN) {
     const dm = await dir.evaluate(() => window.samurai.dm);
@@ -693,6 +694,21 @@ async function react(guest, others) {
   log('director logged reactions:', JSON.stringify(logged));
   if (logged.length !== 1) throw new Error('the director should have logged one reaction');
   await sleep(3000); // let it land
+}
+
+/** A name under the first of each emoji someone sends; the same emoji again within 5 s goes unnamed. */
+async function checkReactionNames(guest, dir) {
+  const me = await guest.evaluate(() => window.samurai.me);
+  for (const cp of ['1f431', '1f431', '1f389']) {
+    await guest.evaluate((cp) => window.samurai.react(cp), cp);
+    await sleep(150);
+  }
+  await dir.waitForFunction((id) => [...window.samurai.reactions.values()].filter((r) => r.by === id).length === 3, me, { timeout: 5000 });
+  const named = await dir.evaluate((id) => [...window.samurai.reactions.values()].filter((r) => r.by === id).sort((a, b) => a.at - b.at).map((r) => `${r.cp}:${r.named ? 'named' : 'plain'}`), me);
+  log('reaction names (cat, cat, party):', named.join(' '), named.join(' ') === '1f431:named 1f431:plain 1f389:named' ? 'OK' : 'WRONG');
+  await sleep(900);
+  await dir.screenshot({ path: 'test-results/reaction-names.png' });
+  await sleep(3500);
 }
 
 /** The reaction in the final cut: a busy patch of emoji along its flight path, flat screen there once it has landed. */

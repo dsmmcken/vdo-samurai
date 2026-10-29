@@ -8,6 +8,12 @@ import type { Rect } from './ink';
 import type { PeerId } from './types';
 
 export const FLIGHT_MS = 3600;
+/**
+ * A reaction carries its sender's name unless they sent the same emoji less
+ * than this long before; every send restarts it, so a stream of one emoji is
+ * named once, and again after a pause.
+ */
+export const NAME_COOLDOWN_MS = 5000;
 /** More than this in the air at once and the oldest drop out. */
 export const MAX_REACTIONS = 20;
 
@@ -19,6 +25,8 @@ export interface Reaction {
   /** When it was sent: our own clock live, take time in the log. */
   at: number;
   seed: number;
+  /** Shows the sender's name under it (decided by the sender, see NAME_COOLDOWN_MS). */
+  named?: boolean;
 }
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -64,8 +72,8 @@ export function inFlight(list: Iterable<Reaction>, t: number) {
   return out.slice(-MAX_REACTIONS);
 }
 
-/** Draws every reaction in flight at time `t` over `rect` (the whole stage). */
-export function drawReactions(ctx: Ctx, list: Iterable<Reaction>, t: number, rect: Rect, sprite: Sprite) {
+/** Draws every reaction in flight at time `t` over `rect` (the whole stage), named ones with `name(by)` under them. */
+export function drawReactions(ctx: Ctx, list: Iterable<Reaction>, t: number, rect: Rect, sprite: Sprite, name: (id: PeerId) => string) {
   for (const r of inFlight(list, t)) {
     const f = flight(r, t);
     const img = f && sprite(r.cp, t - r.at);
@@ -74,10 +82,26 @@ export function drawReactions(ctx: Ctx, list: Iterable<Reaction>, t: number, rec
     ctx.save();
     ctx.globalAlpha = f.alpha;
     ctx.translate(rect.x + f.x * rect.w, rect.y + f.y * rect.h);
+    if (r.named) drawName(ctx, name(r.by), s / 2, rect.h);
     ctx.rotate(f.tilt);
     ctx.drawImage(img, -s / 2, -s / 2, s, s);
     ctx.restore();
   }
+}
+
+/** The sender's name, centred just below an emoji `below` from its centre: plain text, the pencil tag's size. */
+function drawName(ctx: Ctx, name: string, below: number, ph: number) {
+  const l = Math.max(10, ph * 0.015); // 16 px at 1080p, like the pencil's tag
+  const label = name.length > 22 ? name.slice(0, 21) + '…' : name;
+  ctx.save();
+  ctx.font = `600 ${Math.round(l * 1.05)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+  ctx.shadowBlur = l * 0.4;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(label, 0, below + l * 0.2);
+  ctx.restore();
 }
 
 export const lottieUrl = (cp: string) => `https://fonts.gstatic.com/s/e/notoemoji/latest/${cp}/lottie.json`;

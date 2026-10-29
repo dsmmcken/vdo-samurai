@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Room } from '../lib/room';
+import type { PeerId } from '../lib/types';
 import { drawReactions, fetchLottie, type Sprite } from '../lib/reactions';
 
 /** The player, loaded the first time this client has a reaction to show. */
@@ -11,8 +12,11 @@ const loadPlayer = () => (player ??= import('../lib/lottie').then(({ Sprites }) 
  * overlay: a transparent canvas, redrawn every animation frame with the same
  * drawReactions as the render, but only while something is in the air.
  */
-export function Reactions({ room }: { room: Room }) {
+export function Reactions({ room, name }: { room: Room; name: (id: PeerId) => string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Read on every frame, so a rename shows without restarting the loop.
+  const nameRef = useRef(name);
+  nameRef.current = name;
 
   useEffect(() => {
     const c = ref.current!;
@@ -27,7 +31,7 @@ export function Reactions({ room }: { room: Room }) {
       ctx.clearRect(0, 0, w, h);
       const t = performance.timeOrigin + performance.now();
       const live = [...room.liveReactions(t)];
-      if (sprite) drawReactions(ctx, live, t, { x: 0, y: 0, w, h }, sprite);
+      if (sprite) drawReactions(ctx, live, t, { x: 0, y: 0, w, h }, sprite, (id) => nameRef.current(id));
       raf = live.length ? requestAnimationFrame(tick) : 0;
     };
     const wake = () => {
