@@ -20,8 +20,10 @@ export function Video({ stream, mirror, fit = 'cover', head, className }: { stre
     if (ref.current && ref.current.srcObject !== videoOnly) ref.current.srcObject = videoOnly;
   }, [videoOnly]);
 
-  // Framing: `shown` glides toward `target` in animation frames. Until the
-  // camera's size is known it's a plain cover-fit view.
+  // Framing: `shown` glides toward `target` in animation frames. A new view
+  // (the overlay when a screen goes on stage, say) doesn't know the camera's
+  // size until its first frame: it stays hidden till then, so it appears
+  // already framed instead of uncropped and then snapping to the face.
   const framing = useRef({ target: null as Head | null, shown: null as Head | null, raf: 0, last: 0, start: undefined as undefined | (() => void) });
   const framed = fit === 'cover' && head !== undefined;
   useEffect(() => {
@@ -31,6 +33,7 @@ export function Video({ stream, mirror, fit = 'cover', head, className }: { stre
     const apply = () => {
       const vw = el.videoWidth, vh = el.videoHeight, cw = el.clientWidth, ch = el.clientHeight;
       if (!vw || !vh || !cw || !ch) return;
+      el.style.opacity = '';
       const c = cropFor(f.shown, vw, vh, cw / ch);
       // The whole frame is laid out uncropped ("contain": cover would clip it
       // to the box before we could pan), mapping frame (u, v) to
@@ -65,15 +68,19 @@ export function Video({ stream, mirror, fit = 'cover', head, className }: { stre
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     el.addEventListener('resize', apply); // the camera's resolution changed
+    el.addEventListener('loadedmetadata', apply); // its size is known: first framing
+    el.style.opacity = '0';
     apply();
     return () => {
       ro.disconnect();
       el.removeEventListener('resize', apply);
+      el.removeEventListener('loadedmetadata', apply);
       cancelAnimationFrame(f.raf);
       f.raf = 0;
       el.style.transform = mirror ? 'scaleX(-1)' : '';
       el.style.transformOrigin = '';
       el.style.objectFit = fit;
+      el.style.opacity = '';
     };
   }, [framed, mirror, fit]);
   useEffect(() => {

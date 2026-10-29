@@ -81,6 +81,12 @@ const stallAfter = (bytesPerSec: number) => Math.min(15_000, Math.max(3000, (3 *
 /** Senders re-offer unconfirmed files this often, in case a request or confirmation went missing. */
 const REOFFER_MS = 10_000;
 export const COUNTDOWN_MS = 3000;
+/**
+ * A shared window that's closed doesn't always end its track: Chrome may just
+ * mute it, for good, and everyone keeps seeing its last frame. Muted this
+ * long counts as gone.
+ */
+const SCREEN_GONE_MS = 2000;
 const LEAD_MS = 1500; // time for the start message to reach everyone, and for recorders to spin up
 // Recorders start as soon as the take is announced, before the countdown shows:
 // spinning up encoders makes the page hitch, and that shouldn't land on "3".
@@ -745,7 +751,30 @@ export class Room {
       const s = await openScreen();
       this.screen = s;
       const track = s.getVideoTracks()[0];
-      track?.addEventListener('ended', () => this.screen === s && this.stopScreen());
+      const screenNote = (what: string) => {
+        console.info(`[screen] ${what}`);
+        this.note(this.active?.take.id ?? '', `screen: ${what}`);
+      };
+      track?.addEventListener('ended', () => {
+        screenNote("share ended (window or tab closed, or Chrome's Stop sharing)");
+        if (this.screen === s) this.stopScreen();
+      });
+      let gone: ReturnType<typeof setTimeout> | null = null;
+      track?.addEventListener('mute', () => {
+        screenNote('no longer sending (muted)');
+        gone ??= setTimeout(() => {
+          gone = null;
+          if (this.screen !== s || !track.muted) return;
+          screenNote(`still muted after ${SCREEN_GONE_MS / 1000} s: treated as closed, sharing stopped`);
+          this.say('Your shared window closed or stopped sending, so screen sharing stopped.');
+          this.stopScreen();
+        }, SCREEN_GONE_MS);
+      });
+      track?.addEventListener('unmute', () => {
+        screenNote('sending again (unmuted)');
+        if (gone) clearTimeout(gone);
+        gone = null;
+      });
       if (track && (await castSupport()).send && this.screen === s) {
         try {
           this.caster = new ScreenCaster(track);
