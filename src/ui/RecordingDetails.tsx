@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import { fmtBytes } from '../lib/util';
 import { finalCutName } from './AfterTake';
-import { Close, Copy } from './icons';
+import { Check, Close, Copy } from './icons';
 
 /**
  * Everyone's recorder log for the take (the director sees all; others see
@@ -64,7 +64,7 @@ export function RecordingDetails({ room, s, onClose }: { room: Room; s: Snapshot
                   setCopied(true);
                 }}
               >
-                <Copy size={15} /> {copied ? 'Copied' : 'Copy all'}
+                {copied ? <Check size={15} /> : <Copy size={15} />} Copy all
               </button>
             </div>
           </>

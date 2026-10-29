@@ -125,17 +125,6 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
                 </span>
               )}
             </div>
-            {me && !s.director && !locked && (
-              <button
-                className="glass claim"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  room.setDirector(s.me);
-                }}
-              >
-                <Helmet size={14} /> Claim Shōgun
-              </button>
-            )}
             <div className="tile-name">
               {nameOf(s, id)}
               {me && s.profile.name && <span className="you"> (you)</span>}

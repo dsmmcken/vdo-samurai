@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { forgetJoined, parseRoomHash, releaseIdentity, rememberPassword, roomFragment } from '../lib/identity';
 import { Home } from './Home';
 import { Lobby } from './Lobby';
+import { Landing } from './Landing';
 import { RoomView } from './RoomView';
 import { Room } from '../lib/room';
 
@@ -21,11 +22,18 @@ function readTarget() {
   return t ? { room: t.room, check: t.check } : null;
 }
 
-/** Animates a screen change with the View Transitions API where the browser has it. */
-function transition(update: () => void) {
+/**
+ * Animates a screen change with the View Transitions API where the browser has
+ * it. Between the landing screens (Create room ↔ lobby) only the card moves:
+ * the page under it (background, logo) stays live instead of fading out and in.
+ */
+function transition(update: () => void, landing = false) {
   const start = (document as any).startViewTransition?.bind(document);
   if (!start || matchMedia('(prefers-reduced-motion: reduce)').matches) return update();
-  start(() => flushSync(update));
+  const root = document.documentElement;
+  if (landing) root.classList.add('vt-landing');
+  const vt = start(() => flushSync(update));
+  vt.finished.finally(() => root.classList.remove('vt-landing'));
 }
 
 /** Everything leaving a room involves: media, connections, identity lock, auto-rejoin flag. */
@@ -63,14 +71,20 @@ export function App() {
         });
         return;
       }
-      transition(() => setTarget(next));
+      transition(() => setTarget(next), !cur);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  if (!target) return <Home />;
-  if (!joined) return <Lobby room={target.room} check={target.check} onJoined={(room, pw) => transition(() => setJoined({ room, pw, check: target.check }))} />;
+  // One landing frame for Create room and the lobby, so its background and
+  // logo don't reload between them.
+  if (!joined)
+    return (
+      <Landing>
+        {target ? <Lobby room={target.room} check={target.check} onJoined={(room, pw) => transition(() => setJoined({ room, pw, check: target.check }))} /> : <Home />}
+      </Landing>
+    );
   const { room } = joined;
   const leave = async () => {
     await leaveRoom(room);

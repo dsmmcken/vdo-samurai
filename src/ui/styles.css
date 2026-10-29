@@ -232,6 +232,19 @@ button.chip:hover {
     url('data:image/webp;base64,UklGRo4BAABXRUJQVlA4IIIBAACQCgCdASpAADAAPrlKnUqnJCKhsrksyOAXCWkAFHfhAxqV6bupUB2oOg6FKlmmpBMu4Z7vXx2YITpDy+Q+fvzNdMIdb2Sx+oPp+Vf2iIggYy7jk2LhmJXtzD1iKoAA/v2bSgYCREg+lZoDwcQR4mqO2Qz2Bp6HIFIACiLOepO+JaHtxdfRS2mVIDoFaqed42yC/GtfpGkNB+re3WnKIM6Hzj1XwI7uWXm7wMcAbVrf+AorPvr5XLtElfvfeDeI61xIVLk/QQKB8XdknC8+LMKnXR6Y+qwavTLXNLFs1pd9UWZGZ3iycw70JLOl34UrASuLlvYaTIgbj9073GbeORtd5QIGZQIDjt67iJBbntY+xg6iY/c26/vwzTJoRyOCsWtm9pZ89dXrSdnwKAu5FS8reyqeFX6WjVUXwlJXDw2cx4dwiDyg/zefiR3W9eqdjMBUGwxpGiv2a7CC4qy4jp2xSWjryuukWxNAaJ1zGYlat0VOqEFclzfBrvIyxnKGoywAAA==') center / cover no-repeat,
     var(--bg);
 }
+/* The card, and the tagline just below it, centred together. */
+.home-stack {
+  width: min(440px, 100%);
+}
+.tagline {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+  text-wrap: balance;
+}
 .home-card {
   width: min(440px, 100%);
   background: rgba(14, 14, 19, 0.58);
@@ -274,6 +287,65 @@ button.chip:hover {
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+}
+/* A field's label with a (?) beside it (Hint.tsx). */
+.field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.field-head label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.field-hint {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  opacity: 0.8;
+}
+.field-hint:hover,
+.field-hint:focus-visible {
+  color: var(--fg);
+  opacity: 1;
+  outline: none;
+}
+.field-hint-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  width: max-content;
+  max-width: 240px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  transform: translateX(-50%);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.field-hint:hover .field-hint-tip,
+.field-hint:focus-visible .field-hint-tip {
+  visibility: visible;
+  opacity: 1;
 }
 .field input {
   border: 1px solid var(--line);
@@ -319,6 +391,11 @@ button.chip:hover {
 .secret .icon-btn {
   width: 24px;
   height: 24px;
+}
+/* Inline with text: the icons just brighten, no button behind them. */
+.secret .icon-btn:hover {
+  background: none;
+  color: var(--fg);
 }
 .soft-note {
   margin: 16px 0 0;
@@ -439,6 +516,7 @@ button.chip:hover {
   color: var(--muted);
   padding: 16px;
   text-align: center;
+  text-wrap: balance;
 }
 /* Same overlay as the final cut: a 32px inset from the chosen corner, in
    units of the stage width. Shapes (render px of 1920): rectangle 156x195,
@@ -802,20 +880,30 @@ html.resizing .pip-face {
   background: rgba(255, 255, 255, 0.92);
   color: #111;
 }
-.hint {
+/* No Shōgun yet: the call to become one, just above the controls (the tray:
+   48 px tall, 14 px from the bottom). */
+.director-call {
   position: absolute;
-  top: 58px;
   left: 50%;
+  bottom: calc(14px + 48px + 12px);
   transform: translateX(-50%);
-  padding: 7px 14px;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 20px;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.85);
-  white-space: nowrap;
+  width: max-content;
   max-width: calc(100% - 28px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
+}
+.director-call > span {
+  text-wrap: balance; /* wraps on a narrow stage rather than cutting off */
+}
+@container (max-width: 380px) {
+  .director-call > span {
+    display: none;
+  }
 }
 .tray {
   position: absolute;
@@ -983,15 +1071,15 @@ html.resizing .pip-face {
   background: var(--glass-hover);
 }
 .claim {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 6px 12px;
+  border: 0;
   border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -1001,7 +1089,7 @@ html.resizing .pip-face {
   color: var(--accent);
 }
 .claim:hover {
-  background: var(--glass-hover);
+  background: rgba(255, 255, 255, 0.2);
 }
 .end-tile {
   display: grid;
@@ -1356,6 +1444,15 @@ html.resizing .pip-face {
 ::view-transition-group(card) {
   animation-duration: 0.45s;
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The card's snapshots are taken on their own, without the frosting of what's
+     behind them: frost them here, or the blur drops out and pops back. */
+  border-radius: 18px;
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+}
+/* Create room ↔ lobby: only the card animates; the page stays live under it. */
+html.vt-landing {
+  view-transition-name: none;
 }
 @keyframes vt-out {
   to {
@@ -1657,7 +1754,8 @@ pre,
 }
 .boot .landing-logo,
 .boot .landing-info,
-.boot .landing-credit {
+.boot .landing-credit,
+.boot .tagline {
   animation: item-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
 }
 

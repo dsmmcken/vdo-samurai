@@ -7,7 +7,7 @@ import { Video } from './Video';
 import { Petals } from './Petals';
 import { PasswordInput, SecretText, usePasswordCheck } from './Secret';
 import { checkMatches, passwordCheck } from '../lib/passcheck';
-import { Landing } from './Landing';
+import { Hint, useFieldIds } from './Hint';
 import { Avatar } from './Avatar';
 import { MicMeter } from './MicMeter';
 import { Cam, CamOff, Mic, MicOff } from './icons';
@@ -34,6 +34,9 @@ export function Lobby({ room, check, onJoined }: { room: string; check: string |
   // Only a failed Join says anything, and editing clears it.
   const checking = known === null && !!check;
   const [pwBad, setPwBad] = useState(false);
+  const nameIds = useFieldIds();
+  const subIds = useFieldIds();
+  const pwIds = useFieldIds();
   const [profile, setProfile] = useState(loadProfile);
   const [example] = useState(() => EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)]);
   const [cam, setCam] = useState<MediaStream | null>(null);
@@ -111,7 +114,7 @@ export function Lobby({ room, check, onJoined }: { room: string; check: string |
   }, [cam]);
 
   return (
-    <Landing>
+    <>
       <form className="home-card lobby" onSubmit={join}>
         <h1 className="room-title">{room}</h1>
         <div className="preview">
@@ -144,19 +147,42 @@ export function Lobby({ room, check, onJoined }: { room: string; check: string |
             {profile.subtitle.trim() && <span>{profile.subtitle.trim()}</span>}
           </div>
         </div>
-        <label className="field">
-          <span>Full name</span>
-          <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} placeholder={example.name} autoFocus />
-        </label>
-        <label className="field">
-          <span>Subtitle</span>
-          <input value={profile.subtitle} onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })} placeholder={example.subtitle} />
-          <small>Optional: your lower third in the final video (none without a name)</small>
-        </label>
+        <div className="field">
+          <div className="field-head">
+            <label htmlFor={nameIds.input}>Full name (optional)</label>
+            <Hint id={nameIds.hint} text="Shown as your lower third in the final video. Without a name, there's none." />
+          </div>
+          <input
+            id={nameIds.input}
+            value={profile.name}
+            onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+            placeholder={example.name}
+            autoFocus
+            aria-describedby={nameIds.hint}
+          />
+        </div>
+        <div className="field">
+          <div className="field-head">
+            <label htmlFor={subIds.input}>Subtitle (optional)</label>
+            <Hint id={subIds.hint} text="Shown under your name in the lower third." />
+          </div>
+          <input
+            id={subIds.input}
+            value={profile.subtitle}
+            onChange={(e) => setProfile({ ...profile, subtitle: e.target.value })}
+            placeholder={example.subtitle}
+            aria-describedby={subIds.hint}
+          />
+        </div>
         {known === null && (
-          <label className="field">
-            <span>Room password</span>
+          <div className="field">
+            <div className="field-head">
+              <label htmlFor={pwIds.input}>Room password</label>
+              {!checking && <Hint id={pwIds.hint} text="Leave blank if the room has none." />}
+            </div>
             <PasswordInput
+              id={pwIds.input}
+              aria-describedby={checking ? undefined : pwIds.hint}
               value={typedPw}
               onChange={(e) => {
                 setTypedPw(e.target.value);
@@ -164,12 +190,8 @@ export function Lobby({ room, check, onJoined }: { room: string; check: string |
               }}
               aria-invalid={pwBad}
             />
-            {pwBad ? (
-              <small className="error">{typedPw.trim() ? "That's not this room's password" : 'This room needs a password'}</small>
-            ) : (
-              !checking && <small>Blank if the room has none</small>
-            )}
-          </label>
+            {pwBad && <small className="error">{typedPw.trim() ? "That's not this room's password" : 'This room needs a password'}</small>}
+          </div>
         )}
         {known !== null && (
           <div className="invite">
@@ -179,7 +201,7 @@ export function Lobby({ room, check, onJoined }: { room: string; check: string |
             <small>
               {known ? (
                 <>
-                  Password, shared separately: <SecretText value={known} />
+                  Password (share separately): <SecretText value={known} copy />
                 </>
               ) : (
                 'No password: anyone with the link can join'
@@ -192,7 +214,7 @@ export function Lobby({ room, check, onJoined }: { room: string; check: string |
           <span className="label">{joining ? 'Joining…' : 'Join room'}</span>
         </button>
       </form>
-    </Landing>
+    </>
   );
 }
 

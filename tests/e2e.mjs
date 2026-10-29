@@ -188,11 +188,11 @@ try {
   }
 
   // Director claims the chair from a right-click menu.
-  // Before anyone directs, your own tile offers a one-click claim.
-  await cam.waitForSelector('.tile:has-text("Cam Only") .claim');
+  // Before anyone directs, the stage offers a one-click claim.
+  await cam.waitForSelector('.director-call .claim');
   await cam.screenshot({ path: 'test-results/claim.png' });
-  await dir.locator('.tile:has-text("Dana Director") .claim').click();
-  await cam.waitForSelector('.claim', { state: 'detached' });
+  await dir.getByRole('button', { name: 'Become Shōgun', exact: true }).click();
+  await cam.waitForSelector('.director-call', { state: 'detached' });
   const firstTile = (p) => p.evaluate(() => document.querySelector('.strip .tile .tile-name')?.textContent.replace(' (you)', ''));
   await cam.waitForFunction(() => document.querySelector('.strip .tile .tile-name')?.textContent.startsWith('Dana Director'));
   log('new director leads the strip:', await firstTile(cam));
@@ -526,7 +526,7 @@ try {
   log('menu has Copy password:', (await cam.getByRole('button', { name: 'Copy password' }).count()) === 1);
   await cam.screenshot({ path: 'test-results/menu.png' });
   await cam.getByRole('button', { name: 'Leave room' }).click();
-  await cam.waitForSelector('text=Create room');
+  await cam.waitForSelector('text=Create or join room');
   log('guest left and is on the home screen');
   await sam.screenshot({ path: 'test-results/guest.png' });
 } catch (e) {
@@ -775,20 +775,20 @@ async function checkBackButton(browser) {
   });
   const live = () => page.evaluate(() => window.__tracks.filter((t) => t.readyState === 'live').map((t) => t.kind));
   await page.goto(`http://localhost:${PORT}/`);
-  await page.getByRole('button', { name: 'Create room' }).click();
+  await page.getByRole('button', { name: 'Create or join room' }).click();
   await page.getByLabel('Full name').fill('Back Button');
   await page.waitForFunction(() => window.__tracks.length > 0);
   await page.goBack();
-  await page.waitForSelector('text=Create room');
+  await page.waitForSelector('text=Create or join room');
   await sleep(300);
   log('back from the lobby, live tracks:', JSON.stringify(await live()));
-  await page.getByRole('button', { name: 'Create room' }).click();
+  await page.getByRole('button', { name: 'Create or join room' }).click();
   await page.getByLabel('Full name').fill('Back Button');
   await page.getByRole('button', { name: 'Join room' }).click();
   await page.waitForSelector('.tray');
   await sleep(1000);
   await page.goBack();
-  await page.waitForSelector('text=Create room');
+  await page.waitForSelector('text=Create or join room');
   await sleep(500);
   log('back from a live call, live tracks:', JSON.stringify(await live()), '| home page shown');
   await page.close();

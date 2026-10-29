@@ -21,7 +21,7 @@ export function Stage({ room, s, pen, children }: { room: Room; s: Snapshot; pen
 
   let body: React.ReactNode;
   if (!st || (st.kind === 'peer' && !present(st.id))) {
-    body = <div className="stage-empty">Click a tile to put it on the main stage.</div>;
+    body = <div className="stage-empty">Click a tile below to put it on the main stage, and switch any time. Only the main stage is recorded.</div>;
   } else if (st.kind === 'end') {
     // Same rows as the final cut (plan.ts endRows): each row fills the width.
     // Only people whose camera is on (everyone, as initials, if nobody's is).

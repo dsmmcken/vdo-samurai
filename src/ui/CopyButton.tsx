@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy } from './icons';
+import { Check, Copy } from './icons';
 
 export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -17,7 +17,8 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
         }
       }}
     >
-      <Copy size={15} /> {done ? 'Copied' : label}
+      {/* A check for a moment: the label stays, so the button keeps its width. */}
+      {done ? <Check size={15} /> : <Copy size={15} />} {label}
     </button>
   );
 }

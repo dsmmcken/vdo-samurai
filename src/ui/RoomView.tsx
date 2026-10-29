@@ -6,7 +6,7 @@ import type { PeerId } from '../lib/types';
 import { fmtClock } from '../lib/util';
 import { AfterTake } from './AfterTake';
 import { Countdown } from './Countdown';
-import { AddReaction, Cam, CamOff, Check, Chevron, Copy, Dot, Draw, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
+import { AddReaction, Cam, CamOff, Check, Chevron, Copy, Dot, Draw, Helmet, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
 import { Popover } from './Popover';
 import { emojiFont, PickerShell } from './PickerShell';
 import { ProfileForm } from './ProfileForm';
@@ -52,7 +52,14 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
     <div className="room">
       <Stage room={room} s={s} pen={pen && inkable}>
         <RecIndicator s={s} />
-        {!s.director && !s.take && <div className="glass hint">One person must be Shōgun (director) to record. Claim it on your tile.</div>}
+        {!s.director && !s.take && (
+          <div className="glass director-call">
+            <span>One person must be Shōgun (director) to enable recording.</span>
+            <button className="claim" onClick={() => room.setDirector(s.me)}>
+              <Helmet size={14} /> Become Shōgun
+            </button>
+          </div>
+        )}
 
         <div className="tray">
           <button className={`glass round ${s.micMuted ? 'off' : ''}`} onClick={() => room.toggleMic()} title={s.micMuted ? 'Unmute' : 'Mute'} aria-label={s.micMuted ? 'Unmute' : 'Mute'}>
@@ -276,7 +283,7 @@ function CopyItem({ text, label, close }: { text: string; label: string; close: 
         }
       }}
     >
-      <Copy size={16} /> {copied ? 'Copied' : label}
+      {copied ? <Check size={16} /> : <Copy size={16} />} {label}
     </button>
   );
 }

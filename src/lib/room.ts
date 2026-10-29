@@ -71,6 +71,13 @@ const SAMPLE_MS = 5000;
  * message well within this.
  */
 const STALL_MS = 8000;
+/**
+ * Once bytes are flowing, a transfer counts as stuck sooner: after three
+ * messages' worth of silence at its own speed, at least 3 s, at most 15 s. A
+ * stuck channel (Chrome holding data in it while the connection is fine) has
+ * always moved at full speed again on a fresh one.
+ */
+const stallAfter = (bytesPerSec: number) => Math.min(15_000, Math.max(3000, (3 * MAX_CHUNK * 1000) / Math.max(1, bytesPerSec)));
 /** Senders re-offer unconfirmed files this often, in case a request or confirmation went missing. */
 const REOFFER_MS = 10_000;
 export const COUNTDOWN_MS = 3000;
@@ -1506,9 +1513,12 @@ export class Room {
       const link = this.mesh.links.get(f.peer);
       if (!link?.open) continue; // they re-offer when they reconnect
       const r = this.receiving.get(f.name);
-      if (r && Date.now() - r.at < STALL_MS) continue;
+      // Before any bytes (or the channel) arrive: STALL_MS. Once they flow, sooner (stallAfter).
+      const moved = r?.began !== undefined && f.received > r.from!;
+      const limit = moved ? stallAfter(((f.received - r!.from!) * 1000) / Math.max(1, r!.at - r!.began!)) : STALL_MS;
+      if (r && Date.now() - r.at < limit) continue;
       if (r?.stop) {
-        this.xlog.add(`STALLED ${f.name}: nothing for ${STALL_MS / 1000} s at ${mb(f.received)} of ${mb(f.size)}; asking again`);
+        this.xlog.add(`STALLED ${f.name}: nothing for ${(limit / 1000).toFixed(1)} s at ${mb(f.received)} of ${mb(f.size)}; asking again`);
         this.explainStall(f.name, r);
         console.warn(`[upload] ${f.name} stalled at ${f.received} of ${f.size} bytes; asking again`);
         r.at = Date.now(); // not again while it winds down
