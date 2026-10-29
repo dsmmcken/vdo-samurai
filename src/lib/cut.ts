@@ -7,7 +7,7 @@
 // its end. Audio is copied whole: it's small, and the render measures and
 // polishes each voice over the whole take.
 import type { RecFile } from './types';
-import { ALL_FORMATS, BlobSource, EncodedAudioPacketSource, EncodedPacketSink, EncodedVideoPacketSource, Input, Mp4OutputFormat, Output, StreamTarget, type EncodedPacket } from 'mediabunny';
+import { ALL_FORMATS, BlobSource, EncodedAudioPacketSource, EncodedPacket, EncodedPacketSink, EncodedVideoPacketSource, Input, Mp4OutputFormat, Output, StreamTarget } from 'mediabunny';
 
 /** [start, end) in seconds of file time. */
 export type Span = [number, number];
@@ -33,6 +33,8 @@ export interface CutResult {
   kept: Span[];
   /** Every kept video packet's timestamp and whether it's a keyframe, in order (to check the output against). */
   stamps: [number, boolean][];
+  /** The kept stretches by the source's packet order (sequence numbers): timestamps can repeat. */
+  keptSeq: [number, number][];
   videoPackets: number;
   audioPackets: number;
 }
@@ -40,8 +42,7 @@ export interface CutResult {
 /**
  * Writes `file` with only `keep` of its video (all of its audio) to `writable`;
  * with nothing to keep, no video track. A plain MP4, not fragmented like the
- * recordings: its sync-sample table lists every keyframe, where a fragmented
- * file lost the mark on keyframes that fell mid-fragment (verifyCut caught it).
+ * recordings: one sync-sample table lists every keyframe.
  */
 export async function cutRecording(file: Blob, keep: Span[], writable: WritableStream<any>): Promise<CutResult> {
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
@@ -55,8 +56,8 @@ export async function cutRecording(file: Blob, keep: Span[], writable: WritableS
   if (asrc) output.addAudioTrack(asrc);
   await output.start();
 
-  const result: CutResult = { videoSeconds: 0, kept: [], stamps: [], videoPackets: 0, audioPackets: 0 };
-  const video = vt && vsrc ? keptVideo(new EncodedPacketSink(vt), spans, result) : null;
+  const result: CutResult = { videoSeconds: 0, kept: [], stamps: [], keptSeq: [], videoPackets: 0, audioPackets: 0 };
+  const video = vt && vsrc ? keptVideo(new EncodedPacketSink(vt), spans, result, vt.codec === 'avc') : null;
   const audio = at && asrc ? new EncodedPacketSink(at).packets() : null;
   const vConfig = { decoderConfig: (await vt?.getDecoderConfig()) ?? undefined };
   const aConfig = { decoderConfig: (await at?.getDecoderConfig()) ?? undefined };
@@ -83,25 +84,51 @@ export async function cutRecording(file: Blob, keep: Span[], writable: WritableS
   return result;
 }
 
-/** The video packets to keep, in decode order: each span from its keyframe on, never a packet twice. */
-async function* keptVideo(sink: EncodedPacketSink, spans: Span[], result: CutResult) {
-  let last = -Infinity; // timestamp of the last packet kept
+/**
+ * The video packets to keep, in decode order: each span from the last real
+ * keyframe at or before it, never a packet twice. Packets are told apart by
+ * their order in the file, not their timestamps: recordings made with a
+ * snapped frame rate have pairs of frames sharing one timestamp, and a
+ * timestamp check dropped the second of each pair (the picture then froze
+ * until the next keyframe). For H.264 the frame's own data says whether it's
+ * a keyframe, and a packet marked otherwise is copied with the right mark.
+ */
+async function* keptVideo(sink: EncodedPacketSink, spans: Span[], result: CutResult, avc: boolean) {
+  const isKey = (p: EncodedPacket) => (avc ? isIdr(p.data) : p.type === 'key');
+  let lastSeq = -Infinity; // the last packet kept, by order in the file
   for (const [a, b] of spans) {
-    let p = (await sink.getKeyPacket(a)) ?? (await sink.getFirstPacket());
-    let from: number | null = null;
-    while (p && p.timestamp < b) {
-      if (p.timestamp > last) {
-        from ??= p.timestamp;
-        last = p.timestamp;
-        result.videoPackets++;
-        result.stamps.push([p.timestamp, p.type === 'key']);
-        yield p;
-      }
-      p = await sink.getNextPacket(p);
+    // A marked keyframe at or before `a`, backing up until the data agrees...
+    let start = (await sink.getKeyPacket(a)) ?? (await sink.getFirstPacket());
+    while (start && !isKey(start)) {
+      const prev = await sink.getKeyPacket(start.timestamp - 0.001);
+      if (!prev || prev.timestamp >= start.timestamp) break; // the first packet: start there anyway
+      start = prev;
     }
-    if (from !== null) {
-      result.videoSeconds += last - from + (p ? p.timestamp - last : 0);
-      result.kept.push([from, last]);
+    if (!start) continue;
+    // ...then the last real keyframe up to `a` (one might not be marked).
+    let from = start;
+    for await (const p of sink.packets(start)) {
+      if (p.timestamp > a) break;
+      if (isKey(p)) from = p;
+    }
+    let first: EncodedPacket | null = null;
+    let end: EncodedPacket | null = null;
+    for await (const p of sink.packets(from)) {
+      if (p.timestamp >= b) break;
+      if (p.sequenceNumber <= lastSeq) continue; // already kept for the span before
+      const key = isKey(p);
+      const out = key === (p.type === 'key') ? p : new EncodedPacket(p.data, key ? 'key' : 'delta', p.timestamp, p.duration, p.sequenceNumber, p.byteLength, p.sideData);
+      first ??= p;
+      lastSeq = p.sequenceNumber;
+      end = p;
+      result.videoPackets++;
+      result.stamps.push([p.timestamp, key]);
+      yield out;
+    }
+    if (first && end) {
+      result.videoSeconds += end.timestamp + end.duration - first.timestamp;
+      result.kept.push([first.timestamp, end.timestamp]);
+      result.keptSeq.push([first.sequenceNumber, end.sequenceNumber]);
     }
   }
 }
@@ -123,4 +150,42 @@ export async function verifyCut(cut: Blob, stamps: [number, boolean][]): Promise
     i++;
   }
   return i === stamps.length ? null : `${i} frames of ${stamps.length}`;
+}
+
+/**
+ * Whether an H.264 frame really is a keyframe, from its own data: an IDR
+ * slice (NAL type 5) in the length-prefixed NAL units MP4 stores.
+ */
+export function isIdr(data: Uint8Array) {
+  for (let i = 0; i + 4 < data.length; ) {
+    const len = (data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3];
+    if ((data[i + 4] & 0x1f) === 5) return true;
+    if (len <= 0) break;
+    i += 4 + len;
+  }
+  return false;
+}
+
+/**
+ * Reads the source straight through (as a decoder does) and checks the cut has
+ * every one of its video frames inside the kept stretches, marked keyframe
+ * exactly when the frame's data is one. (verifyCut checks the cut against what
+ * was picked; this checks the picking.) Returns what's wrong, or null.
+ */
+export async function verifyAgainstSource(src: Blob, r: CutResult): Promise<string | null> {
+  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(src) });
+  const vt = r.keptSeq.length ? await input.getPrimaryVideoTrack() : null;
+  if (!vt) return null;
+  // The source's packets inside the kept stretches, in file order, each with whether its data is a keyframe.
+  const want: [number, boolean][] = [];
+  for await (const p of new EncodedPacketSink(vt).packets()) {
+    if (r.keptSeq.some(([a, b]) => p.sequenceNumber >= a && p.sequenceNumber <= b)) want.push([p.timestamp, vt.codec === 'avc' ? isIdr(p.data) : p.type === 'key']);
+  }
+  if (want.length !== r.stamps.length) return `${r.stamps.length} frames picked, ${want.length} in the source's kept stretches`;
+  for (let i = 0; i < want.length; i++) {
+    const [ts, key] = want[i];
+    if (Math.abs(ts - r.stamps[i][0]) > 0.002) return `frame ${i}: picked ${r.stamps[i][0].toFixed(3)} s, the source has ${ts.toFixed(3)} s`;
+    if (key !== r.stamps[i][1]) return `frame ${i} (${ts.toFixed(3)} s): picked as ${r.stamps[i][1] ? 'key' : 'delta'}, its data says ${key ? 'keyframe' : 'not'}`;
+  }
+  return null;
 }

@@ -42,6 +42,15 @@ export async function readJson<T>(takeId: string, name: string): Promise<T | nul
   }
 }
 
+/** Test only: a copy of a file outside the takes, kept until the test fetches it. */
+export async function keepCopy(name: string, data: Blob) {
+  const root = await navigator.storage.getDirectory();
+  const dir = await root.getDirectoryHandle('test-copies', { create: true });
+  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await w.write(data);
+  await w.close();
+}
+
 /** Writes are serialized per file so overlapping saves can't interleave. */
 const writeQueues = new Map<string, Promise<void>>();
 export function writeText(takeId: string, name: string, body: string) {

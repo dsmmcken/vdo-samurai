@@ -24,7 +24,7 @@ import { fetchLottie, FLIGHT_MS, NAME_COOLDOWN_MS, type Reaction } from './react
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, testHook, type Recorder } from './recorder';
 import * as fs from './opfs';
 import { InPlaceWriter } from './inplace';
-import { cutRecording, cuttable, mergeSpans, verifyCut, type Span } from './cut';
+import { cutRecording, cuttable, mergeSpans, verifyAgainstSource, verifyCut, type Span } from './cut';
 import { shownSpans } from '../compositor/plan';
 import { fmtRate, linkStats, mb, StallProbe, tabState, TransferLog } from './xferlog';
 import type {
@@ -1254,6 +1254,7 @@ export class Room {
       }
       const began = performance.now();
       const src = await (await dir.getFileHandle(f.name)).getFile();
+      if (testHook('keepUncut')) await fs.keepCopy(f.name, src); // test: keep the original to examine
       if (f.kind === 'screen' && !keep.length) {
         // Never on stage: nothing to send.
         this.xlog.add(`${f.name}: never on stage, not sent (saves ${mb(src.size)})`);
@@ -1267,7 +1268,7 @@ export class Room {
         const r = await cutRecording(src, keep, out as unknown as WritableStream);
         const cut = await (await dir.getFileHandle(name)).getFile();
         // Never upload a cut that would put frames at the wrong time.
-        const wrong = await verifyCut(cut, r.stamps);
+        const wrong = (await verifyCut(cut, r.stamps)) ?? (await verifyAgainstSource(src, r));
         if (wrong) throw new Error(`the cut file's timing differs: ${wrong}`);
         const size = cut.size;
         await fs.removeFile(m.take.id, f.name);

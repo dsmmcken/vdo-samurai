@@ -134,6 +134,8 @@ try {
     if (process.env.FAIL_AUDIO && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:failAudioAfter', '500'));
     // A guest's upload goes silent partway (channel open, no error); the director must notice and ask again.
     if (process.env.FREEZE_UPLOAD && i === 1) await page.addInitScript(() => localStorage.setItem('samurai:test:freezeUploadAt', '1000000'));
+    // KEEP_UNCUT=1: Sam keeps a copy of each recording before trimming it (saved to test-results/uncut/).
+    if (process.env.KEEP_UNCUT && i === 1) await page.addInitScript(() => localStorage.setItem('samurai:test:keepUncut', '1'));
     if (process.env.DIRECTOR_SCREEN && i === 0) await page.addInitScript(() => localStorage.setItem('samurai:test:stillScreen', '1'));
     await page.goto(i === 2 ? invite : url);
     if (i === 0) {
@@ -446,6 +448,22 @@ try {
   await sam.screenshot({ path: 'test-results/after-leaving.png', clip: { x: 760, y: 0, width: 520, height: 260 } });
   await sam.waitForSelector('.after', { state: 'detached', timeout: 5000 });
   log('guest panel left by itself once everyone was done');
+  if (process.env.KEEP_UNCUT) {
+    const copies = await sam.evaluate(async () => {
+      const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('test-copies');
+      const out = [];
+      for await (const [name, h] of dir.entries()) {
+        const buf = new Uint8Array(await (await h.getFile()).arrayBuffer());
+        let s = '';
+        for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        out.push([name, btoa(s)]);
+      }
+      return out;
+    });
+    fs.mkdirSync('test-results/uncut', { recursive: true });
+    for (const [name, b64] of copies) fs.writeFileSync(`test-results/uncut/${name}`, Buffer.from(b64, 'base64'));
+    log('kept uncut recordings:', copies.map(([n]) => n).join(', '));
+  }
   // A request for a file the guest no longer has (say, trimmed and renamed)
   // gets their current files offered again, and the director stops waiting on
   // anything of theirs that isn't in the offer.

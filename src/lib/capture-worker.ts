@@ -73,7 +73,10 @@ async function record(job: Start) {
   // cut still uses AAC where available.
   const audioCodec = 'opus' as const;
   const audio = job.audio ? new AudioSampleSource({ codec: audioCodec, bitrate: 128_000 }) : null;
-  if (video) output.addVideoTrack(video, { frameRate: 30 });
+  // No frameRate: it snaps every timestamp to a 1/30 s grid, and two frames in
+  // one slot (a screen sends frames whenever it changes; cameras jitter) end up
+  // with the same timestamp, which makes looking frames up by time ambiguous.
+  if (video) output.addVideoTrack(video);
   if (audio) output.addAudioTrack(audio);
   await output.start();
   // Counters for the recording report.
