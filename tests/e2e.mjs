@@ -416,7 +416,7 @@ try {
   log('both guests told it is safe to close');
   // The transfer log: the director's own lines plus each guest's, forwarded.
   await dir.waitForTimeout(2500); // guests forward every 2 s
-  const xlogs = await dir.evaluate(() => window.samurai.getSnapshot().transferLogs.map((l) => ({ who: l.who, n: l.lines.length, key: l.lines.filter((x) => /saved|finished|FAILED|STALLED|messages|queued [0-9]|not yet on disk|channel open/.test(x)) })));
+  const xlogs = await dir.evaluate(() => window.samurai.getSnapshot().transferLogs.map((l) => ({ who: l.who, n: l.lines.length, key: l.lines.filter((x) => /saved|finished|FAILED|STALLED|messages|queued [0-9]|not yet on disk|channel open|cut to the edit|trim to the edit|never on stage|the last \d+ s|channel (out|in) \+/.test(x)) })));
   log('transfer logs on the director:', xlogs.map((l) => `${l.who}: ${l.n} lines`).join(', '));
   for (const l of xlogs) for (const k of l.key) log(`  [${l.who}] ${k}`);
   await dir.locator('.after').screenshot({ path: 'test-results/after-panel.png' });
@@ -433,6 +433,22 @@ try {
   await sam.screenshot({ path: 'test-results/after-leaving.png', clip: { x: 760, y: 0, width: 520, height: 260 } });
   await sam.waitForSelector('.after', { state: 'detached', timeout: 5000 });
   log('guest panel left by itself once everyone was done');
+  // A request for a file the guest no longer has (say, trimmed and renamed)
+  // gets their current files offered again, and the director stops waiting on
+  // anything of theirs that isn't in the offer.
+  {
+    const samId = await sam.evaluate(() => window.samurai.me);
+    const takeId = await dir.evaluate(() => window.samurai.dm.take.id);
+    await dir.evaluate(({ samId, takeId }) => {
+      const r = window.samurai;
+      r.dm.files['stale-original.mp4'] = { name: 'stale-original.mp4', peer: samId, kind: 'cam', offset: 0, size: 1000, mime: 'video/mp4', received: 0, done: false };
+      r.mesh.links.get(samId).send({ t: 'want', takeId, name: 'stale-original.mp4', offset: 0 });
+    }, { samId, takeId });
+    await dir.waitForFunction(() => !window.samurai.dm.files['stale-original.mp4'], null, { timeout: 15000 }).catch(() => {});
+    const samSaid = await sam.evaluate(() => window.samurai.xlog.lines.filter((l) => /stale-original/.test(l)).map((l) => l.slice(13)));
+    const dirSaid = await dir.evaluate(() => window.samurai.xlog.lines.filter((l) => /stale-original/.test(l)).map((l) => l.slice(13)));
+    log('unknown file asked for; guest:', JSON.stringify(samSaid), '| director:', JSON.stringify(dirSaid), '| dropped:', await dir.evaluate(() => !window.samurai.dm.files['stale-original.mp4']));
+  }
   await dir.waitForSelector('a:has-text("Download MP4")', { timeout: Number(process.env.RENDER_TIMEOUT || 600000) });
   log('render done');
 

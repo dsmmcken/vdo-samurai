@@ -85,6 +85,8 @@ export interface RecFile {
   timing?: 'capture' | 'estimated';
   size: number;
   mime: string;
+  /** Trimmed to what the edit shows (cut.ts), or final as it is: ready to upload. */
+  cut?: boolean;
 }
 
 /** The director's view of one peer's upload. */

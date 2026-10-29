@@ -24,7 +24,9 @@ import { fetchLottie, FLIGHT_MS, NAME_COOLDOWN_MS, type Reaction } from './react
 import { captureStatus, fileExtension, markCaptureBroken, startRecorder, testHook, type Recorder } from './recorder';
 import * as fs from './opfs';
 import { InPlaceWriter } from './inplace';
-import { fmtRate, linkStats, mb, tabState, TransferLog } from './xferlog';
+import { cutRecording, cuttable, mergeSpans, verifyCut, type Span } from './cut';
+import { shownSpans } from '../compositor/plan';
+import { fmtRate, linkStats, mb, StallProbe, tabState, TransferLog } from './xferlog';
 import type {
   Corner,
   PipStyle,
@@ -138,6 +140,8 @@ interface Receiving {
   at: number;
   stop?: () => Promise<void>;
   writer?: InPlaceWriter;
+  /** Second-by-second channel and connection stats, logged only if it stalls. */
+  probe?: StallProbe;
   /** For the log: when the channel opened, at what offset, and the last speed sample. */
   began?: number;
   from?: number;
@@ -182,6 +186,10 @@ export class Room {
   private xlog = new TransferLog();
   /** Director: each guest's transfer log, as forwarded. */
   private peerXlogs = new Map<PeerId, string[]>();
+  /** Guest: trims in progress, by take (cut.ts). */
+  private cutting = new Map<string, Promise<void>>();
+  /** Director: guests already asked to trim this take (for the log). */
+  private cutAsked = new Set<PeerId>();
   /** Director: recent received totals per guest, for the race's speed. */
   private raceRates = new Map<PeerId, { bytes: number; at: number; rate: number }>();
   private race: { takeId: string; rows: RaceRow[] } | null = null;
@@ -557,16 +565,28 @@ export class Room {
         this.dmOnRec(peer, m.takeId, m.profile);
         break;
       case 'files':
-        this.dmOnFiles(peer, link, m.takeId, m.files, m.report, m.camOff, m.frames);
+        this.dmOnFiles(peer, link, m.takeId, m.files, m.report, m.camOff, m.frames, m.canCut === true);
         break;
-      case 'want':
+      case 'cut':
+        this.onCut(m.takeId, m.spans);
+        break;
+      case 'want': {
         this.xlog.add(`${m.name}: the director asks for it from ${mb(m.offset)}`);
+        // A file we no longer have (trimmed and renamed, see cut.ts): tell the
+        // director what we do have instead of failing on every request.
+        const mine = this.mine.get(m.takeId);
+        if (mine && !mine.files.some((f) => f.name === m.name && f.size > 0)) {
+          this.xlog.add(`${m.name}: not here any more; offering the current files`);
+          this.offerFiles(m.takeId);
+          break;
+        }
         // The latest request for a file wins: the director drops a stalled
         // transfer before asking again, from the offset it has on disk.
         this.uploadQueue = this.uploadQueue.filter((j) => j.takeId !== m.takeId || j.name !== m.name);
         this.uploadQueue.push({ takeId: m.takeId, name: m.name, offset: m.offset });
         this.pumpUploads();
         break;
+      }
       case 'ack':
         this.onAck(m.takeId, m.name);
         break;
@@ -1173,7 +1193,61 @@ export class Room {
     if (!m || !m.complete) return;
     const link = this.mesh.links.get(m.take.director);
     if (!link?.open) return; // retried when the director (re)connects
-    link.send({ t: 'files', takeId, files: m.files.filter((f) => f.size > 0), report: m.report ?? [], camOff: m.camOff ?? [], frames: m.frames ?? [] });
+    // canCut: we trim our files to the edit when the director says what it shows (cut.ts).
+    link.send({ t: 'files', takeId, files: m.files.filter((f) => f.size > 0), report: m.report ?? [], camOff: m.camOff ?? [], frames: m.frames ?? [], canCut: true });
+  }
+
+  /** The director says what of each file the edit shows: trim them (once), then offer them again. */
+  private onCut(takeId: string, spans: Record<string, Span[]>) {
+    const m = this.mine.get(takeId);
+    if (!m?.complete || this.cutting.has(takeId) || m.take.director === this.me) return;
+    this.cutting.set(
+      takeId,
+      this.cutFiles(m, spans).finally(() => this.cutting.delete(takeId)),
+    );
+  }
+
+  private async cutFiles(m: SenderManifest, spans: Record<string, Span[]>) {
+    const dir = await fs.takeDir(m.take.id);
+    for (const f of m.files) {
+      if (f.cut || !f.size || m.acked.includes(f.name)) continue;
+      const keep = spans[f.name];
+      if (!keep || !cuttable(f)) {
+        f.cut = true; // goes as it is
+        continue;
+      }
+      const began = performance.now();
+      const src = await (await dir.getFileHandle(f.name)).getFile();
+      if (f.kind === 'screen' && !keep.length) {
+        // Never on stage: nothing to send.
+        this.xlog.add(`${f.name}: never on stage, not sent (saves ${mb(src.size)})`);
+        await fs.removeFile(m.take.id, f.name);
+        Object.assign(f, { size: 0, cut: true });
+        continue;
+      }
+      const name = f.name.replace(/(\.\w+)$/, '-cut$1');
+      try {
+        const out = await (await dir.getFileHandle(name, { create: true })).createWritable();
+        const r = await cutRecording(src, keep, out as unknown as WritableStream);
+        const cut = await (await dir.getFileHandle(name)).getFile();
+        // Never upload a cut that would put frames at the wrong time.
+        const wrong = await verifyCut(cut, r.stamps);
+        if (wrong) throw new Error(`the cut file's timing differs: ${wrong}`);
+        const size = cut.size;
+        await fs.removeFile(m.take.id, f.name);
+        const secs = ((performance.now() - began) / 1000).toFixed(1);
+        const list = (s: Span[]) => s.map(([a, b]) => `${a.toFixed(2)}–${b.toFixed(2)}`).join(', ') || 'none';
+        this.xlog.add(`${f.name}: cut to the edit: ${r.videoSeconds.toFixed(1)} s of video${f.kind === 'cam' ? ' + all its audio' : ''}, ${mb(src.size)} → ${mb(size)} in ${secs} s · asked ${list(keep)} · kept ${list(r.kept)}`);
+        Object.assign(f, { name, size, cut: true });
+      } catch (e) {
+        this.xlog.add(`FAILED cutting ${f.name} (${e}); sending it whole`);
+        await fs.removeFile(m.take.id, name);
+        f.cut = true;
+      }
+    }
+    await fs.writeJson(m.take.id, 'mine.json', m);
+    this.offerFiles(m.take.id);
+    this.changed();
   }
 
   private async pumpUploads() {
@@ -1249,12 +1323,20 @@ export class Room {
       const pct = Math.floor((bytes / file.size) * 100);
       this.xlog.add(`${name}: ${pct}% ${mb(bytes)} · ${fmtRate(rate)} · queued ${mb(ch.bufferedAmount)} · ${refillStats()} · ${tabState()} · ${await linkStats(link.pc)}`);
     }, SAMPLE_MS);
+    let probe: StallProbe | null = null;
+    const explain = (why: string) => {
+      const lines = probe?.dump() ?? [];
+      if (lines.length) this.xlog.add(`${name}: the last ${lines.length} s before ${why}:`);
+      lines.forEach((l) => this.xlog.add(l));
+    };
     try {
       await until(() => ch.readyState === 'open', 'opening');
+      probe = new StallProbe(link.pc, ch, 'send', () => `our other channels: control ${mb(link.ctl.bufferedAmount)}, screen ${mb(link.scr.bufferedAmount)} queued`);
       this.xlog.add(`${name}: channel open after ${Date.now() - began} ms · ${await linkStats(link.pc)}`);
       this.upload.set(key, { sent: pos, total: file.size });
       const read = (at: number) => file.slice(at, at + BLOCK).arrayBuffer();
-      let next = read(pos);
+      let readTo = pos; // `pos` counts what's handed to the channel, message by message
+      let next = read(readTo);
       while (pos < file.size) {
         if (pos > 0 && pos >= (testHook('freezeUploadAt') ?? Infinity)) {
           // Test: go silent mid-file, channel open, no error (a frozen upload).
@@ -1265,8 +1347,9 @@ export class Room {
           throw new Error('upload channel closed (test freeze)');
         }
         const block = await next;
+        readTo += block.byteLength;
         // Read the next block from disk while this one goes out.
-        if (pos + block.byteLength < file.size) (next = read(pos + block.byteLength)).catch(() => {});
+        if (readTo < file.size) (next = read(readTo)).catch(() => {});
         for (let i = 0; i < block.byteLength; i += chunk) {
           if (ch.bufferedAmount > HIGH_WATER) {
             const t = performance.now();
@@ -1277,8 +1360,8 @@ export class Room {
           }
           if (dead()) throw new Error(`upload channel closed (sending; ${why()})`);
           ch.send(block.slice(i, i + chunk));
+          pos += Math.min(chunk, block.byteLength - i);
         }
-        pos += block.byteLength;
         this.upload.set(key, { sent: pos - ch.bufferedAmount, total: file.size });
         this.changed();
       }
@@ -1287,14 +1370,16 @@ export class Room {
       // The director closes the channel after it has flushed the file to disk.
       const closed = await until(() => ch.readyState === 'closed', 'finishing', () => ch.bufferedAmount).then(
         () => true,
-        (e) => (this.xlog.add(`${name}: no close from the director, ${mb(ch.bufferedAmount)} still queued (${e.message}); it asks again`), false),
+        (e) => (this.xlog.add(`${name}: no close from the director, ${mb(ch.bufferedAmount)} still queued (${e.message}); it asks again`), explain('giving up'), false),
       );
       const secs = (Date.now() - began) / 1000;
       if (closed) this.xlog.add(`${name}: finished ${mb(file.size - offset)} in ${secs.toFixed(1)} s · ${fmtRate((file.size - offset) / secs)} average · ${refillStats()} · ${tabState()}`);
     } catch (e) {
       this.xlog.add(`FAILED ${name} at ${mb(sentOut())} of ${mb(file.size)}: ${(e as Error).message}. The director asks again from what it saved.`);
+      explain('it failed');
       throw e;
     } finally {
+      probe?.stop();
       clearInterval(sampler);
       if (ch.readyState !== 'closed') ch.close();
     }
@@ -1341,18 +1426,50 @@ export class Room {
     this.saveDm();
   }
 
-  private async dmOnFiles(peer: PeerId, link: Link, takeId: string, files: RecFile[], report?: string[], camOff?: [number, number | null][], frames?: [number, Head | null][]) {
+  private async dmOnFiles(peer: PeerId, link: Link, takeId: string, files: RecFile[], report?: string[], camOff?: [number, number | null][], frames?: [number, Head | null][], canCut = false) {
     const dm = this.dm;
     if (dm?.take.id !== takeId) {
       // Not our take (or already discarded): tell them to let it go.
       for (const f of files) link.send({ t: 'ack', takeId, name: f.name });
       return;
     }
+    // Our own recording may still be finishing, with the take's stop time not
+    // yet in our manifest: it's already in the shared state. Without it the
+    // edit (and what to trim) isn't known yet: wait for the next offer.
+    const shared = this.shared.take.v;
+    if (!dm.take.stopAt && shared?.id === takeId && shared.stopAt) dm.take = shared;
+    if (!dm.take.stopAt) return;
     if (!dm.expected.includes(peer)) dm.expected.push(peer);
-    if (!dm.announced.includes(peer)) dm.announced.push(peer);
     if (report) (dm.reports ??= {})[peer] = report;
     if (camOff) (dm.camOff ??= {})[peer] = camOff;
     if (frames) (dm.frames ??= {})[peer] = frames;
+    // Guests that can trim send only what the edit shows: say what that is, and
+    // wait for the trimmed offer before counting them in (or the render could
+    // start without their files).
+    const uncut = canCut ? files.filter((f) => !f.cut && cuttable(f)) : [];
+    if (uncut.length) {
+      const spans: Record<string, Span[]> = {};
+      for (const f of uncut) spans[f.name] = mergeSpans(shownSpans(dm, peer, f.kind)).map(([a, b]) => [Math.max(0, a - f.offset / 1000), b - f.offset / 1000]);
+      if (!this.cutAsked.has(peer)) {
+        this.cutAsked.add(peer);
+        const shown = (k: 'cam' | 'screen') => mergeSpans(shownSpans(dm, peer, k)).reduce((a, [x, y]) => a + y - x, 0).toFixed(0);
+        this.xlog.add(`asked ${this.nameOf(peer)} to trim to the edit: camera ${shown('cam')} s, screen ${shown('screen')} s (padded), of a ${(((dm.take.stopAt ?? 0) - dm.take.startAt) / 1000).toFixed(0)} s take`);
+      }
+      link.send({ t: 'cut', takeId, spans });
+      this.saveDm();
+      return;
+    }
+    if (!dm.announced.includes(peer)) dm.announced.push(peer);
+    // An offer lists all of a guest's files: anything of theirs not in it any
+    // more (a file they trimmed and renamed) isn't coming.
+    for (const [name, f] of Object.entries(dm.files)) {
+      if (f.peer !== peer || f.done || files.some((x) => x.name === name)) continue;
+      this.xlog.add(`${name}: no longer offered by ${this.nameOf(peer)}; not waiting for it`);
+      void this.receiving.get(name)?.stop?.();
+      this.receiving.delete(name);
+      delete dm.files[name];
+      void fs.removeFile(takeId, name);
+    }
     for (const f of files) {
       const have = dm.files[f.name];
       if (have?.done) {
@@ -1392,6 +1509,7 @@ export class Room {
       if (r && Date.now() - r.at < STALL_MS) continue;
       if (r?.stop) {
         this.xlog.add(`STALLED ${f.name}: nothing for ${STALL_MS / 1000} s at ${mb(f.received)} of ${mb(f.size)}; asking again`);
+        this.explainStall(f.name, r);
         console.warn(`[upload] ${f.name} stalled at ${f.received} of ${f.size} bytes; asking again`);
         r.at = Date.now(); // not again while it winds down
         const stop = r.stop;
@@ -1402,6 +1520,14 @@ export class Room {
         this.want(link, f.name);
       }
     }
+  }
+
+  /** Logs the receiving side's last seconds of a transfer that went wrong (see StallProbe). */
+  private explainStall(name: string, r: Receiving) {
+    const lines = r.probe?.dump() ?? [];
+    if (!lines.length) return;
+    this.xlog.add(`${name}: the last ${lines.length} s, receiving side:`);
+    lines.forEach((l) => this.xlog.add(l));
   }
 
   /** Every SAMPLE_MS: each arriving file's speed, unsaved backlog and connection. */
@@ -1438,6 +1564,8 @@ export class Room {
     r.at = r.began = Date.now();
     r.from = f.received;
     const writer = (r.writer = new InPlaceWriter(takeId, name, f.received));
+    const link = this.mesh.links.get(peer);
+    if (link) r.probe = new StallProbe(link.pc, ch, 'receive', () => `not yet on disk ${mb(writer.backlog)}`);
     this.xlog.add(`${name}: receiving from ${this.nameOf(peer)} at ${mb(f.received)} of ${mb(f.size)} · ${tabState()}`);
     let base = f.received;
     let ended: Promise<void> | null = null;
@@ -1445,6 +1573,7 @@ export class Room {
     const end = () =>
       (ended ??= (async () => {
         ch.onmessage = null;
+        r.probe?.stop();
         await writer.close();
         f.received = Math.min(writer.written, f.size);
         if (writer.written > f.size || writer.failed) {
@@ -1467,6 +1596,7 @@ export class Room {
           // Short (a lost chunk): the watchdog asks for the rest straight away.
           if (!f.done) {
             this.xlog.add(`${name} ended short: ${mb(f.received)} of ${mb(f.size)}; asking for the rest`);
+            this.explainStall(name, r);
             return console.warn(`[upload] ${name} ended short: ${f.received} of ${f.size} bytes`);
           }
           this.xlog.add(`${name}: saved, ${mb(f.size - r.from!)} in ${secs.toFixed(1)} s · ${fmtRate((f.size - r.from!) / secs)} average · ${tabState()}`);
@@ -1481,7 +1611,10 @@ export class Room {
       writer.write(e.data);
     };
     ch.onclose = () => {
-      if (!ended) this.xlog.add(`${name}: channel closed at ${mb(f.received)} of ${mb(f.size)} (link ${this.mesh.links.get(peer)?.pc.connectionState ?? 'gone'})`);
+      if (!ended) {
+        this.xlog.add(`${name}: channel closed at ${mb(f.received)} of ${mb(f.size)} (link ${this.mesh.links.get(peer)?.pc.connectionState ?? 'gone'})`);
+        this.explainStall(name, r);
+      }
       void end();
     };
   }
@@ -1601,6 +1734,7 @@ export class Room {
     this.receiving.clear();
     this.raceRates.clear();
     this.peerXlogs.clear();
+    this.cutAsked.clear();
     await fs.removeTake(dm.take.id);
     this.changed();
   }

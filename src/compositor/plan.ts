@@ -55,6 +55,21 @@ export function videoStart(fileStarts: number[], cap = 3) {
   return Math.min(cap, Math.max(0, ...fileStarts.filter((t) => t < cap)));
 }
 
+/** Padding around each stretch a recording is shown, for clock differences between people. */
+export const SHOWN_PAD_S = 1;
+
+/**
+ * The stretches (take seconds, padded) of `peer`'s recording the edit shows:
+ * their camera while they're on stage (full frame, or as the overlay on their
+ * screen) and on the end screen; their screen while it's on stage. Guests
+ * upload only these (cut.ts).
+ */
+export function shownSpans(m: DirectorManifest, peer: PeerId, kind: 'cam' | 'screen'): [number, number][] {
+  return segments(m)
+    .filter(({ stage }) => (kind === 'cam' ? stage.kind === 'end' || stage.id === peer : stage.kind === 'peer' && stage.id === peer && stage.view === 'screen'))
+    .map((s) => [s.start - SHOWN_PAD_S, s.end + SHOWN_PAD_S]);
+}
+
 /** Who you hear: the director, plus whoever is on stage (everyone on the end screen). */
 export function audible(stage: Stage, peer: PeerId, director: PeerId) {
   return peer === director || stage.kind === 'end' || stage.id === peer;

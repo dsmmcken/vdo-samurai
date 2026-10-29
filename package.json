@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -p .",
     "test:e2e": "vite build && node scripts/check-bundle.mjs && node tests/e2e.mjs",
+    "test:cut": "node tests/cut-check.mjs",
     "build:kernels": "node scripts/build-kernels.mjs",
     "build:emoji": "node scripts/build-emoji.mjs"
   },
