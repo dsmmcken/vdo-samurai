@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import type { PeerId } from '../lib/types';
-import { Helmet, Grid, MicOff, Pencil, Screen } from './icons';
+import { Helmet, Grid, MicOff, Pencil, Screen, Waves } from './icons';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
 import { MicMeter } from './MicMeter';
@@ -112,6 +112,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         const p = me ? null : s.peers.get(id);
         const hasScreen = me ? !!s.screen : !!p?.presence?.hasScreen;
         const muted = me ? s.micMuted : !!p?.presence?.micMuted;
+        const denoised = me ? s.denoise : !!p?.presence?.denoise;
         // The ring marks what's on stage: with their screen up and the camera
         // overlay hidden, that's the screen (badge / screen tile), not the camera.
         const onStage = st?.kind === 'peer' && st.id === id;
@@ -144,6 +145,11 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
               {muted && (
                 <span className="badge" title="Muted">
                   <MicOff size={14} title="Muted" />
+                </span>
+              )}
+              {denoised && !muted && (
+                <span className="badge" title="Noise reduction on">
+                  <Waves size={14} title="Noise reduction on" />
                 </span>
               )}
             </div>
@@ -182,11 +188,25 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
               <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Become Shōgun (director)' : `Make ${nameOf(s, menu.id)} Shōgun (director)`}
             </button>
           )}
-          {menu.id !== s.me && !s.peers.get(menu.id)?.presence?.micMuted && (
-            <button onClick={() => (room.muteOf(menu.id as PeerId), setMenu(null))}>
-              <MicOff size={16} /> Mute {nameOf(s, menu.id)}
-            </button>
-          )}
+          {(() => {
+            const id = menu.id as PeerId;
+            const me = id === s.me;
+            const p = s.peers.get(id)?.presence;
+            const on = me ? s.denoise : !!p?.denoise;
+            const muted = me ? s.micMuted : !!p?.micMuted;
+            return (
+              <>
+                <button onClick={() => (room.setDenoiseOf(id, !on), setMenu(null))}>
+                  <Waves size={16} /> {`Turn ${on ? 'off' : 'on'} noise reduction${me ? '' : ` for ${nameOf(s, id)}`}`}
+                </button>
+                {!me && !muted && (
+                  <button onClick={() => (room.muteOf(id), setMenu(null))}>
+                    <MicOff size={16} /> Mute {nameOf(s, id)}
+                  </button>
+                )}
+              </>
+            );
+          })()}
           <button onClick={() => (onEditProfile(menu.rect, menu.id as PeerId), setMenu(null))}>
             <Pencil size={16} /> {menu.id === s.me ? 'Edit your name' : `Edit ${nameOf(s, menu.id)}'s name`}
           </button>

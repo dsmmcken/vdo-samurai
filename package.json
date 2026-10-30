@@ -16,6 +16,7 @@
   "dependencies": {
     "@lottiefiles/dotlottie-web": "0.81.0",
     "@vdoninja/sdk": "1.6.2",
+    "fastenhancer-web": "0.1.1",
     "mediabunny": "1.62.1",
     "perfect-freehand": "1.2.2",
     "react": "19.2.0",

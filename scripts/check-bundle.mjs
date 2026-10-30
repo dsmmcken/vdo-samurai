@@ -14,6 +14,7 @@ if (!entry) throw new Error('no entry script in dist/index.html');
 const banned = {
   'reaction player (dotlottie-web)': /setWasmUrl|dotlottie-player/,
   'emoji data (emoji.json)': /grinning face with big eyes/,
+  'noise reduction (fastenhancer-web)': /fastenhancer-processor/,
   'reaction search (emoji-search.ts)': /half-typed|EmojiSearch|\(i\|in\|e\|es\|s\)/,
 };
 const seen = new Set();
@@ -34,4 +35,4 @@ for (const file of seen) {
 }
 console.log(`first load: ${[...seen].join(', ')}: ${(bytes / 1000).toFixed(1)} kB, ${(gz / 1000).toFixed(1)} kB gzipped`);
 if (bad) process.exit(1);
-console.log('✓ no reaction player, search or emoji data in it');
+console.log('✓ no reaction player, search, emoji data or noise reduction in it');

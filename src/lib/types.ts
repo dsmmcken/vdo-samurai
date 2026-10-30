@@ -12,6 +12,8 @@ export interface Presence {
   profile: Profile;
   hasScreen: boolean;
   micMuted: boolean;
+  /** Noise reduction on our outgoing mic (denoise.ts). */
+  denoise?: boolean;
   camOff?: boolean;
   /** Auto-framing: where views of this camera centre the head (null: plain centred crop). */
   head?: Head | null;

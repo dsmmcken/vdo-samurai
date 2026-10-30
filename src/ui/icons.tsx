@@ -22,6 +22,8 @@ export function Helmet({ size = 18, title, className }: P) {
 export const Screen = svg(<path d="M3 4h18a1 1 0 011 1v11a1 1 0 01-1 1h-7v2h3v1.5H7V19h3v-2H3a1 1 0 01-1-1V5a1 1 0 011-1zm1 2v9h16V6H4z" />);
 export const Mic = svg(<path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />);
 export const MicOff = svg(<path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />);
+// Equalizer bars: noise reduction.
+export const Waves = svg(<path d="M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z" />);
 export const Grid = svg(<path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z" />);
 export const Copy = svg(<path d="M8 3h11a2 2 0 012 2v11h-2V5H8V3zM4 7h11a2 2 0 012 2v11a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2zm0 2v11h11V9H4z" />);
 export const Pencil = svg(<path d="M15.6 3.6a2 2 0 012.8 0l2 2a2 2 0 010 2.8L9 19.8 3 21l1.2-6L15.6 3.6zM5.9 15.8l-.5 2.8 2.8-.5L17.6 8.7 15.3 6.4 5.9 15.8z" />);
