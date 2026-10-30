@@ -784,6 +784,7 @@ html.resizing .pip-face {
 .tile.screen-tile {
   flex: 0 0 auto;
   width: var(--w, 284px);
+  --slot: var(--w, 284px);
   background: #000;
 }
 .screen-tile video {
@@ -955,6 +956,8 @@ html.resizing .pip-face {
   gap: 12px;
   padding: 0 12px;
   overflow-x: auto;
+  /* Clipped, not scrollable: a joining tile rises from the bottom edge. */
+  overflow-y: hidden;
 }
 .tile {
   position: relative;
@@ -990,6 +993,98 @@ html.resizing .pip-face {
 }
 .tile.dragging {
   opacity: 0.35;
+}
+/* Someone joins: their slot opens and the tile rises into it, fading in
+   and growing a touch, overshoots and bounces into place. Someone leaves: it swells a touch
+   and pops out of existence in a puff (TilePuff), then the slot closes.
+   Negative margins (half the tile and half the gap a side) close the slot,
+   so the picture never squashes. */
+.tile {
+  --slot: 160px;
+}
+.tile.pop {
+  animation: tile-in 0.5s;
+}
+.tile.leaving {
+  pointer-events: none;
+  animation: tile-out 0.55s forwards;
+}
+@keyframes tile-in {
+  0% {
+    margin-inline: calc(var(--slot) / -2 - 6px);
+    transform: translateY(36px) scale(0.94);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.3, 0.7, 0.4, 1);
+  }
+  22% {
+    margin-inline: 0;
+    transform: translateY(36px) scale(0.94);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  /* Up past its place, back down a little below, and settle. */
+  60% {
+    transform: translateY(-10px);
+    opacity: 1;
+    animation-timing-function: ease-in-out;
+  }
+  80% {
+    transform: translateY(3px);
+    animation-timing-function: ease-in-out;
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes tile-out {
+  0% {
+    margin-inline: 0;
+    transform: none;
+    animation-timing-function: ease-out;
+  }
+  12% {
+    transform: scale(1.06);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  32% {
+    margin-inline: 0;
+    transform: scale(0.15);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  100% {
+    margin-inline: calc(var(--slot) / -2 - 6px);
+    transform: scale(0.15);
+    opacity: 0;
+  }
+}
+/* Fixed, so the strip doesn't clip it. */
+.tile-puff {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile.pop {
+    animation: tile-fade-in 0.2s;
+  }
+  .tile.leaving {
+    animation: tile-out-fade 0.2s forwards;
+  }
+  .tile-puff {
+    display: none;
+  }
+}
+@keyframes tile-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tile-out-fade {
+  to {
+    opacity: 0;
+  }
 }
 .tile:focus-visible {
   outline-color: var(--fg);
@@ -1278,7 +1373,8 @@ html.resizing .pip-face {
   z-index: 31;
   pointer-events: none;
 }
-.after-puff span {
+.after-puff span,
+.tile-puff span {
   position: absolute;
   left: 0;
   top: 0;
