@@ -56,7 +56,8 @@ export interface Stamped<T> {
 
 export interface SharedState {
   director: Stamped<PeerId | null>;
-  order: Stamped<PeerId[]>;
+  /** Tile order; may hold 'end' for where the Multicam tile sits. */
+  order: Stamped<(PeerId | 'end')[]>;
   stage: Stamped<Stage | null>;
   take: Stamped<Take | null>;
   corner: Stamped<Corner>;

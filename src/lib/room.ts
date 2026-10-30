@@ -124,6 +124,8 @@ export interface Snapshot {
   meshError: string | null;
   peers: Map<PeerId, PeerView>;
   tiles: PeerId[];
+  /** The bottom strip: the tiles, with the Multicam tile ('end') wherever it was dragged. */
+  strip: (PeerId | 'end')[];
   director: PeerId | null;
   stage: Stage | null;
   corner: Corner;
@@ -375,6 +377,7 @@ export class Room {
       v.close();
       this.views.delete(id);
     }
+    const tiles = this.tiles(peers);
     const take = this.shared.take.v;
     const dir = take ? this.dirOffset(take) : null;
     let myUpload: Snapshot['myUpload'] = null;
@@ -408,7 +411,8 @@ export class Room {
       meshStatus: this.mesh.status,
       meshError: this.mesh.error,
       peers,
-      tiles: this.tiles(peers),
+      tiles,
+      strip: this.strip(tiles),
       director: this.shared.director.v,
       stage: this.shared.stage.v,
       corner: this.shared.corner.v,
@@ -432,6 +436,15 @@ export class Room {
     const order = this.shared.order.v.filter((id) => present.has(id));
     const rest = [...present].filter((id) => !order.includes(id)).sort();
     return [...order, ...rest];
+  }
+
+  /** The tiles plus Multicam, after as many of them as it followed when it was last placed (default: last). */
+  private strip(tiles: PeerId[]): (PeerId | 'end')[] {
+    const v = this.shared.order.v;
+    const at = v.indexOf('end');
+    if (at < 0) return [...tiles, 'end'];
+    const n = v.slice(0, at).filter((id) => tiles.includes(id)).length;
+    return [...tiles.slice(0, n), 'end', ...tiles.slice(n)];
   }
 
   private say(msg: string | null) {
@@ -978,7 +991,7 @@ export class Room {
     this.set('stage', stage);
   }
 
-  reorder(order: PeerId[]) {
+  reorder(order: (PeerId | 'end')[]) {
     if (this.takeLocked()) return this.say('Tiles are locked while recording.');
     this.set('order', order);
   }
@@ -988,7 +1001,7 @@ export class Room {
     if (this.takeLocked()) return this.say("The Shōgun (director) can't change while recording.");
     this.set('director', id);
     // The director's tile always leads the strip.
-    if (id) this.set('order', [id, ...this.tiles(this.snapshot.peers).filter((x) => x !== id)]);
+    if (id) this.set('order', [id, ...this.snapshot.strip.filter((x) => x !== id)]);
   }
 
   /** Anyone can fix anyone's name; the owner applies it and tells everyone. */

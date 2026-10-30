@@ -8,19 +8,22 @@ import { MicMeter } from './MicMeter';
 import { Avatar } from './Avatar';
 
 
+/** A place in the strip: someone's tile, or Multicam. */
+type Slot = PeerId | 'end';
+
 export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void }) {
   const [menu, setMenu] = useState<{ x: number; y: number; id: PeerId | 'end'; rect: DOMRect } | null>(null);
-  const [dragging, setDraggingState] = useState<PeerId | null>(null);
+  const [dragging, setDraggingState] = useState<Slot | null>(null);
   // Drag events fire faster than React re-renders, so handlers read a ref.
-  const dragRef = useRef<PeerId | null>(null);
-  const previewRef = useRef<PeerId[] | null>(null);
-  const setDragging = (id: PeerId | null) => ((dragRef.current = id), setDraggingState(id));
+  const dragRef = useRef<Slot | null>(null);
+  const previewRef = useRef<Slot[] | null>(null);
+  const setDragging = (id: Slot | null) => ((dragRef.current = id), setDraggingState(id));
   // While dragging, the strip shows the order you'd get if you let go now.
-  const [preview, setPreview] = useState<PeerId[] | null>(null);
+  const [preview, setPreview] = useState<Slot[] | null>(null);
   const locked = s.recording;
   const canSwitch = !locked || s.director === s.me;
   const st = s.stage;
-  const order = preview ?? s.tiles;
+  const order = preview ?? s.strip;
   const flip = useFlip(order, dragging !== null);
 
   useEffect(() => {
@@ -45,7 +48,7 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
     const dragging = dragRef.current;
     if (!dragging) return;
     const strip = e.currentTarget;
-    const cur = previewRef.current ?? s.tiles;
+    const cur = previewRef.current ?? s.strip;
     // Real tile positions (offsetLeft ignores the slide animation's transforms;
     // tiles differ in width once your screen tile sits next to yours).
     const x = e.clientX - strip.getBoundingClientRect().left + strip.scrollLeft;
@@ -60,11 +63,23 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
 
   const endDrag = (commit: boolean) => {
     const next = previewRef.current;
-    if (commit && next && next.join() !== s.tiles.join()) room.reorder(next);
+    if (commit && next && next.join() !== s.strip.join()) room.reorder(next);
     previewRef.current = null;
     setDragging(null);
     setPreview(null);
   };
+
+  const drag = (id: Slot) => ({
+    'data-id': id,
+    ref: flip(id),
+    draggable: !locked,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+      setDragging(id);
+    },
+    onDragEnd: () => endDrag(false),
+  });
 
   const openMenu = (e: React.MouseEvent, id: PeerId | 'end') => {
     e.preventDefault();
@@ -78,6 +93,21 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         hoverAt(e);
       }} onDrop={(e) => (e.preventDefault(), endDrag(true))}>
       {order.map((id) => {
+        if (id === 'end')
+          return (
+            <div
+              key="end"
+              {...drag('end')}
+              className={`tile end-tile ${st?.kind === 'end' ? 'active' : ''} ${dragging === 'end' ? 'dragging' : ''}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => room.clickTile('end')}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && room.clickTile('end')}
+            >
+              <Grid size={34} />
+              <div className="tile-name">Multicam</div>
+            </div>
+          );
         const me = id === s.me;
         const p = me ? null : s.peers.get(id);
         const hasScreen = me ? !!s.screen : !!p?.presence?.hasScreen;
@@ -89,21 +119,13 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
         return (
           <Fragment key={id}>
           <div
-            data-id={id}
-            ref={flip(id)}
+            {...drag(id)}
             className={`tile ${active ? 'active' : ''} ${dragging === id ? 'dragging' : ''} ${me ? 'mine' : ''}`}
             role="button"
             tabIndex={0}
-            draggable={!locked}
             onClick={() => room.clickTile(id)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && room.clickTile(id)}
             onContextMenu={(e) => openMenu(e, id)}
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('text/plain', id);
-              setDragging(id);
-            }}
-            onDragEnd={() => endDrag(false)}
           >
             <Video stream={me ? s.cam : p?.cam ?? null} mirror={me} head={me ? s.head : p?.presence?.head ?? null} />
             {(me ? s.camOff : p?.presence?.camOff) && <Avatar name={nameOf(s, id)} />}
@@ -148,16 +170,6 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
           </Fragment>
         );
       })}
-      <div
-        className={`tile end-tile ${st?.kind === 'end' ? 'active' : ''}`}
-        role="button"
-        tabIndex={0}
-        onClick={() => room.clickTile('end')}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && room.clickTile('end')}
-      >
-        <Grid size={34} />
-        <div className="tile-name">Multicam</div>
-      </div>
 
       {menu && menu.id !== 'end' && (
         <div className="glass popover menu-list context" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
