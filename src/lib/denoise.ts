@@ -27,10 +27,24 @@ export interface Denoised {
   stop(): void;
 }
 
-export async function denoise(mic: MediaStreamTrack, warn: (msg: string) => void): Promise<Denoised> {
-  const { loadModel } = await import('fastenhancer-web');
+/** Downloads and prepares the model; later calls get the same one. */
+export async function loadDenoiser() {
+  let lib: typeof import('fastenhancer-web');
+  try {
+    lib = await import('fastenhancer-web');
+  } catch {
+    // Its files are named by content: after a new deploy (or rebuild) a page
+    // loaded before it asks for ones that are gone.
+    throw new Error('the app was updated since this page loaded. Reload the page to use it.');
+  }
   // 'small': the best of the three, about a third of the audio thread's budget.
-  const model = await loadModel('small');
+  return lib.loadModel('small');
+}
+
+export async function denoise(mic: MediaStreamTrack, report: (msg: string) => void): Promise<Denoised> {
+  // In the console too: outside a take the report goes nowhere.
+  const warn = (msg: string) => (console.warn(`[denoise] ${msg}`), report(msg));
+  const model = await loadDenoiser();
   const d = await model.createStreamDenoiser(new MediaStream([mic]), {
     onWarning: warn,
     // Under sustained overload the worklet passes the mic through untouched.

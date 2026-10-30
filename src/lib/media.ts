@@ -28,8 +28,8 @@ export function setDevicePref(kind: DeviceKind, id: string | null) {
 }
 
 /** Opens a track on the chosen device, falling back to the default if it's gone. */
-async function open(kind: 'video' | 'audio', deviceId: string | null): Promise<MediaStreamTrack> {
-  const base = kind === 'video' ? VIDEO : AUDIO;
+async function open(kind: 'video' | 'audio', deviceId: string | null, extra: MediaTrackConstraints = {}): Promise<MediaStreamTrack> {
+  const base = { ...(kind === 'video' ? VIDEO : AUDIO), ...extra };
   try {
     const s = await navigator.mediaDevices.getUserMedia({ [kind]: deviceId ? { ...base, deviceId: { exact: deviceId } } : base });
     return s.getTracks()[0];
@@ -40,7 +40,12 @@ async function open(kind: 'video' | 'audio', deviceId: string | null): Promise<M
   }
 }
 export const openVideoTrack = (deviceId = devicePref('cam')) => open('video', deviceId);
-export const openMicTrack = (deviceId = devicePref('mic')) => open('audio', deviceId);
+/**
+ * `browserNs: false` turns the browser's own noise suppression off, for our
+ * noise reduction to clean the raw mic instead. The browser keeps one setup
+ * per microphone: it only takes effect if nothing else has that mic open.
+ */
+export const openMicTrack = (deviceId = devicePref('mic'), browserNs = true) => open('audio', deviceId, { noiseSuppression: browserNs });
 
 export async function openCamera(): Promise<MediaStream> {
   const cam = devicePref('cam');

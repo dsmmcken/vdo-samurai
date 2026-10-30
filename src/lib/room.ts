@@ -17,7 +17,7 @@ import { saveProfile } from './identity';
 import type { Link } from './link';
 import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVideoTrack, screenEncoding, setDevicePref, type CamRole, type DeviceKind } from './media';
 import { FaceWatch } from './face/watch';
-import { denoise, denoisePref, setDenoisePref, type Denoised } from './denoise';
+import { denoise, denoisePref, loadDenoiser, setDenoisePref, type Denoised } from './denoise';
 import { castSupport, ScreenCaster, ScreenView } from './screencast';
 import type { Head } from './framing';
 import { INK_COLORS, inkAlpha, PLAYBACK_MS, type InkPoint, type InkStroke } from './ink';
@@ -183,7 +183,7 @@ export class Room {
   private denoise = denoisePref();
   private denoiser: { raw: MediaStreamTrack; out: Denoised } | null = null;
   /** Mic changes, one at a time (noise reduction takes a moment to start). */
-  private micQueue: Promise<void> = Promise.resolve();
+  private micQueue: Promise<unknown> = Promise.resolve();
   private camOff = false;
   private head: Head | null = null;
   private faceWatch = new FaceWatch((h) => this.onHead(h));
@@ -276,7 +276,7 @@ export class Room {
     this.micMuted = !!opts.micMuted;
     this.camOff = !!opts.camOff || cam.getVideoTracks().length === 0;
     cam.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
-    if (this.denoise) this.routeMic();
+    if (this.denoise) this.routeMic().catch((e) => this.say(`Couldn't reopen the microphone: ${(e as Error).message}`));
     this.watchFace();
     this.refreshDevices();
     castSupport().then((c) => {
@@ -950,9 +950,10 @@ export class Room {
     if (rec && !rec.setVideo) return this.say('Switching devices mid-take needs the main recorder; it will apply after this take.');
     if (kind === 'cam' && this.camOff) return this.changed(); // used when the camera comes back on
     try {
-      const t = kind === 'cam' ? await openVideoTrack(id) : await openMicTrack(id);
-      if (kind === 'mic') await this.routeMic(t);
+      let t: MediaStreamTrack | null;
+      if (kind === 'mic') t = await this.routeMic(id);
       else {
+        t = await openVideoTrack(id);
         const old = this.cam?.getVideoTracks()[0];
         if (old) {
           this.cam!.removeTrack(old);
@@ -962,7 +963,7 @@ export class Room {
         rec?.setVideo?.(t);
         this.watchFace();
       }
-      this.note(this.active?.take.id ?? '', `${kind === 'cam' ? 'camera' : 'microphone'} switched to ${t.label || 'another device'}`);
+      this.note(this.active?.take.id ?? '', `${kind === 'cam' ? 'camera' : 'microphone'} switched to ${t?.label || 'another device'}`);
       this.pushAll();
       this.announce();
     } catch (e) {
@@ -1012,7 +1013,7 @@ export class Room {
     }
     this.denoise = on;
     setDenoisePref(on);
-    void this.routeMic();
+    this.routeMic().catch((e) => this.say(`Couldn't reopen the microphone: ${(e as Error).message}`));
     return true;
   }
 
@@ -1022,45 +1023,72 @@ export class Room {
   }
 
   /**
-   * Puts a microphone (default: the current one) on our outgoing stream, as it
-   * is or through noise reduction, whichever is wanted, and swaps it into
-   * every link and the running recorder. A replaced mic is released.
+   * Puts our microphone (with a device id, that one) on the outgoing stream,
+   * as it is or through noise reduction, whichever is wanted, and swaps it
+   * into every link and the running recorder. Resolves with the mic.
+   *
+   * Under our noise reduction the browser's own is off: cleaning speech
+   * twice muddies it. The browser applies that only to a mic nothing else
+   * has open, so changing it means letting go of the mic, every copy too
+   * (the recorder holds one), and opening it again: a short gap.
    */
-  private routeMic(raw?: MediaStreamTrack) {
-    const run = async () => {
-      const mic = raw ?? this.rawMic();
-      if (!mic) return;
+  private routeMic(deviceId?: string) {
+    const run = async (): Promise<MediaStreamTrack | null> => {
+      const cur = this.rawMic();
+      if (!cur && deviceId === undefined) return null;
+      // Load the model before letting go of the mic, so the gap stays short.
+      if (this.denoise) await loadDenoiser().catch((e) => this.denoiseFailed(e));
+      const switching = deviceId !== undefined && deviceId !== cur?.getSettings().deviceId;
+      const reopen = !cur || switching || cur.getSettings().noiseSuppression !== !this.denoise;
+      if (!reopen && !!this.denoiser === this.denoise) return cur;
+      const rec = this.recorderFor('cam');
+      const prev = this.denoiser;
+      const old = this.cam?.getAudioTracks()[0] ?? null;
+      let mic = cur!;
+      if (reopen) {
+        if (!switching) {
+          rec?.setAudio?.(null);
+          prev?.out.stop();
+          old?.stop();
+          cur?.stop();
+        }
+        mic = await openMicTrack(switching ? deviceId : (cur?.getSettings().deviceId ?? deviceId), !this.denoise);
+      }
       let out: Denoised | null = null;
       if (this.denoise) {
-        // Reuse what's running when only the setting was asked for again.
-        if (this.denoiser?.raw === mic) return;
         try {
           out = await denoise(mic, (msg) => this.note(this.active?.take.id ?? '', `noise reduction: ${msg}`));
         } catch (e) {
-          this.denoise = false;
-          setDenoisePref(false);
-          this.say(`Noise reduction isn't available here: ${(e as Error).message}`);
+          this.denoiseFailed(e);
         }
       }
-      if (!out && !this.denoiser && this.cam?.getAudioTracks()[0] === mic) return this.changed();
       const send = out?.track ?? mic;
       mic.enabled = send.enabled = !this.micMuted;
-      const prev = this.denoiser;
-      const old = this.cam?.getAudioTracks()[0];
       if (old !== send) {
         if (old) this.cam!.removeTrack(old);
         this.cam?.addTrack(send);
       }
       this.denoiser = out ? { raw: mic, out } : null;
       prev?.out.stop();
-      const oldRaw = prev?.raw ?? old;
-      if (oldRaw && oldRaw !== mic) oldRaw.stop();
-      this.recorderFor('cam')?.setAudio?.(send);
-      this.note(this.active?.take.id ?? '', `noise reduction ${out ? 'on' : 'off'}`);
+      for (const t of [old, prev?.raw]) if (t && t !== mic && t !== send) t.stop();
+      rec?.setAudio?.(send);
+      this.note(this.active?.take.id ?? '', `noise reduction ${out ? 'on' : 'off'}; browser noise suppression ${mic.getSettings().noiseSuppression ? 'on' : 'off'}`);
       this.pushAll();
       this.announce();
+      return mic;
     };
-    return (this.micQueue = this.micQueue.then(run, run));
+    const next = this.micQueue.then(run, run);
+    this.micQueue = next.then(() => {}, () => {});
+    return next;
+  }
+
+  /** Noise reduction couldn't start: say why, and put the browser's own back on. */
+  private denoiseFailed(e: unknown) {
+    if (!this.denoise) return;
+    this.denoise = false;
+    setDenoisePref(false);
+    this.say(`Couldn't start noise reduction: ${(e as Error).message}`);
+    this.routeMic().catch((e) => this.say(`Couldn't reopen the microphone: ${(e as Error).message}`));
   }
 
   setProfile(p: Profile) {
