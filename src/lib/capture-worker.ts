@@ -271,17 +271,23 @@ async function record(job: Start) {
 
     let resync = false; // set when a new mic stream takes over
     let current: ReturnType<typeof read> | null = null;
+    const conform = conformer();
+    let inShape = '';
     const onAudio = async (data: AudioData) => {
         if (stats.audioIn++ === 0) {
           post({ t: 'info', message: `audio in: ${data.sampleRate} Hz, ${data.numberOfChannels} ch, ${data.format}, ${data.numberOfFrames} frames/chunk` });
           if (!hasVideo) post({ t: 'started' });
         }
-        const ch = data.numberOfChannels;
-        const n = data.numberOfFrames;
-        const rate = data.sampleRate;
+        const inCh = data.numberOfChannels;
+        const inN = data.numberOfFrames;
         // Copy out of the AudioData so our timestamp is the one that's encoded.
-        const planar = new Float32Array(ch * n);
-        for (let c = 0; c < ch; c++) data.copyTo(planar.subarray(c * n, (c + 1) * n), { planeIndex: c, format: 'f32-planar' });
+        const raw = new Float32Array(inCh * inN);
+        for (let c = 0; c < inCh; c++) data.copyTo(raw.subarray(c * inN, (c + 1) * inN), { planeIndex: c, format: 'f32-planar' });
+        const shape = `${data.sampleRate} Hz, ${inCh} ch`;
+        if (inShape && shape !== inShape) post({ t: 'info', message: `audio in changed to ${shape} (another mic, or noise reduction): fitted to the file's ${conform.shape()}` });
+        inShape = shape;
+        const { planar, ch, n, rate } = conform(raw, inCh, inN, data.sampleRate);
+        if (!n) return;
 
         if (!settled) {
           // First second: find the start from the earliest arrival, then write.
@@ -361,4 +367,57 @@ async function record(job: Start) {
   // Wall time (local ms) of file time zero. The anchor used the first sample's
   // arrival time; the smallest gap seen since is closer to true capture time.
   post({ t: 'done', size, zeroWall: videoZero ?? audioZero, audioCodec, videoEnd, audioEnd, stats });
+}
+
+/**
+ * An encoder can't change channel count or sample rate mid-file, but the mic
+ * can: noise reduction's output is 48 kHz stereo, another mic may be 44.1 kHz
+ * mono. Whatever arrives is mixed and resampled to what the file started
+ * with (linear interpolation, continuous across chunks).
+ */
+function conformer() {
+  let fileCh = 0;
+  let fileRate = 0;
+  let last: Float32Array | null = null; // previous chunk's last sample per channel (index -1)
+  let pos = 0; // next output sample, in input samples from this chunk's start
+  let lastRate = 0;
+  const fit = (planar: Float32Array, ch: number, n: number, rate: number) => {
+    if (!fileCh) (fileCh = ch), (fileRate = rate);
+    let data = planar;
+    if (ch !== fileCh) {
+      data = new Float32Array(fileCh * n);
+      for (let o = 0; o < fileCh; o++) {
+        const plane = data.subarray(o * n, (o + 1) * n);
+        if (fileCh === 1) {
+          // Down to mono: the average of every channel.
+          for (let c = 0; c < ch; c++) for (let i = 0; i < n; i++) plane[i] += planar[c * n + i] / ch;
+        } else plane.set(planar.subarray((o % ch) * n, ((o % ch) + 1) * n)); // up: repeat channels (mono into each)
+      }
+    }
+    if (rate === fileRate) {
+      last = null;
+      return { planar: data, ch: fileCh, n, rate };
+    }
+    if (rate !== lastRate) (last = null), (pos = 0), (lastRate = rate);
+    const step = rate / fileRate;
+    const cap = Math.ceil(n / step) + 2;
+    const out = new Float32Array(fileCh * cap);
+    let k = 0;
+    let p = pos;
+    for (; p < n - 1; p += step, k++) {
+      const i = Math.floor(p);
+      const f = p - i;
+      for (let c = 0; c < fileCh; c++) {
+        const a = i < 0 ? last![c] : data[c * n + i];
+        out[c * cap + k] = a + (data[c * n + i + 1] - a) * f;
+      }
+    }
+    pos = p - n;
+    last = new Float32Array(fileCh);
+    for (let c = 0; c < fileCh; c++) last[c] = data[c * n + n - 1];
+    const packed = new Float32Array(fileCh * k);
+    for (let c = 0; c < fileCh; c++) packed.set(out.subarray(c * cap, c * cap + k), c * k);
+    return { planar: packed, ch: fileCh, n: k, rate: fileRate };
+  };
+  return Object.assign(fit, { shape: () => `${fileRate} Hz, ${fileCh} ch` });
 }
