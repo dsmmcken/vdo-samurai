@@ -33,7 +33,7 @@ export function RecordingDetails({ room, s, onClose }: { room: Room; s: Snapshot
         {cut && (
           <div className="final-cut">
             <span>Final cut{cut.bytes ? ` · ${fmtBytes(cut.bytes)}` : ''}</span>
-            <a className="btn primary sm" href={cut.url} download={finalCutName(room, dm!.take.id)} onClick={() => room.markDownloaded()}>
+            <a className="btn primary sm" href={cut.url} download={finalCutName(dm!.take)} onClick={() => room.markDownloaded()}>
               Download final cut
             </a>
           </div>

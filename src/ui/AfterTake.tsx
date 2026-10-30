@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
-import type { RaceRow } from '../lib/types';
+import type { RaceRow, Take } from '../lib/types';
 import { fmtBytes } from '../lib/util';
 import { Close } from './icons';
 import { Petals } from './Petals';
@@ -211,7 +211,7 @@ function DirectorFinish({ room, s, onSaved }: { room: Room; s: Snapshot; onSaved
         <a
           className="btn primary"
           href={r.url}
-          download={finalCutName(room, dm.take.id)}
+          download={finalCutName(dm.take)}
           onClick={() => {
             room.markDownloaded();
             onSaved();
@@ -226,4 +226,9 @@ function DirectorFinish({ room, s, onSaved }: { room: Room; s: Snapshot; onSaved
   );
 }
 
-export const finalCutName = (room: Room, takeId: string) => `${room.roomName}-${takeId}.mp4`;
+/** When the take started, in local time: "2026-10-23 15-15-02.mp4". */
+export function finalCutName(take: Take) {
+  const d = new Date(take.startAt);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.mp4`;
+}
