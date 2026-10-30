@@ -182,6 +182,11 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
               <Helmet size={16} className="gold" /> {menu.id === s.me ? 'Become Shōgun (director)' : `Make ${nameOf(s, menu.id)} Shōgun (director)`}
             </button>
           )}
+          {menu.id !== s.me && !s.peers.get(menu.id)?.presence?.micMuted && (
+            <button onClick={() => (room.muteOf(menu.id as PeerId), setMenu(null))}>
+              <MicOff size={16} /> Mute {nameOf(s, menu.id)}
+            </button>
+          )}
           <button onClick={() => (onEditProfile(menu.rect, menu.id as PeerId), setMenu(null))}>
             <Pencil size={16} /> {menu.id === s.me ? 'Edit your name' : `Edit ${nameOf(s, menu.id)}'s name`}
           </button>

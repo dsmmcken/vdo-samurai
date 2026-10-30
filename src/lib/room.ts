@@ -629,6 +629,13 @@ export class Room {
         this.setProfile(m.profile);
         saveProfile(m.profile);
         break;
+      case 'mute':
+        // Anyone can mute anyone; only you can unmute yourself.
+        if (!this.micMuted) {
+          this.toggleMic();
+          this.say(`${this.nameOf(peer)} muted you.`);
+        }
+        break;
       case 'race':
         this.race = { takeId: m.takeId, rows: m.rows };
         this.changed();
@@ -953,6 +960,12 @@ export class Room {
     this.micMuted = !this.micMuted;
     this.cam?.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
     this.announce();
+  }
+
+  /** Anyone can mute anyone (not unmute: that's theirs to do). */
+  muteOf(id: PeerId) {
+    if (id === this.me) return !this.micMuted && this.toggleMic();
+    this.mesh.links.get(id)?.send({ t: 'mute' });
   }
 
   setProfile(p: Profile) {
