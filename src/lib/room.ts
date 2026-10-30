@@ -178,6 +178,7 @@ export class Room {
   private views = new Map<PeerId, ScreenView>();
   private cast = { send: false, receive: false };
   private micMuted = false;
+  private joinedAt = Date.now();
   /** Noise reduction wanted for our mic; `denoiser` is it running, with the raw mic it cleans. */
   private denoise = denoisePref();
   private denoiser: { raw: MediaStreamTrack; out: Denoised } | null = null;
@@ -443,18 +444,27 @@ export class Room {
     };
   }
 
+  /**
+   * Tiles someone has placed (dragged, or the director put first) keep their
+   * place; everyone else follows, in the order they joined. Same answer on
+   * every peer: it comes from shared state and presences only.
+   */
   private tiles(peers: Map<PeerId, PeerView>) {
     const present = new Set([this.me, ...peers.keys()]);
     const order = this.shared.order.v.filter((id) => present.has(id));
-    const rest = [...present].filter((id) => !order.includes(id)).sort();
+    const joined = (id: PeerId) => (id === this.me ? this.joinedAt : this.presences.get(id)?.joinedAt ?? Infinity);
+    const rest = [...present].filter((id) => !order.includes(id)).sort((a, b) => joined(a) - joined(b) || (a < b ? -1 : 1));
     return [...order, ...rest];
   }
 
-  /** The tiles plus Multicam, after as many of them as it followed when it was last placed (default: last). */
+  /**
+   * The tiles plus Multicam, after as many of them as it followed when it was
+   * last placed. Last by default, and placed last it stays last, after newcomers.
+   */
   private strip(tiles: PeerId[]): (PeerId | 'end')[] {
     const v = this.shared.order.v;
     const at = v.indexOf('end');
-    if (at < 0) return [...tiles, 'end'];
+    if (at < 0 || !v.slice(at + 1).some((id) => tiles.includes(id))) return [...tiles, 'end'];
     const n = v.slice(0, at).filter((id) => tiles.includes(id)).length;
     return [...tiles.slice(0, n), 'end', ...tiles.slice(n)];
   }
@@ -543,6 +553,7 @@ export class Room {
       castRx: this.cast.receive,
       screenCast: !!this.caster,
       ink: this.inkSlot,
+      joinedAt: this.joinedAt,
     };
   }
 

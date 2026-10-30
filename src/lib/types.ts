@@ -25,6 +25,8 @@ export interface Presence {
   screenCast?: boolean;
   /** Our ink colour: a slot in ink.ts's INK_COLORS, unique in the room. */
   ink?: number;
+  /** When we joined (our clock, ms): tiles nobody has placed line up in join order. */
+  joinedAt?: number;
 }
 
 /** What the main stage shows. A peer's screen falls back to their camera when they aren't sharing. */
