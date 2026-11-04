@@ -37,14 +37,14 @@ export function headFromFace(f: { x: number; y: number; w: number; h: number }, 
 /**
  * The crop of a vw x vh camera frame that frames `head` in a box of aspect
  * `aspect` (width / height), in frame pixels. Without a head it's the plain
- * centred "cover" crop.
+ * centred "cover" crop. `fill` overrides how much of the height the head fills.
  */
-export function cropFor(head: Head | null, vw: number, vh: number, aspect: number) {
+export function cropFor(head: Head | null, vw: number, vh: number, aspect: number, fill?: number) {
   // Largest crop of this aspect that fits the frame (what "cover" shows).
   const coverH = vw / vh > aspect ? vh : vw / aspect;
   if (!head) return { x: (vw - coverH * aspect) / 2, y: (vh - coverH) / 2, w: coverH * aspect, h: coverH };
   const wide = aspect >= 1.3;
-  const fill = FILL * (wide ? 0.6 : 1);
+  fill ??= FILL * (wide ? 0.6 : 1);
   const maxZoom = wide ? 2.5 : 3.5;
   const headY = wide ? 0.42 : 0.46; // head centre this far down the view
   const h = Math.min(coverH, Math.max(coverH / maxZoom, (head.s * vh) / fill));

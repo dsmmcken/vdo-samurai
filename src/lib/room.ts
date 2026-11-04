@@ -195,7 +195,7 @@ export class Room {
     order: { v: [], ts: 0, by: '' },
     stage: { v: null, ts: 0, by: '' },
     corner: { v: 'br', ts: 0, by: '' },
-    pip: { v: { shape: 'rect', hidden: false }, ts: 0, by: '' },
+    pip: { v: { shape: 'cutout', hidden: false }, ts: 0, by: '' },
     take: { v: null, ts: 0, by: '' },
   };
 

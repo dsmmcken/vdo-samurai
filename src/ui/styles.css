@@ -520,7 +520,7 @@ button.chip:hover {
 }
 /* Same overlay as the final cut: a 32px inset from the chosen corner, in
    units of the stage width. Shapes (render px of 1920): rectangle 156x195,
-   square 176x176, circle 184x184. Position, size and shape always animate, so
+   square 176x176, circle 184x184, cutout 270x300. Position, size and shape always animate, so
    everyone sees the same glide / morph; html.resizing switches that off while
    the window is being resized, so it stays pinned instead. */
 .s-rect {
@@ -537,6 +537,11 @@ button.chip:hover {
   --w: 9.583cqw;
   --h: 9.583cqw;
   --r: 4.792cqw;
+}
+.s-cutout {
+  --w: 14.063cqw;
+  --h: 15.625cqw;
+  --r: 1.15cqw;
 }
 .pip {
   --m: 1.667cqw;
@@ -611,6 +616,19 @@ button.chip:hover {
 html.resizing .pip,
 html.resizing .pip-face {
   transition: none !important;
+}
+/* Cutout: just the person, no box. The shadow follows their outline. */
+.pip-face.cut,
+.pip.dragging .pip-face.cut {
+  background: none;
+  box-shadow: none;
+}
+.cutout {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0.4cqw 1.2cqw rgba(0, 0, 0, 0.5));
 }
 
 /* Hover menu: icons pop out in an arc from the overlay's inner corner. */

@@ -16,6 +16,7 @@ const banned = {
   'emoji data (emoji.json)': /grinning face with big eyes/,
   'noise reduction (fastenhancer-web)': /fastenhancer-processor/,
   'reaction search (emoji-search.ts)': /half-typed|EmojiSearch|\(i\|in\|e\|es\|s\)/,
+  'background removal (@mediapipe/tasks-vision)': /ModuleFactory not set/,
 };
 const seen = new Set();
 const walk = (file) => {
@@ -35,4 +36,4 @@ for (const file of seen) {
 }
 console.log(`first load: ${[...seen].join(', ')}: ${(bytes / 1000).toFixed(1)} kB, ${(gz / 1000).toFixed(1)} kB gzipped`);
 if (bad) process.exit(1);
-console.log('✓ no reaction player, search, emoji data or noise reduction in it');
+console.log('✓ no reaction player, search, emoji data, noise reduction or background removal in it');

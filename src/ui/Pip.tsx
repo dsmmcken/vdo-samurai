@@ -3,12 +3,13 @@ import type { Room, Snapshot } from '../lib/room';
 import type { Corner, PipShape } from '../lib/types';
 import type { Head } from '../lib/framing';
 import { Avatar } from './Avatar';
-import { EyeOff, Eye } from './icons';
-import { Video } from './Video';
+import { EyeOff, Eye, User } from './icons';
+import { CutoutVideo, Video } from './Video';
 
 const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br'];
 
 const SHAPES: { shape: PipShape; label: string; icon: React.ReactNode }[] = [
+  { shape: 'cutout', label: 'Cutout', icon: <User size={16} /> },
   { shape: 'circle', label: 'Circle', icon: <span className="shape-glyph circle" /> },
   { shape: 'square', label: 'Square', icon: <span className="shape-glyph square" /> },
   { shape: 'rect', label: 'Rectangle', icon: <span className="shape-glyph rect" /> },
@@ -19,6 +20,7 @@ const DIMS: Record<PipShape, { w: number; h: number; r: number }> = {
   rect: { w: 156, h: 195, r: 22 },
   square: { w: 176, h: 176, r: 22 },
   circle: { w: 184, h: 184, r: 92 },
+  cutout: { w: 270, h: 300, r: 22 },
 };
 const GAP = 18; // px from the shape's outline to each icon's centre
 const STEP = 30; // px between icons along that outline
@@ -88,9 +90,9 @@ const corners = (r: DOMRect, pad = 0): Pt[] => [
  * The presenter's camera over a shared screen.
  * - Drag it toward any corner: drop zones appear, the nearest lights up, and on
  *   release it glides there for everyone (and in the final cut).
- * - Hover it: circle / square / rectangle / hide pop out in an arc from its
- *   inner corner. A hidden overlay shows an unhide button when you hover its
- *   corner.
+ * - Hover it: cutout / circle / square / rectangle / hide pop out in an arc
+ *   from its inner corner. A hidden overlay shows an unhide button when you
+ *   hover its corner. The cutout is just the person, background removed.
  * Anyone can change it before a take; during a take, only the Shōgun.
  */
 export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; s: Snapshot; stream: MediaStream | null; mirror: boolean; off: boolean; head: Head | null; name: string }) {
@@ -168,7 +170,7 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
   const [w, h, r] = [d.w * scale, d.h * scale, d.r * scale];
   const ox = s.corner.endsWith('r') ? 0 : w;
   const oy = s.corner.startsWith('b') ? 0 : h;
-  const points = hugPoints(s.corner, w, h, r, 4);
+  const points = hugPoints(s.corner, w, h, r, SHAPES.length + 1);
 
   return (
     <>
@@ -182,8 +184,8 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
         onPointerEnter={() => canMove && !hidden && !drag && performance.now() > settleUntil.current && setMenu(true)}
         onPointerMove={() => !menu && !drag && canMove && !hidden && performance.now() > settleUntil.current && setMenu(true)}
       >
-        <div className="pip-face" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} title={canMove && !hidden ? 'Drag to another corner' : undefined}>
-          {off ? <Avatar name={name} /> : <Video stream={stream} mirror={mirror} head={head} />}
+        <div className={`pip-face ${shape === 'cutout' && !off ? 'cut' : ''}`} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} title={canMove && !hidden ? 'Drag to another corner' : undefined}>
+          {off ? <Avatar name={name} /> : shape === 'cutout' ? <CutoutVideo stream={stream} mirror={mirror} head={head} /> : <Video stream={stream} mirror={mirror} head={head} />}
         </div>
 
         {canMove && !drag && !hidden && (

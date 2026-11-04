@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CUTOUT_FILL, Cutout } from '../lib/cutout';
 import { cropFor, glide, type Head } from '../lib/framing';
 
 /**
@@ -101,6 +102,75 @@ export function Video({ stream, mirror, fit = 'cover', head, className }: { stre
       onContextMenu={(e) => e.preventDefault()}
       style={{ objectFit: fit, transform: framed ? undefined : mirror ? 'scaleX(-1)' : undefined }}
     />
+  );
+}
+
+/**
+ * A camera with its background removed (lib/cutout.ts), framed like any other
+ * view, drawn at up to 30 fps. Shows the plain framed video until the model
+ * has loaded, or instead of the cutout if there's no WebGL2.
+ */
+export function CutoutVideo({ stream, mirror = false, head }: { stream: MediaStream | null; mirror?: boolean; head: Head | null }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const headRef = useRef(head);
+  headRef.current = head;
+  const [state, setState] = useState<'loading' | 'live' | 'failed'>('loading');
+  const trackIds = stream?.getVideoTracks().map((t) => t.id).join() ?? '';
+  // A fresh canvas each time: a closed cutout gives up its WebGL context.
+  const key = `${trackIds}|${mirror}`;
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || !stream) return;
+    let cut: Cutout;
+    try {
+      cut = new Cutout(canvas);
+    } catch (e) {
+      console.warn('[cutout]', e);
+      setState('failed');
+      return;
+    }
+    let closed = false;
+    cut.ready.catch((e) => {
+      if (closed) return;
+      console.warn('[cutout]', e);
+      setState('failed');
+    });
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.srcObject = new MediaStream(stream.getVideoTracks());
+    v.play().catch(() => {});
+    let shown: Head | null = null;
+    let last = performance.now();
+    let drawn = 0;
+    let raf = 0;
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      const target = headRef.current;
+      shown = shown && target ? glide(shown, target, Math.min(0.1, (t - last) / 1000)) : target;
+      last = t;
+      if (t - drawn < 30 || v.readyState < 2 || !v.videoWidth) return;
+      const w = Math.round(canvas.clientWidth * devicePixelRatio);
+      const h = Math.round(canvas.clientHeight * devicePixelRatio);
+      if (!w || !h) return;
+      drawn = t;
+      if (cut.draw(v, cropFor(shown, v.videoWidth, v.videoHeight, w / h, CUTOUT_FILL), w, h, t, mirror)) setState('live');
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      closed = true;
+      cancelAnimationFrame(raf);
+      v.srcObject = null;
+      cut.close();
+      setState('loading');
+    };
+  }, [stream, key]);
+
+  return (
+    <>
+      {state !== 'live' && <Video stream={stream} mirror={mirror} head={head} />}
+      {state !== 'failed' && <canvas key={key} ref={ref} className="cutout" />}
+    </>
   );
 }
 
