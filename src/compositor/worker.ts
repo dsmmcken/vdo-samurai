@@ -27,12 +27,19 @@ import type {
   DirectorManifest,
   PeerId,
   PipShape,
-  PipStyle,
   Profile,
   RecFile,
 } from "../lib/types";
 import { cropFor, glide, type Head } from "../lib/framing";
-import { CUTOUT_FILL, Cutout } from "../lib/cutout";
+import { CutoutEngine } from "../lib/cutout/engine";
+import {
+  PIP_DIMS,
+  PIP_MOVE_S,
+  cutLayout,
+  cutoutHeadX,
+  easeInOut,
+  pipBox,
+} from "../lib/overlay";
 import { drawInk, fitContain, type InkStroke } from "../lib/ink";
 import {
   drawReactions,
@@ -63,17 +70,9 @@ const AUDIO_BLOCK = RATE / 2; // mix half a second at a time
 const BG = "#0d0d12";
 const LOWER_THIRD = "#0625c0";
 
-// Presenter overlay while a screen is on stage: a portrait rounded rectangle,
-// the same distance from the right and bottom edges.
-const PIP = { margin: 32 };
-// Overlay shapes in 1080p pixels (same as the live stage's CSS).
-const PIP_SHAPES: Record<PipShape, { w: number; h: number; r: number }> = {
-  rect: { w: 156, h: 195, r: 22 },
-  square: { w: 176, h: 176, r: 22 },
-  circle: { w: 184, h: 184, r: 92 },
-  cutout: { w: 270, h: 300, r: 22 },
-};
-const CORNER_MOVE_S = 0.4; // glide / morph time, same as the live stage (position and size together)
+// Presenter overlay while a screen is on stage: shapes and places as on the
+// live stage (lib/overlay.ts), and each change glides / morphs over the same
+// time.
 
 // Audio polish (see voice.ts): each person goes through high-pass, de-esser,
 // leveler and compressor, then is normalized to the spoken-word standard; the
@@ -336,89 +335,68 @@ async function render(m: DirectorManifest) {
     return st.shown;
   };
 
-  // Overlay geometry over time (corner, shape, hidden), from the stage log.
-  // Each change glides / morphs / fades over the same time as on the live stage.
-  type Geo = {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    r: number;
-    alpha: number;
-    cut: boolean;
-  };
-  const geoOf = (corner: Corner, pip: PipStyle): Geo => {
-    const { w, h, r } = PIP_SHAPES[pip.shape];
-    const cut = pip.shape === "cutout";
-    // A cutout sits on the bottom edge, its body running off the picture.
-    const g = {
-      x: corner.endsWith("l") ? PIP.margin : W - w - PIP.margin,
-      y: corner.startsWith("t") ? PIP.margin : H - h - (cut ? 0 : PIP.margin),
-      w,
-      h,
-      r,
-      alpha: 1,
-      cut,
-    };
-    if (!pip.hidden) return g;
+  // Overlay over time (corner, shape, hidden), from the stage log: the state
+  // it's in, the one it came from and how far through that change it is.
+  // Boxes glide / morph / fade; between a box and the cutout, the morph of
+  // overlay.ts plays, as on the live stage.
+  type PipAt = { corner: Corner; shape: PipShape; hidden: boolean };
+  type Geo = { x: number; y: number; w: number; h: number; r: number; alpha: number };
+  const geoOf = (p: PipAt): Geo => {
+    const g = { ...pipBox(p.corner, p.shape), alpha: 1 };
+    if (!p.hidden) return g;
     // Hidden: shrink to 40% about its centre and fade out.
-    return {
-      ...g,
-      x: g.x + w * 0.3,
-      y: g.y + h * 0.3,
-      w: w * 0.4,
-      h: h * 0.4,
-      r: r * 0.4,
-      alpha: 0,
-    };
+    return { x: g.x + g.w * 0.3, y: g.y + g.h * 0.3, w: g.w * 0.4, h: g.h * 0.4, r: g.r * 0.4, alpha: 0 };
   };
-  const pipLog = [...m.stageLog]
+  const pipLog: (PipAt & { t: number })[] = [...m.stageLog]
     .sort((a, b) => a.t - b.t)
     .filter((e) => e.corner || e.pip)
     .map((e) => ({
       t: e.t / 1000,
       corner: e.corner ?? "br",
-      pip: e.pip ?? { shape: "rect" as PipShape, hidden: false },
+      shape: e.pip?.shape ?? "rect",
+      hidden: e.pip?.hidden ?? false,
     }));
-  const same = (a: Geo, b: Geo) =>
-    a.x === b.x &&
-    a.y === b.y &&
-    a.w === b.w &&
-    a.alpha === b.alpha &&
-    a.cut === b.cut;
-  const pipAt = (t: number): Geo => {
+  const same = (a: PipAt, b: PipAt) =>
+    a.corner === b.corner && a.shape === b.shape && a.hidden === b.hidden;
+  const pipAt = (t: number) => {
     // Start as the overlay was when the take began (no animation in).
-    let cur = pipLog.length
-      ? geoOf(pipLog[0].corner, pipLog[0].pip)
-      : geoOf("br", { shape: "rect", hidden: false });
+    let cur: PipAt = pipLog[0] ?? { corner: "br", shape: "rect", hidden: false };
     let prev = cur;
     let since = -Infinity;
     for (const e of pipLog) {
       if (e.t > t) break;
-      const g = geoOf(e.corner, e.pip);
-      if (!same(g, cur)) {
+      if (!same(e, cur)) {
         prev = cur;
-        cur = g;
+        cur = e;
         since = e.t;
       }
     }
-    const k = Math.min(1, (t - since) / CORNER_MOVE_S);
-    if (k >= 1) return cur;
-    const e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2; // ease in-out
-    const lerp = (a: number, b: number) => a + (b - a) * e;
-    return {
-      x: lerp(prev.x, cur.x),
-      y: lerp(prev.y, cur.y),
-      w: lerp(prev.w, cur.w),
-      h: lerp(prev.h, cur.h),
-      r: lerp(prev.r, cur.r),
-      alpha: lerp(prev.alpha, cur.alpha),
-      cut: cur.cut,
-    };
+    return { prev, cur, e: easeInOut(Math.min(1, (t - since) / PIP_MOVE_S)) };
   };
-  const cutout = pipLog.some((e) => e.pip.shape === "cutout")
+  const lerp = (a: number, b: number, e: number) => a + (b - a) * e;
+  const lerpGeo = (a: Geo, b: Geo, e: number): Geo => ({
+    x: lerp(a.x, b.x, e),
+    y: lerp(a.y, b.y, e),
+    w: lerp(a.w, b.w, e),
+    h: lerp(a.h, b.h, e),
+    r: lerp(a.r, b.r, e),
+    alpha: lerp(a.alpha, b.alpha, e),
+  });
+  const cutout = pipLog.some((e) => e.shape === "cutout")
     ? await openCutout()
     : null;
+  let cutDrawn = -2; // output frame the cutout was last drawn on
+  // The cutout's picture, placed. Its shadow follows the person (mid-morph,
+  // the box too), easing between the box's and the cutout's.
+  const drawCut = (src: OffscreenCanvas, x: number, y: number, w: number, h: number, alpha: number, c: number) => {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = lerp(40, 24, c);
+    ctx.shadowOffsetY = lerp(10, 8, c);
+    ctx.drawImage(src, x, y, w, h);
+    ctx.restore();
+  };
   // Ink lies on a shared screen's picture, or on the whole frame for anything else.
   const FULL = { x: 0, y: 0, w: W, h: H };
   const inkNames = { name: (id: PeerId) => m.profiles[id]?.name || "Guest" };
@@ -479,46 +457,62 @@ async function render(m: DirectorManifest) {
           fitContain(screen.displayWidth, screen.displayHeight, W, H),
           inkNames,
         );
-        const { x, y, w, h, r, alpha, cut } = pipAt(t);
-        if (alpha > 0.01 && cut && cam && cutout) {
-          // Just the person: the shadow follows their outline.
-          const cw = Math.round(w);
-          const ch = Math.round(h);
+        const { prev, cur, e } = pipAt(t);
+        const isCut = (p: PipAt) => p.shape === "cutout";
+        // Between a box and the cutout, in place: the morph.
+        const morph =
+          e < 1 &&
+          isCut(prev) !== isCut(cur) &&
+          prev.corner === cur.corner &&
+          !prev.hidden &&
+          !cur.hidden;
+        if (cam && cutout && (morph || isCut(cur))) {
           const frame = cam.toVideoFrame();
-          const crop = cropFor(
-            headAt(st.id, t),
-            frame.displayWidth,
-            frame.displayHeight,
-            cw / ch,
-            CUTOUT_FILL,
-          );
-          const drawn = cutout.draw(frame, crop, cw, ch, t * 1000);
+          const vw = frame.displayWidth;
+          const vh = frame.displayHeight;
+          // Not on the last frame: its mask is from a while ago.
+          if (cutDrawn !== k - 1) cutout.reset();
+          cutout.setFrame(frame);
           frame.close();
-          if (drawn) {
+          cutDrawn = k;
+          const head = headAt(st.id, t);
+          if (morph) {
+            const c = isCut(cur) ? e : 1 - e;
+            const layout = cutLayout(cur.corner, isCut(cur) ? prev.shape : cur.shape, c, head, vw, vh);
+            const b = layout.bounds;
+            if (cutout.draw(layout, Math.round(b.w), Math.round(b.h)))
+              drawCut(cutout.canvas, b.x, b.y, b.w, b.h, 1, c);
+          } else {
+            // A still cutout, or one gliding to another corner / hiding:
+            // drawn as it rests, then placed (with the head easing across to
+            // its side of a new corner).
+            const hx = lerp(cutoutHeadX(prev.corner), cutoutHeadX(cur.corner), isCut(prev) ? e : 1);
+            const layout = cutLayout(cur.corner, "cutout", 1, head, vw, vh, false, hx);
+            const g = isCut(prev) ? lerpGeo(geoOf(prev), geoOf(cur), e) : geoOf(cur);
+            const { w, h } = PIP_DIMS.cutout;
+            if (g.alpha > 0.01 && cutout.draw(layout, w, h))
+              drawCut(cutout.canvas, g.x, g.y, g.w, g.h, g.alpha, 1);
+          }
+        } else {
+          // Boxes (and a cutout where background removal can't run).
+          const { x, y, w, h, r, alpha } = lerpGeo(geoOf(prev), geoOf(cur), e);
+          if (alpha > 0.01) {
+            const path = roundRect(x, y, w, h, Math.max(r, isCut(cur) ? 22 : 0));
             ctx.save();
             ctx.globalAlpha = alpha;
+            // No border: a soft shadow lifts it off the screen.
+            ctx.save();
             ctx.shadowColor = "rgba(0,0,0,0.5)";
-            ctx.shadowBlur = 24;
-            ctx.shadowOffsetY = 8;
-            ctx.drawImage(cutout.canvas, x, y, w, h);
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 10;
+            ctx.fillStyle = BG;
+            ctx.fill(path);
+            ctx.restore();
+            ctx.clip(path);
+            if (cam) drawCover(ctx, cam, x, y, w, h, headAt(st.id, t));
+            else placeholder(ctx, x, y, w, h, m.profiles[st.id]);
             ctx.restore();
           }
-        } else if (alpha > 0.01) {
-          const path = roundRect(x, y, w, h, r);
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          // No border: a soft shadow lifts it off the screen.
-          ctx.save();
-          ctx.shadowColor = "rgba(0,0,0,0.5)";
-          ctx.shadowBlur = 40;
-          ctx.shadowOffsetY = 10;
-          ctx.fillStyle = BG;
-          ctx.fill(path);
-          ctx.restore();
-          ctx.clip(path);
-          if (cam) drawCover(ctx, cam, x, y, w, h, headAt(st.id, t));
-          else placeholder(ctx, x, y, w, h, m.profiles[st.id]);
-          ctx.restore();
         }
       } else {
         if (cam) drawCover(ctx, cam, 0, 0, W, H, headAt(st.id, t));
@@ -636,10 +630,15 @@ async function readReactions(
   return { reactions, sprite: sprites.sprite };
 }
 
-/** The background remover for cutout overlays, loaded before the first frame; null (boxes instead) if it can't run here. */
-async function openCutout(): Promise<Cutout | null> {
+/**
+ * The background remover for cutout overlays at its best (each frame found
+ * twice and averaged, wider edge filtering: this runs once, on the host, and
+ * needn't keep up with a camera), loaded before the first frame; null (boxes
+ * instead) if it can't run here.
+ */
+async function openCutout(): Promise<CutoutEngine | null> {
   try {
-    const c = new Cutout(new OffscreenCanvas(1, 1));
+    const c = new CutoutEngine(new OffscreenCanvas(1, 1), "best");
     await c.ready;
     return c;
   } catch (e) {

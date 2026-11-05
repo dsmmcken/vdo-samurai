@@ -8,9 +8,8 @@ export default defineConfig({
   worker: { format: 'es' },
   // Pre-bundle up front: otherwise the dev server discovers mediabunny when the
   // render worker first loads and force-reloads every open page mid-session.
-  // Same for the reaction player, loaded with the first reaction, and the
-  // background remover, loaded with the first cutout overlay.
-  optimizeDeps: { include: ['react', 'react-dom/client', '@vdoninja/sdk', 'mediabunny', '@lottiefiles/dotlottie-web', '@mediapipe/tasks-vision'] },
+  // Same for the reaction player, loaded with the first reaction.
+  optimizeDeps: { include: ['react', 'react-dom/client', '@vdoninja/sdk', 'mediabunny', '@lottiefiles/dotlottie-web'] },
   build: { target: 'es2022' },
   server: { port: 8080 },
 });

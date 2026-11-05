@@ -1,7 +1,7 @@
 // Face framing worker: receives small camera frames (ImageBitmap), finds the
 // head, and replies with the calm framing anchor (see framing.ts).
 import modelUrl from '../../assets/blaze_face_short_range.tflite?url';
-import kernelsUrl from './kernels.wasm?url';
+import kernelsUrl from '../nn/kernels.wasm?url';
 import { BlazeFace } from './blazeface';
 import { FaceTracker } from './tracker';
 import { Framer, headFromFace, roundHead, type Head } from '../framing';
