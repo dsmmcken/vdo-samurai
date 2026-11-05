@@ -63,6 +63,9 @@ export function pipBox(corner: Corner, shape: PipShape): Box {
   };
 }
 
+/** A cutout stands on the bottom edge, so it only goes in a bottom corner: a top one drops to the one below it. */
+export const cutoutCorner = (corner: Corner): Corner => (corner.startsWith('t') ? (`b${corner[1]}` as Corner) : corner);
+
 /** Where across a cutout the head sits, for its corner (toward the outer side). */
 export const cutoutHeadX = (corner: Corner) => (corner.endsWith('r') ? CUTOUT_HEAD_X : 1 - CUTOUT_HEAD_X);
 

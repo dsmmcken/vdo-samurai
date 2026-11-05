@@ -101,7 +101,9 @@ const corners = (r: DOMRect, pad = 0): Pt[] => [
 /**
  * The presenter's camera over a shared screen.
  * - Drag it toward any corner: drop zones appear, the nearest lights up, and on
- *   release it glides there for everyone (and in the final cut).
+ *   release it glides there for everyone (and in the final cut). A cutout
+ *   stands on the bottom edge, so it only slides between the bottom corners
+ *   (choosing it in a top corner drops it to the one below first).
  * - Hover it: cutout / circle / square / rectangle / hide pop out in an arc
  *   from its inner corner, hugging the shape; over a cutout they pop up from
  *   the top of the head into a row above it. A hidden overlay shows an unhide
@@ -177,6 +179,9 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
 
   const nearest = (cx: number, cy: number, frame: DOMRect): Corner =>
     `${cy < frame.top + frame.height / 2 ? 't' : 'b'}${cx < frame.left + frame.width / 2 ? 'l' : 'r'}` as Corner;
+  // A cutout stands on the bottom edge: it only slides along it, between the bottom corners.
+  const cutLocked = s.pip.shape === 'cutout';
+  const spots = cutLocked ? CORNERS.filter((c) => c.startsWith('b')) : CORNERS;
 
   const onDown = (e: React.PointerEvent) => {
     if (!canMove || hidden || !ref.current) return;
@@ -192,7 +197,7 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
     const r = ref.current.getBoundingClientRect();
     const frame = ref.current.parentElement!.getBoundingClientRect();
     const x = Math.max(0, Math.min(frame.width - r.width, e.clientX - frame.left - drag.dx));
-    const y = Math.max(0, Math.min(frame.height - r.height, e.clientY - frame.top - drag.dy));
+    const y = cutLocked ? frame.height - r.height : Math.max(0, Math.min(frame.height - r.height, e.clientY - frame.top - drag.dy));
     setDrag({ ...drag, x, y, near: nearest(frame.left + x + r.width / 2, frame.top + y + r.height / 2, frame) });
   };
   const onUp = () => {
@@ -225,7 +230,7 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
 
   return (
     <>
-      {drag && CORNERS.map((c) => <div key={c} className={`pip-zone c-${c} s-${shape} ${drag.near === c ? 'near' : ''}`} aria-hidden />)}
+      {drag && spots.map((c) => <div key={c} className={`pip-zone c-${c} s-${shape} ${drag.near === c ? 'near' : ''}`} aria-hidden />)}
       <div
         ref={ref}
         className={`pip c-${s.corner} s-${shape} ${hidden ? 'hidden' : ''} ${drag ? 'dragging' : ''} ${canMove ? 'movable' : ''} ${menu && !drag && !hidden ? 'menu' : ''} ${settled ? 'settled' : ''}`}
@@ -277,7 +282,7 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
           forgotten where it was. It moves while invisible, then grows in. */}
       {canMove &&
         hidden &&
-        CORNERS.map((c) => (
+        spots.map((c) => (
           <div key={c} className={`pip-spot c-${c} s-${shape}`}>
             <button
               className="pip-unhide"

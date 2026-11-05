@@ -45,6 +45,7 @@ import type {
   Take,
 } from './types';
 import { now, rid, sleep } from './util';
+import { cutoutCorner, PIP_MOVE_S } from './overlay';
 
 /**
  * Upload message size: Chrome negotiates 256 KB, which means a quarter of the
@@ -231,6 +232,8 @@ export class Room {
   /** This take's ink in take time, saved to ink.json: it can grow, so it stays out of the manifest. */
   private inkLog: Record<string, InkStroke> = {};
   private inkSave: ReturnType<typeof setTimeout> | null = null;
+  /** A shape change waiting for the overlay to drop out of a top corner first. */
+  private pipLater: ReturnType<typeof setTimeout> | null = null;
 
   // Ink (everyone): strokes on the current stage, times on our clock.
   private ink = new Map<string, InkStroke>();
@@ -296,6 +299,7 @@ export class Room {
 
   async leave() {
     this.timers.forEach(clearInterval);
+    if (this.pipLater) clearTimeout(this.pipLater);
     this.faceWatch.stop();
     // Camera, mic and screen first: disconnecting from signaling can take a
     // moment, and the camera light shouldn't wait for it.
@@ -974,13 +978,29 @@ export class Room {
   /** Change the overlay's shape or hide / show it; same rule as moving it. */
   setPip(pip: Partial<PipStyle>) {
     if (!this.canSetStage()) return this.say('Only the Shōgun (director) can change the overlay while recording.');
+    if (this.pipLater) clearTimeout(this.pipLater), (this.pipLater = null);
     const next = { ...this.shared.pip.v, ...pip };
+    const corner = this.shared.corner.v;
+    if (next.shape === 'cutout' && cutoutCorner(corner) !== corner) {
+      // A cutout can't sit in a top corner: drop to the one below, then
+      // change shape once it's there (one move at a time, in the final cut too).
+      this.set('corner', cutoutCorner(corner));
+      if (!next.hidden) {
+        this.pipLater = setTimeout(() => {
+          this.pipLater = null;
+          this.setPip(pip);
+        }, PIP_MOVE_S * 1000);
+        return;
+      }
+    }
     if (next.shape !== this.shared.pip.v.shape || next.hidden !== this.shared.pip.v.hidden) this.set('pip', next);
   }
 
   /** Move the presenter's camera overlay; anyone before a take, only the director during one. */
   setCorner(c: Corner) {
     if (!this.canSetStage()) return this.say('Only the Shōgun (director) can move the overlay while recording.');
+    if (this.pipLater) clearTimeout(this.pipLater), (this.pipLater = null);
+    if (this.shared.pip.v.shape === 'cutout') c = cutoutCorner(c);
     if (this.shared.corner.v !== c) this.set('corner', c);
   }
 

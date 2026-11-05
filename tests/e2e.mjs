@@ -352,25 +352,38 @@ try {
   log(`ink faded on Sam's stage ${((Date.now() - lifted) / 1000).toFixed(1)} s after the pen lifted`);
   await sleep(1500);
   await react(cam, [dir, sam]);
-  // The director drags the camera overlay to the top-left corner.
-  const pip = await dir.locator('.pip').boundingBox();
-  const frame = await dir.locator('.stage-frame').boundingBox();
-  await dir.mouse.move(pip.x + pip.width / 2, pip.y + pip.height / 2);
-  await dir.mouse.down();
-  await dir.mouse.move(frame.x + frame.width * 0.4, frame.y + frame.height * 0.4, { steps: 8 });
-  await dir.screenshot({ path: 'test-results/pip-drag.png' });
-  await dir.mouse.move(frame.x + pip.width, frame.y + pip.height, { steps: 8 });
-  await dir.mouse.up();
+  // The director drags the camera overlay (a cutout) toward the top-left: a
+  // cutout stays on the bottom edge, so it lands bottom-left.
+  const dragPipToTop = async (side, shot) => {
+    const pip = await dir.locator('.pip').boundingBox();
+    const frame = await dir.locator('.stage-frame').boundingBox();
+    const right = side === 'right';
+    await dir.mouse.move(pip.x + pip.width / 2, pip.y + pip.height / 2);
+    await dir.mouse.down();
+    await dir.mouse.move(frame.x + frame.width * (right ? 0.6 : 0.4), frame.y + frame.height * 0.4, { steps: 8 });
+    if (shot) await dir.screenshot({ path: shot });
+    await dir.mouse.move(right ? frame.x + frame.width - pip.width : frame.x + pip.width, frame.y + pip.height, { steps: 8 });
+    await dir.mouse.up();
+  };
+  const pickShape = async (label) => {
+    const f = await dir.locator('.pip-face').boundingBox();
+    await dir.mouse.move(f.x + f.width / 2, f.y + f.height / 2);
+    await dir.getByRole('button', { name: `${label} overlay` }).click();
+  };
+  await dragPipToTop('left', 'test-results/pip-drag-cutout.png');
+  await sam.waitForSelector('.pip.c-bl.s-cutout', { timeout: 5000 });
+  log('cutout dragged toward the top-left stayed on the bottom edge: bottom-left (synced to a guest)');
+  // ...becomes a circle, from the hover menu...
+  await sleep(600);
+  await pickShape('Circle');
+  await sam.waitForSelector('.pip.s-circle', { timeout: 5000 });
+  log('overlay is a circle for a guest too');
+  // ...which can go to the top-left.
+  await sleep(1200);
+  await dragPipToTop('left', 'test-results/pip-drag.png');
   await sam.waitForSelector('.pip.c-tl', { timeout: 5000 });
   const cornerAt = Date.now();
   log('overlay moved to top-left (synced to a guest)');
-  // ...and becomes a circle, from the hover menu.
-  const face = await dir.locator('.pip-face').boundingBox();
-  await sleep(600);
-  await dir.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
-  await dir.getByRole('button', { name: 'Circle overlay' }).click();
-  await sam.waitForSelector('.pip.s-circle', { timeout: 5000 });
-  log('overlay is a circle for a guest too');
   // Hide it, then bring it back via a different corner (top-right).
   await sleep(1200);
   const face2 = await dir.locator('.pip-face').boundingBox();
@@ -386,6 +399,20 @@ try {
   await sleep(1500);
   await dir.screenshot({ path: 'test-results/stage-director.png' });
   await sam.screenshot({ path: 'test-results/stage-guest.png' });
+  // Choosing the cutout in a top corner drops it to the corner below first,
+  // then it becomes a cutout; then back to a circle at top-right.
+  const logFrom = await dir.evaluate(() => window.samurai.dm.stageLog.length);
+  await pickShape('Cutout');
+  await sam.waitForSelector('.pip.c-br.s-cutout', { timeout: 5000 });
+  const steps = await dir.evaluate((n) => window.samurai.dm.stageLog.slice(n).map((e) => `${e.corner}/${e.pip?.shape}`), logFrom);
+  log('cutout chosen at top-right: dropped to bottom-right, then became a cutout:', steps.join(' -> '));
+  await sleep(1200);
+  await pickShape('Circle');
+  await sam.waitForSelector('.pip.c-br.s-circle', { timeout: 5000 });
+  await sleep(1200);
+  await dragPipToTop('right');
+  await sam.waitForSelector('.pip.c-tr.s-circle', { timeout: 5000 });
+  log('...and back to a circle at top-right');
   await sleep(2500);
   await dir.locator('.tile', { hasText: 'Cam Only' }).click();
   // Cam Only turns their camera off for their whole segment.
@@ -651,8 +678,8 @@ async function checkOverlayAndCamOff(dir) {
   const hideEv = dm.stageLog.find((e) => e.pip?.hidden);
   const showEv = dm.stageLog.find((e) => hideEv && e.t > hideEv.t && e.pip && !e.pip.hidden);
   const at = (ev, dt) => ev.t / 1000 + dt - t0;
-  // Inside the rectangle, outside the circle: camera -> screen while it morphs.
-  log('shape morph at (40,186): ' + [0.02, 0.15, 0.3, 0.6].map((dt) => `+${dt}s ${dist(px(at(circleEv, dt), 40, 186))}`).join(', ') + '  (0 = camera, large = screen)');
+  // Inside the rectangle, outside the circle (at bottom-left, where it became one): camera -> screen while it morphs.
+  log('shape morph at (40,894): ' + [0.02, 0.15, 0.3, 0.6].map((dt) => `+${dt}s ${dist(px(at(circleEv, dt), 40, 894))}`).join(', ') + '  (0 = camera, large = screen)');
   // Circle centre while hiding: camera, then blended, then gone.
   log('hide fade at circle centre: ' + [0.02, 0.15, 0.3, 0.6].map((dt) => `+${dt}s ${dist(px(at(hideEv, dt), 120, 120))}`).join(', '));
   // Shown again at top-right: circle centre there is camera once it's grown in.
