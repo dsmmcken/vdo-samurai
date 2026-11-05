@@ -36,7 +36,7 @@ export type Stage = { kind: 'peer'; id: PeerId; view: 'cam' | 'screen' } | { kin
 export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
 /** The overlay's shape, and whether it's hidden (hiding keeps the last shape). */
-export type PipShape = 'rect' | 'square' | 'circle';
+export type PipShape = 'rect' | 'square' | 'circle' | 'cutout';
 export interface PipStyle {
   shape: PipShape;
   hidden: boolean;

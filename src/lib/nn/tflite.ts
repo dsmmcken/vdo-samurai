@@ -2,7 +2,7 @@
 // CNN needs: tensors, their weights, and the operator list. Field numbers
 // follow tensorflow/lite/schema/schema.fbs.
 
-export type Act = 'relu' | 'relu6' | null;
+export type Act = 'relu' | 'relu6' | 'hardswish' | null;
 
 export interface Tensor {
   name: string;
@@ -22,6 +22,11 @@ export interface Op {
   fw?: number;
   fh?: number;
   axis?: number;
+  /** RESIZE_BILINEAR's sampling grid. */
+  alignCorners?: boolean;
+  halfPixel?: boolean;
+  /** A custom op's raw options (for MediaPipe's, a C struct). */
+  custom?: Uint8Array | null;
 }
 
 export interface Model {
@@ -31,7 +36,9 @@ export interface Model {
   outputs: number[];
 }
 
-const OPS: Record<number, string> = { 0: 'ADD', 1: 'AVERAGE_POOL_2D', 2: 'CONCATENATION', 3: 'CONV_2D', 4: 'DEPTHWISE_CONV_2D', 6: 'DEQUANTIZE', 14: 'LOGISTIC', 17: 'MAX_POOL_2D', 19: 'RELU', 21: 'RELU6', 22: 'RESHAPE', 34: 'PAD' };
+const OPS: Record<number, string> = { 0: 'ADD', 1: 'AVERAGE_POOL_2D', 2: 'CONCATENATION', 3: 'CONV_2D', 4: 'DEPTHWISE_CONV_2D', 6: 'DEQUANTIZE', 14: 'LOGISTIC', 17: 'MAX_POOL_2D', 18: 'MUL', 19: 'RELU', 21: 'RELU6', 22: 'RESHAPE', 23: 'RESIZE_BILINEAR', 34: 'PAD', 117: 'HARD_SWISH' };
+const CUSTOM = 32;
+const OPS_BY_NAME = Object.fromEntries(Object.values(OPS).map((n) => [n, true]));
 const ACT: Record<number, Act> = { 0: null, 1: 'relu', 3: 'relu6' };
 
 class Table {
@@ -102,7 +109,10 @@ function half(h: number) {
 export function readTflite(buf: ArrayBuffer): Model {
   const v = new DataView(buf);
   const model = new Table(v, v.getUint32(0, true));
-  const codes = model.tables(1).map((c) => Math.max(c.u8(0), c.i32(3)));
+  const codes = model.tables(1).map((c) => {
+    const code = Math.max(c.u8(0), c.i32(3));
+    return code === CUSTOM ? c.str(1) : (OPS[code] ?? `op${code}`);
+  });
   const buffers = model.tables(4);
   const g = model.tables(2)[0];
   const tensors = g.tables(0).map((t): Tensor => {
@@ -119,15 +129,16 @@ export function readTflite(buf: ArrayBuffer): Model {
     return { name: t.str(3), shape: t.ints(0), type, data };
   });
   const ops = g.tables(3).map((o): Op => {
-    const code = codes[o.u32(0)];
-    const name = OPS[code] ?? `op${code}`;
+    const name = codes[o.u32(0)];
     const b = o.table(4);
     let opt: Partial<Op> = {};
-    if (b) {
+    if (!(name in OPS_BY_NAME)) opt = { custom: o.bytes(5) };
+    else if (b) {
       if (name === 'CONV_2D') opt = { same: b.u8(0) === 0, sw: b.i32(1), sh: b.i32(2), act: ACT[b.u8(3)] };
       else if (name === 'DEPTHWISE_CONV_2D') opt = { same: b.u8(0) === 0, sw: b.i32(1), sh: b.i32(2), act: ACT[b.u8(4)] };
       else if (name === 'MAX_POOL_2D' || name === 'AVERAGE_POOL_2D') opt = { same: b.u8(0) === 0, sw: b.i32(1), sh: b.i32(2), fw: b.i32(3), fh: b.i32(4), act: ACT[b.u8(5)] };
-      else if (name === 'ADD') opt = { act: ACT[b.u8(0)] };
+      else if (name === 'ADD' || name === 'MUL') opt = { act: ACT[b.u8(0)] };
+      else if (name === 'RESIZE_BILINEAR') opt = { alignCorners: !!b.u8(2), halfPixel: !!b.u8(3) };
       else if (name === 'CONCATENATION') opt = { axis: b.i32(0), act: ACT[b.u8(1)] };
     }
     return { name, inputs: o.ints(1), outputs: o.ints(2), ...opt };

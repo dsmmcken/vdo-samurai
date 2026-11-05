@@ -1,15 +1,31 @@
-;; SIMD inner loops for blazeface.ts. All pointers are byte offsets into the
-;; shared memory; tensors are NHWC float32. Build: npm run build:kernels
+;; SIMD inner loops for net.ts (face detection, background removal). All
+;; pointers are byte offsets into the shared memory; tensors are NHWC float32.
+;; Activations ($act): 0 none, 1 ReLU, 2 hard swish. Build: npm run build:kernels
 
 (module
   (import "env" "mem" (memory 1))
+
+  ;; hard swish: v * min(max(v + 3, 0), 6) / 6
+  (func $hswish (param $v v128) (result v128)
+    (f32x4.mul (local.get $v)
+      (f32x4.mul
+        (f32x4.min (f32x4.max (f32x4.add (local.get $v) (v128.const f32x4 3 3 3 3)) (v128.const f32x4 0 0 0 0)) (v128.const f32x4 6 6 6 6))
+        (v128.const f32x4 0.16666667 0.16666667 0.16666667 0.16666667))))
+  (func $act4 (param $v v128) (param $act i32) (result v128)
+    (if (result v128) (i32.eq (local.get $act) (i32.const 1))
+      (then (f32x4.max (local.get $v) (v128.const f32x4 0 0 0 0)))
+      (else (if (result v128) (i32.eq (local.get $act) (i32.const 2))
+        (then (call $hswish (local.get $v)))
+        (else (local.get $v))))))
+  (func $act1 (param $v f32) (param $act i32) (result f32)
+    (f32x4.extract_lane 0 (call $act4 (f32x4.splat (local.get $v)) (local.get $act))))
 
   ;; 1x1 convolution: y[p][o] = b[o] + sum_c x[p][c] * w[c][o]
   ;; w is transposed to [C][O4] (O rounded up to a multiple of 4) so four
   ;; outputs load as one vector, and two pixels share each weight load. A
   ;; final partial block stores only its valid lanes. Needs P even.
   (func (export "pointwise")
-    (param $x i32) (param $P i32) (param $C i32) (param $w i32) (param $O i32) (param $b i32) (param $y i32) (param $relu i32)
+    (param $x i32) (param $P i32) (param $C i32) (param $w i32) (param $O i32) (param $b i32) (param $y i32) (param $act i32)
     (local $p i32) (local $o i32) (local $c i32)
     (local $xa i32) (local $xb i32) (local $ya i32) (local $yb i32) (local $wp i32)
     (local $rowC i32) (local $rowO i32) (local $end i32) (local $wrow i32) (local $left i32)
@@ -44,10 +60,8 @@
                 (local.set $wp (i32.add (local.get $wp) (local.get $wrow)))
                 (local.set $c (i32.add (local.get $c) (i32.const 4)))
                 (br $cloop)))
-            (if (local.get $relu)
-              (then
-                (local.set $a (f32x4.max (local.get $a) (v128.const f32x4 0 0 0 0)))
-                (local.set $bb (f32x4.max (local.get $bb) (v128.const f32x4 0 0 0 0)))))
+            (local.set $a (call $act4 (local.get $a) (local.get $act)))
+            (local.set $bb (call $act4 (local.get $bb) (local.get $act)))
             (local.set $left (i32.sub (local.get $rowO) (local.get $o)))
             (if (i32.ge_u (local.get $left) (i32.const 16))
               (then
@@ -70,11 +84,11 @@
         (local.set $p (i32.add (local.get $p) (i32.const 2)))
         (br $ploop))))
 
-  ;; 3x3 depthwise convolution with TensorFlow "SAME" padding (pt/pl rows and
+  ;; K x K depthwise convolution with TensorFlow "SAME" padding (pt/pl rows and
   ;; columns before). Four channels per vector, scalar for any leftover.
   (func (export "depthwise")
     (param $x i32) (param $H i32) (param $W i32) (param $C i32) (param $w i32) (param $b i32)
-    (param $y i32) (param $OH i32) (param $OW i32) (param $s i32) (param $pt i32) (param $pl i32) (param $relu i32)
+    (param $y i32) (param $OH i32) (param $OW i32) (param $s i32) (param $pt i32) (param $pl i32) (param $act i32) (param $K i32)
     (local $oy i32) (local $ox i32) (local $ky i32) (local $kx i32) (local $iy i32) (local $ix i32)
     (local $c i32) (local $yo i32) (local $xo i32) (local $wo i32) (local $rowC i32) (local $vecEnd i32)
     (local.set $rowC (i32.shl (local.get $C) (i32.const 2)))
@@ -99,7 +113,7 @@
                     (local.set $xo (i32.add (local.get $x)
                       (i32.mul (i32.add (i32.mul (local.get $iy) (local.get $W)) (local.get $ix)) (local.get $rowC))))
                     (local.set $wo (i32.add (local.get $w)
-                      (i32.mul (i32.add (i32.mul (local.get $ky) (i32.const 3)) (local.get $kx)) (local.get $rowC))))
+                      (i32.mul (i32.add (i32.mul (local.get $ky) (local.get $K)) (local.get $kx)) (local.get $rowC))))
                     (local.set $c (i32.const 0))
                     (block $vd
                       (loop $vl
@@ -120,19 +134,26 @@
                         (local.set $c (i32.add (local.get $c) (i32.const 4)))
                         (br $sl)))))
                 (local.set $kx (i32.add (local.get $kx) (i32.const 1)))
-                (br_if $kxl (i32.lt_u (local.get $kx) (i32.const 3))))))
+                (br_if $kxl (i32.lt_u (local.get $kx) (local.get $K))))))
           (local.set $ky (i32.add (local.get $ky) (i32.const 1)))
-          (br_if $kyl (i32.lt_u (local.get $ky) (i32.const 3))))
-        (if (local.get $relu)
+          (br_if $kyl (i32.lt_u (local.get $ky) (local.get $K))))
+        (if (local.get $act)
           (then
             (local.set $c (i32.const 0))
             (block $rd
               (loop $rl
-                (br_if $rd (i32.ge_u (local.get $c) (local.get $rowC)))
+                (br_if $rd (i32.ge_u (local.get $c) (local.get $vecEnd)))
+                (v128.store (i32.add (local.get $yo) (local.get $c))
+                  (call $act4 (v128.load (i32.add (local.get $yo) (local.get $c))) (local.get $act)))
+                (local.set $c (i32.add (local.get $c) (i32.const 16)))
+                (br $rl)))
+            (block $rd1
+              (loop $rl1
+                (br_if $rd1 (i32.ge_u (local.get $c) (local.get $rowC)))
                 (f32.store (i32.add (local.get $yo) (local.get $c))
-                  (f32.max (f32.load (i32.add (local.get $yo) (local.get $c))) (f32.const 0)))
+                  (call $act1 (f32.load (i32.add (local.get $yo) (local.get $c))) (local.get $act)))
                 (local.set $c (i32.add (local.get $c) (i32.const 4)))
-                (br $rl)))))
+                (br $rl1)))))
         (local.set $ox (i32.add (local.get $ox) (i32.const 1)))
         (br_if $xl (i32.lt_u (local.get $ox) (local.get $OW))))
       (local.set $oy (i32.add (local.get $oy) (i32.const 1)))
@@ -244,4 +265,87 @@
         (v128.store (i32.add (local.get $y) (local.get $i)) (local.get $v))
         (local.set $i (i32.add (local.get $i) (i32.const 16)))
         (br $l))))
+
+  ;; Global average pool: y[c] = mean over P pixels of x[p][c]. C % 4 == 0.
+  (func (export "mean") (param $x i32) (param $P i32) (param $C i32) (param $y i32)
+    (local $p i32) (local $c i32) (local $rowC i32) (local $xo i32) (local $inv v128)
+    (local.set $rowC (i32.shl (local.get $C) (i32.const 2)))
+    (memory.fill (local.get $y) (i32.const 0) (local.get $rowC))
+    (local.set $xo (local.get $x))
+    (block $pd
+      (loop $pl
+        (br_if $pd (i32.ge_u (local.get $p) (local.get $P)))
+        (local.set $c (i32.const 0))
+        (block $cd
+          (loop $cl
+            (br_if $cd (i32.ge_u (local.get $c) (local.get $rowC)))
+            (v128.store (i32.add (local.get $y) (local.get $c))
+              (f32x4.add (v128.load (i32.add (local.get $y) (local.get $c))) (v128.load (i32.add (local.get $xo) (local.get $c)))))
+            (local.set $c (i32.add (local.get $c) (i32.const 16)))
+            (br $cl)))
+        (local.set $xo (i32.add (local.get $xo) (local.get $rowC)))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $pl)))
+    (local.set $inv (f32x4.splat (f32.div (f32.const 1) (f32.convert_i32_u (local.get $P)))))
+    (local.set $c (i32.const 0))
+    (block $nd
+      (loop $nl
+        (br_if $nd (i32.ge_u (local.get $c) (local.get $rowC)))
+        (v128.store (i32.add (local.get $y) (local.get $c))
+          (f32x4.mul (v128.load (i32.add (local.get $y) (local.get $c))) (local.get $inv)))
+        (local.set $c (i32.add (local.get $c) (i32.const 16)))
+        (br $nl))))
+
+  ;; Per-channel scale: y[p][c] = x[p][c] * s[c]. C % 4 == 0.
+  (func (export "scale") (param $x i32) (param $P i32) (param $C i32) (param $s i32) (param $y i32)
+    (local $c i32) (local $i i32) (local $end i32) (local $rowC i32)
+    (local.set $rowC (i32.shl (local.get $C) (i32.const 2)))
+    (local.set $end (i32.mul (local.get $P) (local.get $rowC)))
+    (block $d
+      (loop $l
+        (br_if $d (i32.ge_u (local.get $i) (local.get $end)))
+        (v128.store (i32.add (local.get $y) (local.get $i))
+          (f32x4.mul (v128.load (i32.add (local.get $x) (local.get $i))) (v128.load (i32.add (local.get $s) (local.get $c)))))
+        (local.set $i (i32.add (local.get $i) (i32.const 16)))
+        (local.set $c (i32.add (local.get $c) (i32.const 16)))
+        (if (i32.ge_u (local.get $c) (local.get $rowC)) (then (local.set $c (i32.const 0))))
+        (br $l))))
+
+  ;; Bilinear resize. $rows holds, per output row, the byte offsets of its two
+  ;; source rows and the weight of the second (i32, i32, f32); $cols the same
+  ;; per output column (offsets of source pixels within a row). C % 4 == 0.
+  (func (export "resize") (param $x i32) (param $C i32) (param $y i32) (param $OH i32) (param $OW i32) (param $rows i32) (param $cols i32)
+    (local $oy i32) (local $ox i32) (local $c i32) (local $rowC i32)
+    (local $r0 i32) (local $r1 i32) (local $c0 i32) (local $c1 i32) (local $fy v128) (local $fx v128)
+    (local $a v128) (local $b v128) (local $rp i32) (local $cp i32)
+    (local.set $rowC (i32.shl (local.get $C) (i32.const 2)))
+    (local.set $rp (local.get $rows))
+    (loop $yl
+      (local.set $r0 (i32.add (local.get $x) (i32.load (local.get $rp))))
+      (local.set $r1 (i32.add (local.get $x) (i32.load offset=4 (local.get $rp))))
+      (local.set $fy (f32x4.splat (f32.load offset=8 (local.get $rp))))
+      (local.set $cp (local.get $cols))
+      (local.set $ox (i32.const 0))
+      (loop $xl
+        (local.set $c0 (i32.load (local.get $cp)))
+        (local.set $c1 (i32.load offset=4 (local.get $cp)))
+        (local.set $fx (f32x4.splat (f32.load offset=8 (local.get $cp))))
+        (local.set $c (i32.const 0))
+        (block $cd
+          (loop $cl
+            (br_if $cd (i32.ge_u (local.get $c) (local.get $rowC)))
+            (local.set $a (v128.load (i32.add (i32.add (local.get $r0) (local.get $c0)) (local.get $c))))
+            (local.set $a (f32x4.add (local.get $a) (f32x4.mul (f32x4.sub (v128.load (i32.add (i32.add (local.get $r0) (local.get $c1)) (local.get $c))) (local.get $a)) (local.get $fx))))
+            (local.set $b (v128.load (i32.add (i32.add (local.get $r1) (local.get $c0)) (local.get $c))))
+            (local.set $b (f32x4.add (local.get $b) (f32x4.mul (f32x4.sub (v128.load (i32.add (i32.add (local.get $r1) (local.get $c1)) (local.get $c))) (local.get $b)) (local.get $fx))))
+            (v128.store (local.get $y) (f32x4.add (local.get $a) (f32x4.mul (f32x4.sub (local.get $b) (local.get $a)) (local.get $fy))))
+            (local.set $y (i32.add (local.get $y) (i32.const 16)))
+            (local.set $c (i32.add (local.get $c) (i32.const 16)))
+            (br $cl)))
+        (local.set $cp (i32.add (local.get $cp) (i32.const 12)))
+        (local.set $ox (i32.add (local.get $ox) (i32.const 1)))
+        (br_if $xl (i32.lt_u (local.get $ox) (local.get $OW))))
+      (local.set $rp (i32.add (local.get $rp) (i32.const 12)))
+      (local.set $oy (i32.add (local.get $oy) (i32.const 1)))
+      (br_if $yl (i32.lt_u (local.get $oy) (local.get $OH)))))
 )

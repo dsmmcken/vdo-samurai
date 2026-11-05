@@ -1,20 +1,17 @@
-// A tiny runner for Google's BlazeFace short-range face detector
-// (blaze_face_short_range.tflite, 230 KB, Apache-2.0). It implements just the
-// ops that model uses, with the inner loops in hand-written WebAssembly SIMD
-// (kernels.wat, 1.6 KB), plus the anchor decoding and weighted non-max
-// suppression MediaPipe applies to its outputs. Its output matches
+// Google's BlazeFace short-range face detector (blaze_face_short_range.tflite,
+// 230 KB, Apache-2.0) on our own tiny runner (nn/net.ts, with the inner loops
+// in hand-written WebAssembly SIMD), plus the anchor decoding and weighted
+// non-max suppression MediaPipe applies to its outputs. Its output matches
 // MediaPipe's FaceDetector (experiments/face-detect has the comparisons).
 //
 //   const det = await BlazeFace.load(modelUrl, kernelsUrl);
 //   det.detect(bitmap) // [{ x, y, w, h, score, keypoints }] in source pixels
 
-import { readTflite, type Model, type Tensor } from './tflite';
+import { Net, simdSupported } from '../nn/net';
 
 const SIZE = 128;
 
-// Smallest module using a SIMD instruction: validates only where SIMD works.
-const SIMD_TEST = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]);
-export const faceDetectionSupported = () => typeof WebAssembly === 'object' && WebAssembly.validate(SIMD_TEST) && typeof OffscreenCanvas !== 'undefined';
+export const faceDetectionSupported = () => simdSupported() && typeof OffscreenCanvas !== 'undefined';
 
 export interface Face {
   x: number;
@@ -33,187 +30,20 @@ export interface Region {
   h: number;
 }
 
-interface Kernels {
-  pointwise(x: number, P: number, C: number, w: number, O: number, b: number, y: number, relu: number): void;
-  depthwise(x: number, H: number, W: number, C: number, w: number, b: number, y: number, OH: number, OW: number, s: number, pt: number, pl: number, relu: number): void;
-  unfold(x: number, H: number, W: number, C: number, K: number, s: number, pt: number, pl: number, y: number, OH: number, OW: number): void;
-  maxpool2(x: number, H: number, W: number, C: number, y: number): void;
-  padChannels(x: number, P: number, C: number, OC: number, y: number): void;
-  add(x: number, z: number, y: number, n: number, relu: number): void;
-}
-
 export class BlazeFace {
   static async load(modelUrl: string, kernelsUrl: string) {
-    const [model, kernels] = await Promise.all([
-      fetch(modelUrl).then((r) => r.arrayBuffer()).then(readTflite),
-      fetch(kernelsUrl).then((r) => r.arrayBuffer()).then((b) => WebAssembly.compile(b)),
-    ]);
-    return new BlazeFace(model, kernels);
+    return new BlazeFace(await Net.load(modelUrl, kernelsUrl));
   }
 
-  private steps: (() => void)[] = [];
   private input: Float32Array;
   private scores: Float32Array;
   private boxes: Float32Array;
   private anchors = anchors();
   private ctx: OffscreenCanvasRenderingContext2D;
 
-  constructor(model: Model, kernels: WebAssembly.Module) {
-    const { tensors } = model;
-    const size = (t: Tensor) => t.shape.reduce((a, b) => a * b, 1);
-
-    // Simplify the graph: DEQUANTIZE (weights are already float) and RESHAPE
-    // just alias their input; a RELU that's the only reader of a conv's or
-    // add's output is folded into that op.
-    const alias = tensors.map((_, i) => i);
-    const readers = new Map<number, number>();
-    for (const op of model.ops) for (const i of op.inputs) readers.set(i, (readers.get(i) ?? 0) + 1);
-    const producer = new Map<number, (typeof model.ops)[number]>();
-    const plan: typeof model.ops = [];
-    for (const op of model.ops) {
-      const inputs = op.inputs.map((i) => alias[i]);
-      const from = producer.get(inputs[0]);
-      if (op.name === 'DEQUANTIZE' || op.name === 'RESHAPE') alias[op.outputs[0]] = inputs[0];
-      else if (op.name === 'RELU' && from && !from.act && readers.get(op.inputs[0]) === 1 && ['CONV_2D', 'DEPTHWISE_CONV_2D', 'ADD'].includes(from.name)) {
-        from.act = 'relu';
-        alias[op.outputs[0]] = inputs[0];
-      } else {
-        const step = { ...op, inputs };
-        plan.push(step);
-        producer.set(op.outputs[0], step);
-      }
-    }
-
-    // One block of WebAssembly memory (16-byte aligned slots). Weights, the
-    // input and the outputs keep their place; each intermediate result reuses
-    // the space of one that's no longer needed.
-    let top = 16;
-    const bytesOf = (n: number) => Math.ceil((n * 4) / 16) * 16;
-    const reserve = (n: number) => {
-      const at = top;
-      top += bytesOf(n);
-      return at;
-    };
-    const ptr = tensors.map(() => -1);
-    const fixed = new Set([...model.inputs, ...model.outputs.map((i) => alias[i])]);
-    tensors.forEach((t, i) => {
-      if (alias[i] === i && (t.data || fixed.has(i))) ptr[i] = reserve(size(t));
-    });
-    const lastUse = new Map<number, number>();
-    plan.forEach((op, s) => op.inputs.forEach((i) => lastUse.set(i, s)));
-    const free: { at: number; bytes: number }[] = [];
-    plan.forEach((op, s) => {
-      for (const o of op.outputs) {
-        if (ptr[o] >= 0) continue;
-        const need = bytesOf(size(tensors[o]));
-        const fit = free.filter((f) => f.bytes >= need).sort((a, b) => a.bytes - b.bytes)[0];
-        if (fit) {
-          free.splice(free.indexOf(fit), 1);
-          ptr[o] = fit.at;
-          if (fit.bytes > need) free.push({ at: fit.at + need, bytes: fit.bytes - need });
-        } else ptr[o] = reserve(size(tensors[o]));
-      }
-      for (const i of op.inputs)
-        if (lastUse.get(i) === s && !tensors[i].data && !fixed.has(i)) free.push({ at: ptr[i], bytes: bytesOf(size(tensors[i])) });
-    });
-    // Convs run as [K][O]-transposed weights; the 5x5 stem also unfolds its
-    // input patches ("im2col") so it can use the 1x1 kernel.
-    const convExtra = new Map<(typeof plan)[number], { wT: number; cols: number }>();
-    for (const op of plan) {
-      if (op.name !== 'CONV_2D') continue;
-      const [O, KH, KW, C] = tensors[op.inputs[1]].shape;
-      const [, OH, OW] = tensors[op.outputs[0]].shape;
-      const spatial = KH > 1 || KW > 1 || op.sw! > 1;
-      convExtra.set(op, { wT: reserve(KH * KW * C * Math.ceil(O / 4) * 4), cols: spatial ? reserve(OH * OW * KH * KW * C) : -1 });
-    }
-
-    const mem = new WebAssembly.Memory({ initial: Math.ceil((top + 64) / 65536) }); // +64: a bias vector may read past its end
-    const k = new WebAssembly.Instance(kernels, { env: { mem } }).exports as unknown as Kernels;
-    const P = ptr.map((_, i) => ptr[alias[i]]);
-    const view = (i: number) => new Float32Array(mem.buffer, P[i], size(tensors[i]));
-    tensors.forEach((t, i) => t.data && view(i).set(t.data));
-    for (const [op, e] of convExtra) {
-      const w = tensors[op.inputs[1]].data as Float32Array;
-      const O = tensors[op.inputs[1]].shape[0];
-      const K = w.length / O;
-      const O4 = Math.ceil(O / 4) * 4;
-      const wT = new Float32Array(mem.buffer, e.wT, K * O4);
-      for (let o = 0; o < O; o++) for (let i = 0; i < K; i++) wT[i * O4 + o] = w[o * K + i];
-    }
-
-    // Compile the plan into kernel calls.
-    const shape = (i: number) => tensors[i].shape;
-    const padBefore = (inSize: number, outSize: number, kk: number, s: number) => Math.floor(Math.max((outSize - 1) * s + kk - inSize, 0) / 2);
-    const fail = (op: (typeof plan)[number]) => new Error(`BlazeFace: unsupported ${op.name}`);
-    for (const op of plan) {
-      const [a, b, c] = op.inputs;
-      const out = op.outputs[0];
-      const relu = op.act === 'relu' ? 1 : op.act ? -1 : 0;
-      if (relu < 0) throw fail(op);
-      const [, H, W, C] = shape(a);
-      const [, OH, OW, OC] = shape(out);
-      switch (op.name) {
-        case 'CONV_2D': {
-          const [O, KH, KW] = shape(b);
-          const e = convExtra.get(op)!;
-          if ((OH * OW) % 2) throw fail(op);
-          if (e.cols < 0) this.steps.push(() => k.pointwise(P[a], H * W, C, e.wT, O, P[c], P[out], relu));
-          else {
-            if (KH !== KW || op.sh !== op.sw) throw fail(op);
-            const pt = op.same ? padBefore(H, OH, KH, op.sh!) : 0;
-            const pl = op.same ? padBefore(W, OW, KW, op.sw!) : 0;
-            this.steps.push(() => {
-              k.unfold(P[a], H, W, C, KH, op.sh!, pt, pl, e.cols, OH, OW);
-              k.pointwise(e.cols, OH * OW, KH * KW * C, e.wT, O, P[c], P[out], relu);
-            });
-          }
-          break;
-        }
-        case 'DEPTHWISE_CONV_2D': {
-          const [, KH, KW] = shape(b);
-          if (KH !== 3 || KW !== 3 || op.sh !== op.sw) throw fail(op);
-          const pt = op.same ? padBefore(H, OH, 3, op.sh!) : 0;
-          const pl = op.same ? padBefore(W, OW, 3, op.sw!) : 0;
-          this.steps.push(() => k.depthwise(P[a], H, W, C, P[b], P[c], P[out], OH, OW, op.sh!, pt, pl, relu));
-          break;
-        }
-        case 'MAX_POOL_2D':
-          if (op.fw !== 2 || op.fh !== 2 || op.sw !== 2 || op.sh !== 2 || H % 2 || W % 2) throw fail(op);
-          this.steps.push(() => k.maxpool2(P[a], H, W, C, P[out]));
-          break;
-        case 'PAD': {
-          // BlazeFace only appends channels.
-          const pads = tensors[b].data as Int32Array;
-          if (pads.slice(0, 7).some((p) => p !== 0)) throw fail(op);
-          this.steps.push(() => k.padChannels(P[a], H * W, C, OC, P[out]));
-          break;
-        }
-        case 'ADD': {
-          const n = size(tensors[out]);
-          if (n % 4) throw fail(op);
-          this.steps.push(() => k.add(P[a], P[b], P[out], n, relu));
-          break;
-        }
-        case 'CONCATENATION': {
-          // [1, N, K] along axis 1: a plain append.
-          if (op.axis !== 1) throw fail(op);
-          const parts = op.inputs.map((i) => [P[i], size(tensors[i])] as const);
-          this.steps.push(() => {
-            const f = new Float32Array(mem.buffer);
-            let o = P[out] / 4;
-            for (const [p, n] of parts) {
-              f.copyWithin(o, p / 4, p / 4 + n);
-              o += n;
-            }
-          });
-          break;
-        }
-        default:
-          throw fail(op);
-      }
-    }
-    this.input = view(model.inputs[0]);
-    [this.boxes, this.scores] = model.outputs.map((i) => view(alias[i]));
+  constructor(private net: Net) {
+    this.input = net.inputs[0];
+    [this.boxes, this.scores] = net.outputs;
     this.ctx = new OffscreenCanvas(SIZE, SIZE).getContext('2d', { willReadFrequently: true })!;
   }
 
@@ -238,7 +68,7 @@ export class BlazeFace {
       input[i * 3 + 1] = px[j + 1] / 127.5 - 1;
       input[i * 3 + 2] = px[j + 2] / 127.5 - 1;
     }
-    for (const step of this.steps) step();
+    this.net.run();
 
     const cands: Cand[] = [];
     for (let i = 0; i < this.anchors.length; i++) {

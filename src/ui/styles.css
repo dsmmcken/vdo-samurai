@@ -518,9 +518,11 @@ button.chip:hover {
   text-align: center;
   text-wrap: balance;
 }
-/* Same overlay as the final cut: a 32px inset from the chosen corner, in
-   units of the stage width. Shapes (render px of 1920): rectangle 156x195,
-   square 176x176, circle 184x184. Position, size and shape always animate, so
+/* Same overlay as the final cut (lib/overlay.ts): a 32px inset from the
+   chosen corner, in units of the stage width (a cutout sits on the bottom
+   edge and against the side instead, its body running off the picture).
+   Shapes (render px of 1920): rectangle 156x195, square 176x176, circle
+   184x184, cutout 324x360. Position, size and shape always animate, so
    everyone sees the same glide / morph; html.resizing switches that off while
    the window is being resized, so it stays pinned instead. */
 .s-rect {
@@ -537,6 +539,13 @@ button.chip:hover {
   --w: 9.583cqw;
   --h: 9.583cqw;
   --r: 4.792cqw;
+}
+.s-cutout {
+  --w: 16.875cqw;
+  --h: 18.75cqw;
+  --r: 0px;
+  --ms: 0px;
+  --mb: 0px;
 }
 .pip {
   --m: 1.667cqw;
@@ -578,24 +587,28 @@ button.chip:hover {
   pointer-events: none;
 }
 .pip.c-tl,
-.pip-zone.c-tl {
-  left: var(--m);
+.pip-zone.c-tl,
+.pip-cut.c-tl {
+  left: var(--ms, var(--m));
   top: var(--m);
 }
 .pip.c-tr,
-.pip-zone.c-tr {
-  left: calc(100cqw - var(--w) - var(--m));
+.pip-zone.c-tr,
+.pip-cut.c-tr {
+  left: calc(100cqw - var(--w) - var(--ms, var(--m)));
   top: var(--m);
 }
 .pip.c-bl,
-.pip-zone.c-bl {
-  left: var(--m);
-  top: calc(56.25cqw - var(--h) - var(--m));
+.pip-zone.c-bl,
+.pip-cut.c-bl {
+  left: var(--ms, var(--m));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip.c-br,
-.pip-zone.c-br {
-  left: calc(100cqw - var(--w) - var(--m));
-  top: calc(56.25cqw - var(--h) - var(--m));
+.pip-zone.c-br,
+.pip-cut.c-br {
+  left: calc(100cqw - var(--w) - var(--ms, var(--m)));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip.movable .pip-face {
   cursor: grab;
@@ -609,11 +622,72 @@ button.chip:hover {
   box-shadow: 0 1.2cqw 3.5cqw rgba(0, 0, 0, 0.6);
 }
 html.resizing .pip,
-html.resizing .pip-face {
+html.resizing .pip-face,
+html.resizing .pip-cut {
   transition: none !important;
 }
+/* Cutout: just the person, no box. Its canvas (drawn by a worker, see
+   cutout-view.ts) sits under the overlay's frame and moves exactly like it;
+   the frame is see-through. The shadow follows the person's outline. */
+.pip-face.cut,
+.pip.dragging .pip-face.cut {
+  background: none;
+  box-shadow: none;
+}
+.pip-cut {
+  --m: 1.667cqw;
+  position: absolute;
+  width: var(--w);
+  height: var(--h);
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    left 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    top 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pip-cut.on {
+  opacity: 1;
+}
+/* Where it can't be cut out (no WebGL2 in workers, say): a plain box. */
+.pip.s-cutout .pip-face:not(.cut) {
+  border-radius: 1.15cqw;
+}
+.pip-cut.fade {
+  transition:
+    left 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    top 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.3s;
+}
+.pip-cut.dragging {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: scale(1.06);
+}
+.pip-cut.hidden {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s;
+  transform: scale(0.4);
+  opacity: 0;
+}
+.pip-cut canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 calc(0.6cqw - 0.2cqw * var(--c, 1)) calc(2.2cqw - 1cqw * var(--c, 1)) rgba(0, 0, 0, 0.5));
+}
+/* While the canvas plays a morph, the box steps aside; at the end it's back
+   at once, over the canvas's matching last frame. */
+.pip-face.morphing {
+  opacity: 0;
+  transition: none;
+}
+.pip-face.reveal {
+  transition: none;
+}
 
-/* Hover menu: icons pop out in an arc from the overlay's inner corner. */
+/* Hover menu: icons pop out in an arc from the overlay's inner corner (or,
+   over a cutout, up from the top of the head). */
 .pip-actions {
   position: absolute;
   inset: 0;
@@ -637,7 +711,8 @@ html.resizing .pip-face {
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(0.3);
+  /* Tucked in at the pop-out's start: the inner corner, or a cutout's head. */
+  transform: translate(-50%, -50%) translate(var(--sx, 0px), var(--sy, 0px)) scale(0.3);
   transition:
     transform 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--i) * 30ms),
     opacity 0.16s calc(var(--i) * 30ms),
@@ -647,6 +722,14 @@ html.resizing .pip-face {
   opacity: 1;
   pointer-events: auto;
   transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1);
+}
+/* Once out, a shape change slides them to their new places, in step with
+   the overlay's own morph (arc to arc, or into a level row over a cutout). */
+.pip.menu.settled .pip-act {
+  transition:
+    transform 0.4s cubic-bezier(0.65, 0, 0.35, 1) calc(var(--i) * 15ms),
+    opacity 0.16s,
+    color 0.12s;
 }
 /* Hover grows the glyph from its own centre. It's kept off the button's
    transform, which carries the pop-out from the overlay's corner: changing
@@ -711,20 +794,20 @@ html.resizing .pip-face {
   z-index: 3;
 }
 .pip-spot.c-tl {
-  left: var(--m);
+  left: var(--ms, var(--m));
   top: var(--m);
 }
 .pip-spot.c-tr {
-  left: calc(100cqw - var(--w) - var(--m));
+  left: calc(100cqw - var(--w) - var(--ms, var(--m)));
   top: var(--m);
 }
 .pip-spot.c-bl {
-  left: var(--m);
-  top: calc(56.25cqw - var(--h) - var(--m));
+  left: var(--ms, var(--m));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip-spot.c-br {
-  left: calc(100cqw - var(--w) - var(--m));
-  top: calc(56.25cqw - var(--h) - var(--m));
+  left: calc(100cqw - var(--w) - var(--ms, var(--m)));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip-spot:hover .pip-unhide,
 .pip-unhide:focus-visible {
