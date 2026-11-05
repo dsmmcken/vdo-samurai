@@ -57,9 +57,13 @@ function hugPoints(corner: Corner, w: number, h: number, r: number, n: number): 
  */
 function rowPoints(corner: Corner, w: number, h: number, n: number, headX: number, headTop: number): Pt[] {
   const dir = corner.endsWith('r') ? 1 : -1;
-  const cx = Math.min(w - STEP, Math.max(STEP, w * headX));
-  const y = h * headTop - GAP;
-  return Array.from({ length: n }, (_, i) => [cx + dir * (i - (n - 1) / 2) * STEP, y] as Pt);
+  const [cx, top] = headPoint(w, h, headX, headTop);
+  return Array.from({ length: n }, (_, i) => [cx + dir * (i - (n - 1) / 2) * STEP, top - GAP] as Pt);
+}
+
+/** The top of the cutout's head, centred under its icon row: where those icons pop out from. */
+function headPoint(w: number, h: number, headX: number, headTop: number): Pt {
+  return [Math.min(w - STEP, Math.max(STEP, w * headX)), h * headTop];
 }
 
 type Pt = [number, number];
@@ -99,9 +103,9 @@ const corners = (r: DOMRect, pad = 0): Pt[] => [
  * - Drag it toward any corner: drop zones appear, the nearest lights up, and on
  *   release it glides there for everyone (and in the final cut).
  * - Hover it: cutout / circle / square / rectangle / hide pop out in an arc
- *   from its inner corner, hugging the shape; over a cutout they line up
- *   above the head. A hidden overlay shows an unhide button when you hover
- *   its corner.
+ *   from its inner corner, hugging the shape; over a cutout they pop up from
+ *   the top of the head into a row above it. A hidden overlay shows an unhide
+ *   button when you hover its corner.
  * - The cutout is just the person, background removed, drawn by its own
  *   worker into a canvas under the overlay (cutout-view.ts), which also plays
  *   the morph to and from the boxes.
@@ -207,15 +211,17 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
     return () => clearTimeout(t);
   }, [menu]);
 
-  // Icons start at the inner corner of the box (facing the stage centre) and
-  // pop out to points hugging the current shape. They're placed from that
-  // corner, which follows the frame as it glides to a new shape's size.
+  // Icons are placed from the inner corner of the box (facing the stage
+  // centre), which follows the frame as it glides to a new shape's size, and
+  // pop out to points hugging the current shape. For a box they start at that
+  // corner; for a cutout, from the top of the head, under their row.
   const d = PIP_DIMS[shape];
   const [w, h, r] = [d.w * scale, d.h * scale, d.r * scale];
   const ox = s.corner.endsWith('r') ? 0 : w;
   const oy = s.corner.startsWith('b') ? 0 : h;
   const n = SHAPES.length + 1;
   const points = shape === 'cutout' ? rowPoints(s.corner, w, h, n, cut.headX, cut.headTop) : hugPoints(s.corner, w, h, r, n);
+  const [sx, sy] = shape === 'cutout' ? headPoint(w, h, cut.headX, cut.headTop) : [ox, oy];
 
   return (
     <>
@@ -241,7 +247,7 @@ export function Pip({ room, s, stream, mirror, off, head, name }: { room: Room; 
                 <button
                   key={a.label}
                   className={`pip-act ${a.kind === 'shape' && a.shape === s.pip.shape ? 'on' : ''}`}
-                  style={{ '--dx': `${px - ox}px`, '--dy': `${py - oy}px`, '--i': i } as React.CSSProperties}
+                  style={{ '--dx': `${px - ox}px`, '--dy': `${py - oy}px`, '--sx': `${sx - ox}px`, '--sy': `${sy - oy}px`, '--i': i } as React.CSSProperties}
                   onClick={() => {
                     if (a.kind === 'hide') {
                       room.setPip({ hidden: true });
