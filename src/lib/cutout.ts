@@ -1,10 +1,11 @@
 // Background removal for the presenter's camera overlay, entirely on the GPU.
 //
-// MediaPipe's selfie segmenter runs in this canvas's own WebGL2 context, so its
-// person mask comes back as a texture we can sample directly: no readback. A
-// shader blends it with the last frame's (less flicker), and another draws the
-// camera through it, cropped like any framed view, fading out at the bottom
-// where the body is cut off. Used by the live overlay and by the final cut.
+// The framed crop is drawn at the overlay's size (a GPU blit) and segmented on
+// its own, so the model's 256x256 input covers just the person. MediaPipe runs
+// in this canvas's own WebGL2 context, so its mask comes back as a texture: no
+// readback. A shader blends it with the last frame's (less flicker); another
+// snaps its edge to edges in the picture (a joint bilateral filter, as video
+// call backgrounds do) and cuts it with a one-pixel anti-aliased edge.
 import type { ImageSegmenter } from "@mediapipe/tasks-vision";
 import loaderUrl from "@mediapipe/tasks-vision/vision_wasm_module_internal.js?url";
 import wasmUrl from "@mediapipe/tasks-vision/vision_wasm_module_internal.wasm?url";
@@ -15,8 +16,8 @@ export const CUTOUT_FILL = 0.4;
 
 /** Share of the last mask kept each frame. */
 const KEEP = 0.4;
-/** Masks are stored at most this wide; sampled with linear filtering, so edges stay soft. */
-const MASK_MAX_W = 640;
+/** The model's input size: one of its pixels spans this many of ours, at most. */
+const MODEL_PX = 256;
 
 export interface Crop {
   x: number;
@@ -65,7 +66,7 @@ in vec2 p;
 out vec2 uv;
 void main() { uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }`;
 
-// Mask rows run top-down, like the camera texture (and MediaPipe's mask).
+// Mask rows run top-down, like the picture (and MediaPipe's mask).
 const MASK_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uConf;
@@ -77,20 +78,38 @@ void main() {
   o = vec4(mix(texture(uConf, uv).r, texture(uPrev, uv).r, uKeep), 0.0, 0.0, 1.0);
 }`;
 
+// Each mask sample is weighted by distance and by how close its colour is to
+// this pixel's, so the edge follows the picture rather than the coarse mask.
 const DRAW_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uVideo;
+uniform sampler2D uColor;
 uniform sampler2D uMask;
-uniform vec4 uCrop;
+uniform vec2 uSize;
+uniform float uStep;
 uniform float uMirror;
 in vec2 uv;
 out vec4 o;
 void main() {
   vec2 b = vec2(uv.x, 1.0 - uv.y);
-  vec2 s = uCrop.xy + vec2(uMirror > 0.5 ? 1.0 - b.x : b.x, b.y) * uCrop.zw;
-  float a = smoothstep(0.3, 0.7, texture(uMask, s).r);
-  a *= smoothstep(0.0, 0.18, 1.0 - b.y) * smoothstep(0.0, 0.04, min(b.y, min(b.x, 1.0 - b.x)));
-  o = vec4(texture(uVideo, s).rgb * a, a);
+  vec2 s = vec2(uMirror > 0.5 ? 1.0 - b.x : b.x, b.y);
+  vec3 c0 = texture(uColor, s).rgb;
+  vec2 px = uStep / uSize;
+  float sum = 0.0;
+  float wsum = 0.0;
+  for (int j = -3; j <= 3; j++) {
+    for (int i = -3; i <= 3; i++) {
+      vec2 q = s + vec2(float(i), float(j)) * px;
+      vec3 d = texture(uColor, q).rgb - c0;
+      float w = exp(-float(i * i + j * j) / 8.0 - dot(d, d) * 60.0);
+      sum += w * texture(uMask, q).r;
+      wsum += w;
+    }
+  }
+  float m = sum / wsum;
+  float e = clamp(fwidth(m), 0.01, 0.25);
+  float a = smoothstep(0.6 - e, 0.6 + e, m);
+  a *= clamp(min(min(b.x, 1.0 - b.x) * uSize.x, min(b.y, 1.0 - b.y) * uSize.y) + 0.5, 0.0, 1.0);
+  o = vec4(c0 * a, a);
 }`;
 
 interface Target {
@@ -113,7 +132,9 @@ export class Cutout {
   private vao: WebGLVertexArrayObject;
   private maskProg: WebGLProgram;
   private drawProg: WebGLProgram;
-  private video: WebGLTexture;
+  private color: WebGLTexture;
+  private input: OffscreenCanvas;
+  private inputCtx: OffscreenCanvasRenderingContext2D;
   private masks: [Target, Target] | null = null;
   private closed = false;
 
@@ -143,7 +164,9 @@ export class Cutout {
     );
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    this.video = texture(gl);
+    this.color = texture(gl);
+    this.input = new OffscreenCanvas(1, 1);
+    this.inputCtx = this.input.getContext("2d", { alpha: false })!;
     this.ready = loadSegmenter(canvas).then((seg) => {
       if (this.closed) seg.close();
       else this.seg = seg;
@@ -164,10 +187,17 @@ export class Cutout {
     mirror = false,
   ): boolean {
     const gl = this.gl;
+    // The framed picture at the overlay's size: what we segment, and what we show.
+    if (this.input.width !== w || this.input.height !== h) {
+      this.input.width = w;
+      this.input.height = h;
+    }
+    this.inputCtx.imageSmoothingQuality = "high";
+    this.inputCtx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
     if (this.seg) {
       this.clock = Math.max(this.clock + 1, Math.round(at));
       try {
-        this.seg.segmentForVideo(src, this.clock, (r) => {
+        this.seg.segmentForVideo(this.input, this.clock, (r) => {
           const conf = r.confidenceMasks?.[0];
           if (conf)
             this.absorb(conf.getAsWebGLTexture(), conf.width, conf.height);
@@ -187,27 +217,28 @@ export class Cutout {
     const mask = this.masks?.[0];
     if (!mask) return false;
 
-    const [vw, vh] =
-      "videoWidth" in src
-        ? [src.videoWidth, src.videoHeight]
-        : [src.displayWidth, src.displayHeight];
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.video);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.bindTexture(gl.TEXTURE_2D, this.color);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      this.input,
+    );
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, mask.tex);
     const p = this.drawProg;
     gl.useProgram(p);
-    gl.uniform1i(gl.getUniformLocation(p, "uVideo"), 0);
+    gl.uniform1i(gl.getUniformLocation(p, "uColor"), 0);
     gl.uniform1i(gl.getUniformLocation(p, "uMask"), 1);
-    gl.uniform1f(gl.getUniformLocation(p, "uMirror"), mirror ? 1 : 0);
-    gl.uniform4f(
-      gl.getUniformLocation(p, "uCrop"),
-      crop.x / vw,
-      crop.y / vh,
-      crop.w / vw,
-      crop.h / vh,
+    gl.uniform2f(gl.getUniformLocation(p, "uSize"), w, h);
+    gl.uniform1f(
+      gl.getUniformLocation(p, "uStep"),
+      Math.max(1, Math.max(w, h) / MODEL_PX),
     );
+    gl.uniform1f(gl.getUniformLocation(p, "uMirror"), mirror ? 1 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return true;
   }
@@ -220,11 +251,8 @@ export class Cutout {
   }
 
   /** Folds the model's confidence (valid only during its callback) into our smoothed mask. */
-  private absorb(conf: WebGLTexture, cw: number, ch: number) {
+  private absorb(conf: WebGLTexture, w: number, h: number) {
     const gl = this.gl;
-    const k = Math.max(1, cw / MASK_MAX_W);
-    const w = Math.round(cw / k);
-    const h = Math.round(ch / k);
     if (!this.masks || this.masks[0].w !== w || this.masks[0].h !== h) {
       for (const m of this.masks ?? []) {
         gl.deleteTexture(m.tex);

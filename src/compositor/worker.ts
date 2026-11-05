@@ -21,15 +21,35 @@ import {
   canEncodeAudio,
   canEncodeVideo,
   type VideoSample,
-} from 'mediabunny';
-import type { Corner, DirectorManifest, PeerId, PipShape, PipStyle, Profile, RecFile } from '../lib/types';
-import { cropFor, glide, type Head } from '../lib/framing';
-import { CUTOUT_FILL, Cutout } from '../lib/cutout';
-import { drawInk, fitContain, type InkStroke } from '../lib/ink';
-import { drawReactions, lottieUrl, type Reaction, type Sprite } from '../lib/reactions';
-import { audible, gridFor, lowerThirds, segments, videoStart, type Segment } from './plan';
-import { LoudnessMeter } from './loudness';
-import { Limiter, VoiceChain } from './voice';
+} from "mediabunny";
+import type {
+  Corner,
+  DirectorManifest,
+  PeerId,
+  PipShape,
+  PipStyle,
+  Profile,
+  RecFile,
+} from "../lib/types";
+import { cropFor, glide, type Head } from "../lib/framing";
+import { CUTOUT_FILL, Cutout } from "../lib/cutout";
+import { drawInk, fitContain, type InkStroke } from "../lib/ink";
+import {
+  drawReactions,
+  lottieUrl,
+  type Reaction,
+  type Sprite,
+} from "../lib/reactions";
+import {
+  audible,
+  gridFor,
+  lowerThirds,
+  segments,
+  videoStart,
+  type Segment,
+} from "./plan";
+import { LoudnessMeter } from "./loudness";
+import { Limiter, VoiceChain } from "./voice";
 
 const W = 1920;
 const H = 1080;
@@ -40,8 +60,8 @@ const FPS = 30;
 const VIDEO_BITRATE = 12_000_000;
 const RATE = 48000;
 const AUDIO_BLOCK = RATE / 2; // mix half a second at a time
-const BG = '#0d0d12';
-const LOWER_THIRD = '#0625c0';
+const BG = "#0d0d12";
+const LOWER_THIRD = "#0625c0";
 
 // Presenter overlay while a screen is on stage: a portrait rounded rectangle,
 // the same distance from the right and bottom edges.
@@ -70,7 +90,7 @@ self.onmessage = async (e: MessageEvent<{ manifest: DirectorManifest }>) => {
     await render(e.data.manifest);
   } catch (err) {
     console.error(err);
-    post({ t: 'error', error: String((err as Error)?.message ?? err) });
+    post({ t: "error", error: String((err as Error)?.message ?? err) });
   }
 };
 
@@ -80,7 +100,7 @@ interface Source {
   start: number; // take seconds of the file's time zero
   end: number;
   video: VideoSampleSink | null;
-  audio: Awaited<ReturnType<Input['getPrimaryAudioTrack']>>;
+  audio: Awaited<ReturnType<Input["getPrimaryAudioTrack"]>>;
 }
 
 /**
@@ -91,14 +111,25 @@ interface Source {
  * AAC first, since it plays everywhere (editors, QuickTime); Opus only where
  * there's no AAC encoder at all (Linux).
  */
-async function pickAudio(): Promise<{ codec: 'aac' | 'opus'; bitrate: number }> {
+async function pickAudio(): Promise<{
+  codec: "aac" | "opus";
+  bitrate: number;
+}> {
   for (const bitrate of [192_000, 160_000, 128_000])
-    if (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: RATE, bitrate })) return { codec: 'aac', bitrate };
-  return { codec: 'opus', bitrate: 192_000 };
+    if (
+      await canEncodeAudio("aac", {
+        numberOfChannels: 2,
+        sampleRate: RATE,
+        bitrate,
+      })
+    )
+      return { codec: "aac", bitrate };
+  return { codec: "opus", bitrate: 192_000 };
 }
 
 async function render(m: DirectorManifest) {
-  if (!(await canEncodeVideo('avc', { width: W, height: H }))) throw new Error('This browser cannot encode H.264 video.');
+  if (!(await canEncodeVideo("avc", { width: W, height: H })))
+    throw new Error("This browser cannot encode H.264 video.");
   const dir = await openTakeDir(m.take.id);
   const duration = ((m.take.stopAt ?? m.take.startAt) - m.take.startAt) / 1000;
   const segs = segments(m);
@@ -108,19 +139,36 @@ async function render(m: DirectorManifest) {
   for (const f of Object.values(m.files)) {
     if (!f.done || !f.size) continue;
     const blob = await (await dir.getFileHandle(f.name)).getFile();
-    const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) });
+    const input = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(blob),
+    });
     const vt = await input.getPrimaryVideoTrack();
-    const at = f.kind === 'cam' ? await input.getPrimaryAudioTrack() : null;
+    const at = f.kind === "cam" ? await input.getPrimaryAudioTrack() : null;
     // File timestamps count from the file's time zero, which sits at f.offset on the take timeline.
     const len = await input.computeDuration();
     // Safety net: a camera file whose audio stops well before its video means
     // the recorder lost the mic; say so instead of rendering silence quietly.
     if (at && vt) {
-      const [aEnd, vEnd] = await Promise.all([at.computeDuration(), vt.computeDuration()]);
-      if (aEnd < vEnd - 1.5) post({ t: 'warn', message: `${m.profiles[f.peer]?.name || 'Guest'}: audio stops ${Math.round(vEnd - aEnd)} s before the video` });
+      const [aEnd, vEnd] = await Promise.all([
+        at.computeDuration(),
+        vt.computeDuration(),
+      ]);
+      if (aEnd < vEnd - 1.5)
+        post({
+          t: "warn",
+          message: `${m.profiles[f.peer]?.name || "Guest"}: audio stops ${Math.round(vEnd - aEnd)} s before the video`,
+        });
     }
     const start = f.offset / 1000;
-    sources.push({ file: f, input, start, end: start + len, video: vt ? new VideoSampleSink(vt) : null, audio: at });
+    sources.push({
+      file: f,
+      input,
+      start,
+      end: start + len,
+      video: vt ? new VideoSampleSink(vt) : null,
+      audio: at,
+    });
   }
   const camPeers = orderedCamPeers(m, sources);
   // The output's time zero is take time t0.
@@ -130,24 +178,42 @@ async function render(m: DirectorManifest) {
   const { reactions, sprite } = await readReactions(dir);
 
   // Output.
-  const fh = await dir.getFileHandle('final.mp4', { create: true });
+  const fh = await dir.getFileHandle("final.mp4", { create: true });
   const writable = await fh.createWritable();
   // YouTube's upload spec (support.google.com/youtube/answer/1722171): the
   // index (moov) at the front, "fast start". Streaming to disk, that means
   // reserving room for it up front, sized from the packet counts we know now.
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'reserve' }), target: new StreamTarget(writable as any) });
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: "reserve" }),
+    target: new StreamTarget(writable as any),
+  });
   const span = Math.max(1, duration - t0) + 2;
   const spare = (n: number) => Math.ceil(n * 1.33) + 64; // the library's advice: about a third spare
   const canvas = new OffscreenCanvas(W, H);
-  const ctx = canvas.getContext('2d')!;
-  const video = new CanvasSource(canvas, { codec: 'avc', bitrate: VIDEO_BITRATE, keyFrameInterval: 2 });
-  output.addVideoTrack(video, { frameRate: FPS, maximumPacketCount: spare(span * FPS) });
+  const ctx = canvas.getContext("2d")!;
+  const video = new CanvasSource(canvas, {
+    codec: "avc",
+    bitrate: VIDEO_BITRATE,
+    keyFrameInterval: 2,
+  });
+  output.addVideoTrack(video, {
+    frameRate: FPS,
+    maximumPacketCount: spare(span * FPS),
+  });
   const audioSources = sources.filter((s) => s.audio);
   const { codec: audioCodec, bitrate: audioBitrate } = await pickAudio();
-  const audio = audioSources.length ? new AudioSampleSource({ codec: audioCodec, bitrate: audioBitrate }) : null;
-  post({ t: 'info', message: `final cut: H.264 ${VIDEO_BITRATE / 1e6} Mbps${audio ? `, ${audioCodec.toUpperCase()} ${audioBitrate / 1000} kbps stereo` : ', no audio'}` });
+  const audio = audioSources.length
+    ? new AudioSampleSource({ codec: audioCodec, bitrate: audioBitrate })
+    : null;
+  post({
+    t: "info",
+    message: `final cut: H.264 ${VIDEO_BITRATE / 1e6} Mbps${audio ? `, ${audioCodec.toUpperCase()} ${audioBitrate / 1000} kbps stereo` : ", no audio"}`,
+  });
   // Packets of 1024 (AAC) or 960 (Opus) samples: count the smaller.
-  if (audio) output.addAudioTrack(audio, { maximumPacketCount: spare((span * RATE) / 960) });
+  if (audio)
+    output.addAudioTrack(audio, {
+      maximumPacketCount: spare((span * RATE) / 960),
+    });
   await output.start();
 
   const cursors = new Map<string, VideoCursor>();
@@ -157,10 +223,17 @@ async function render(m: DirectorManifest) {
     return c;
   };
   // A file that starts a moment late holds its first frame rather than leaving a gap.
-  const sourceAt = (peer: PeerId, kind: 'cam' | 'screen', t: number) =>
-    sources.find((s) => s.video && s.file.peer === peer && s.file.kind === kind && t >= s.start - 1 && t < s.end) ?? null;
-  const frameAt = async (peer: PeerId, kind: 'cam' | 'screen', t: number) => {
-    if (kind === 'cam' && camOff(peer, t)) return null;
+  const sourceAt = (peer: PeerId, kind: "cam" | "screen", t: number) =>
+    sources.find(
+      (s) =>
+        s.video &&
+        s.file.peer === peer &&
+        s.file.kind === kind &&
+        t >= s.start - 1 &&
+        t < s.end,
+    ) ?? null;
+  const frameAt = async (peer: PeerId, kind: "cam" | "screen", t: number) => {
+    if (kind === "cam" && camOff(peer, t)) return null;
     const s = sourceAt(peer, kind, t);
     return s ? cursor(s).at(Math.max(0, t - s.start)) : null;
   };
@@ -182,17 +255,20 @@ async function render(m: DirectorManifest) {
     const peak = chain.peakDb();
     const toTarget = lufs === null ? 0 : TARGET_LUFS - lufs;
     const headroom = Limiter.CEILING_DB + LIMITER_HEADROOM_DB - peak;
-    const db = Math.max(-MAX_CUT_DB, Math.min(MAX_BOOST_DB, toTarget, headroom));
+    const db = Math.max(
+      -MAX_CUT_DB,
+      Math.min(MAX_BOOST_DB, toTarget, headroom),
+    );
     gains.set(src.file.name, 10 ** (db / 20));
     const st = chain.stats();
-    const who = m.profiles[src.file.peer]?.name || 'Guest';
-    const sign = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+    const who = m.profiles[src.file.peer]?.name || "Guest";
+    const sign = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}`;
     post({
-      t: 'info',
+      t: "info",
       message:
         lufs === null
           ? `${who}: no speech detected`
-          : `${who}: ${lufs.toFixed(1)} LUFS after polish → gain ${sign(db)} dB${db < toTarget - 0.05 ? ' (held back by peaks)' : ''}; leveler ${sign(st.levelerDb)} dB, compression −${st.compressionDb.toFixed(1)} dB, de-esser ${Math.round(st.deEss * 100)}% of speech`,
+          : `${who}: ${lufs.toFixed(1)} LUFS after polish → gain ${sign(db)} dB${db < toTarget - 0.05 ? " (held back by peaks)" : ""}; leveler ${sign(st.levelerDb)} dB, compression −${st.compressionDb.toFixed(1)} dB, de-esser ${Math.round(st.deEss * 100)}% of speech`,
     });
   }
   const mixer = new Mixer(audioSources, segs, m.take.director, gains);
@@ -215,7 +291,13 @@ async function render(m: DirectorManifest) {
     const data = new Float32Array(L.length * 2);
     data.set(L, 0);
     data.set(R, L.length);
-    const sample = new AudioSample({ data, format: 'f32-planar', numberOfChannels: 2, sampleRate: RATE, timestamp: emitted / RATE });
+    const sample = new AudioSample({
+      data,
+      format: "f32-planar",
+      numberOfChannels: 2,
+      sampleRate: RATE,
+      timestamp: emitted / RATE,
+    });
     await audio.add(sample);
     sample.close();
     emitted += L.length;
@@ -223,11 +305,18 @@ async function render(m: DirectorManifest) {
 
   // Camera turned off by its owner: show their initials, not black frames.
   const camOff = (peer: PeerId, t: number) =>
-    (m.camOff?.[peer] ?? []).some(([a, b]) => t * 1000 >= a && (b === null || t * 1000 < b));
+    (m.camOff?.[peer] ?? []).some(
+      ([a, b]) => t * 1000 >= a && (b === null || t * 1000 < b),
+    );
 
   // Auto-framing: each person's anchor over time (logged by their own
   // browser), glided exactly as the live views glide.
-  const frameLogs = new Map(Object.entries(m.frames ?? {}).map(([p, log]) => [p, [...log].sort((a, b) => a[0] - b[0])]));
+  const frameLogs = new Map(
+    Object.entries(m.frames ?? {}).map(([p, log]) => [
+      p,
+      [...log].sort((a, b) => a[0] - b[0]),
+    ]),
+  );
   const framing = new Map<PeerId, { shown: Head | null; t: number }>();
   const headAt = (peer: PeerId, t: number): Head | null => {
     const log = frameLogs.get(peer);
@@ -249,22 +338,59 @@ async function render(m: DirectorManifest) {
 
   // Overlay geometry over time (corner, shape, hidden), from the stage log.
   // Each change glides / morphs / fades over the same time as on the live stage.
-  type Geo = { x: number; y: number; w: number; h: number; r: number; alpha: number; cut: boolean };
+  type Geo = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    r: number;
+    alpha: number;
+    cut: boolean;
+  };
   const geoOf = (corner: Corner, pip: PipStyle): Geo => {
     const { w, h, r } = PIP_SHAPES[pip.shape];
-    const g = { x: corner.endsWith('l') ? PIP.margin : W - w - PIP.margin, y: corner.startsWith('t') ? PIP.margin : H - h - PIP.margin, w, h, r, alpha: 1, cut: pip.shape === 'cutout' };
+    const cut = pip.shape === "cutout";
+    // A cutout sits on the bottom edge, its body running off the picture.
+    const g = {
+      x: corner.endsWith("l") ? PIP.margin : W - w - PIP.margin,
+      y: corner.startsWith("t") ? PIP.margin : H - h - (cut ? 0 : PIP.margin),
+      w,
+      h,
+      r,
+      alpha: 1,
+      cut,
+    };
     if (!pip.hidden) return g;
     // Hidden: shrink to 40% about its centre and fade out.
-    return { ...g, x: g.x + w * 0.3, y: g.y + h * 0.3, w: w * 0.4, h: h * 0.4, r: r * 0.4, alpha: 0 };
+    return {
+      ...g,
+      x: g.x + w * 0.3,
+      y: g.y + h * 0.3,
+      w: w * 0.4,
+      h: h * 0.4,
+      r: r * 0.4,
+      alpha: 0,
+    };
   };
   const pipLog = [...m.stageLog]
     .sort((a, b) => a.t - b.t)
     .filter((e) => e.corner || e.pip)
-    .map((e) => ({ t: e.t / 1000, corner: e.corner ?? 'br', pip: e.pip ?? { shape: 'rect' as PipShape, hidden: false } }));
-  const same = (a: Geo, b: Geo) => a.x === b.x && a.y === b.y && a.w === b.w && a.alpha === b.alpha && a.cut === b.cut;
+    .map((e) => ({
+      t: e.t / 1000,
+      corner: e.corner ?? "br",
+      pip: e.pip ?? { shape: "rect" as PipShape, hidden: false },
+    }));
+  const same = (a: Geo, b: Geo) =>
+    a.x === b.x &&
+    a.y === b.y &&
+    a.w === b.w &&
+    a.alpha === b.alpha &&
+    a.cut === b.cut;
   const pipAt = (t: number): Geo => {
     // Start as the overlay was when the take began (no animation in).
-    let cur = pipLog.length ? geoOf(pipLog[0].corner, pipLog[0].pip) : geoOf('br', { shape: 'rect', hidden: false });
+    let cur = pipLog.length
+      ? geoOf(pipLog[0].corner, pipLog[0].pip)
+      : geoOf("br", { shape: "rect", hidden: false });
     let prev = cur;
     let since = -Infinity;
     for (const e of pipLog) {
@@ -280,12 +406,22 @@ async function render(m: DirectorManifest) {
     if (k >= 1) return cur;
     const e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2; // ease in-out
     const lerp = (a: number, b: number) => a + (b - a) * e;
-    return { x: lerp(prev.x, cur.x), y: lerp(prev.y, cur.y), w: lerp(prev.w, cur.w), h: lerp(prev.h, cur.h), r: lerp(prev.r, cur.r), alpha: lerp(prev.alpha, cur.alpha), cut: cur.cut };
+    return {
+      x: lerp(prev.x, cur.x),
+      y: lerp(prev.y, cur.y),
+      w: lerp(prev.w, cur.w),
+      h: lerp(prev.h, cur.h),
+      r: lerp(prev.r, cur.r),
+      alpha: lerp(prev.alpha, cur.alpha),
+      cut: cur.cut,
+    };
   };
-  const cutout = pipLog.some((e) => e.pip.shape === 'cutout') ? await openCutout() : null;
+  const cutout = pipLog.some((e) => e.pip.shape === "cutout")
+    ? await openCutout()
+    : null;
   // Ink lies on a shared screen's picture, or on the whole frame for anything else.
   const FULL = { x: 0, y: 0, w: W, h: H };
-  const inkNames = { name: (id: PeerId) => m.profiles[id]?.name || 'Guest' };
+  const inkNames = { name: (id: PeerId) => m.profiles[id]?.name || "Guest" };
   const total = Math.max(1, Math.round((duration - t0) * FPS));
   const wallStart = performance.now();
   let audioUntil = t0; // take time
@@ -302,7 +438,10 @@ async function render(m: DirectorManifest) {
 
     // Keep audio about a second ahead of video so the muxer can interleave.
     while (audio && audioUntil < Math.min(duration, t + 1)) {
-      const n = Math.min(AUDIO_BLOCK, Math.round((duration - audioUntil) * RATE));
+      const n = Math.min(
+        AUDIO_BLOCK,
+        Math.round((duration - audioUntil) * RATE),
+      );
       if (n <= 0) break;
       const [L, R] = await mixer.mix(audioUntil, n);
       await emitAudio(L, R);
@@ -312,14 +451,14 @@ async function render(m: DirectorManifest) {
     ctx.fillStyle = BG;
     ctx.fillRect(0, 0, W, H);
     const st = seg.stage;
-    if (st.kind === 'end') {
+    if (st.kind === "end") {
       // Only people whose camera is on (initials for everyone if nobody's is).
       const on = camPeers.filter((p) => !camOff(p, t));
       const shown = on.length ? on : camPeers;
       const cells = gridFor(Math.max(1, shown.length), W, H, 32);
       for (let i = 0; i < shown.length; i++) {
         const c = cells[i];
-        const f = await frameAt(shown[i], 'cam', t);
+        const f = await frameAt(shown[i], "cam", t);
         ctx.save();
         ctx.clip(roundRect(c.x, c.y, c.w, c.h, 24));
         if (f) drawCover(ctx, f, c.x, c.y, c.w, c.h, headAt(shown[i], t));
@@ -328,24 +467,37 @@ async function render(m: DirectorManifest) {
       }
       drawInk(ctx, ink[segIdx], t * 1000, FULL, inkNames);
     } else {
-      const screen = st.view === 'screen' ? await frameAt(st.id, 'screen', t) : null;
-      const cam = await frameAt(st.id, 'cam', t);
+      const screen =
+        st.view === "screen" ? await frameAt(st.id, "screen", t) : null;
+      const cam = await frameAt(st.id, "cam", t);
       if (screen) {
         drawContain(ctx, screen, 0, 0, W, H);
-        drawInk(ctx, ink[segIdx], t * 1000, fitContain(screen.displayWidth, screen.displayHeight, W, H), inkNames);
+        drawInk(
+          ctx,
+          ink[segIdx],
+          t * 1000,
+          fitContain(screen.displayWidth, screen.displayHeight, W, H),
+          inkNames,
+        );
         const { x, y, w, h, r, alpha, cut } = pipAt(t);
         if (alpha > 0.01 && cut && cam && cutout) {
           // Just the person: the shadow follows their outline.
           const cw = Math.round(w);
           const ch = Math.round(h);
           const frame = cam.toVideoFrame();
-          const crop = cropFor(headAt(st.id, t), frame.displayWidth, frame.displayHeight, cw / ch, CUTOUT_FILL);
+          const crop = cropFor(
+            headAt(st.id, t),
+            frame.displayWidth,
+            frame.displayHeight,
+            cw / ch,
+            CUTOUT_FILL,
+          );
           const drawn = cutout.draw(frame, crop, cw, ch, t * 1000);
           frame.close();
           if (drawn) {
             ctx.save();
             ctx.globalAlpha = alpha;
-            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowColor = "rgba(0,0,0,0.5)";
             ctx.shadowBlur = 24;
             ctx.shadowOffsetY = 8;
             ctx.drawImage(cutout.canvas, x, y, w, h);
@@ -357,7 +509,7 @@ async function render(m: DirectorManifest) {
           ctx.globalAlpha = alpha;
           // No border: a soft shadow lifts it off the screen.
           ctx.save();
-          ctx.shadowColor = 'rgba(0,0,0,0.5)';
+          ctx.shadowColor = "rgba(0,0,0,0.5)";
           ctx.shadowBlur = 40;
           ctx.shadowOffsetY = 10;
           ctx.fillStyle = BG;
@@ -375,17 +527,26 @@ async function render(m: DirectorManifest) {
         drawInk(ctx, ink[segIdx], t * 1000, FULL, inkNames);
       }
       const lt = thirds.get(st.id);
-      if (lt && t >= lt.start && t < lt.end) lowerThird(ctx, m.profiles[st.id], t - lt.start, lt.end - lt.start);
+      if (lt && t >= lt.start && t < lt.end)
+        lowerThird(ctx, m.profiles[st.id], t - lt.start, lt.end - lt.start);
     }
 
-    if (sprite) drawReactions(ctx, reactions, t * 1000, { x: 0, y: 0, w: W, h: H }, sprite, (id) => m.profiles[id]?.name || 'Guest');
+    if (sprite)
+      drawReactions(
+        ctx,
+        reactions,
+        t * 1000,
+        { x: 0, y: 0, w: W, h: H },
+        sprite,
+        (id) => m.profiles[id]?.name || "Guest",
+      );
 
     await video.add(k / FPS, 1 / FPS);
 
     const wall = (performance.now() - wallStart) / 1000;
     if (wall - lastPost > 0.5) {
       lastPost = wall;
-      post({ t: 'progress', progress: k / total, speed: k / FPS / wall });
+      post({ t: "progress", progress: k / total, speed: k / FPS / wall });
     }
   }
 
@@ -394,15 +555,20 @@ async function render(m: DirectorManifest) {
   await mixer.close();
   // Flush the limiter's look-ahead tail.
   const tail = Limiter.LOOKAHEAD - latency;
-  if (audio && tail > 0) await emitAudio(new Float32Array(tail), new Float32Array(tail));
-  if (audio) post({ t: 'info', message: `mix limiter: average reduction ${(limiter.reductionDbSum / Math.max(1, limiter.reduced)).toFixed(1)} dB while active, active ${((limiter.reduced / Math.max(1, emitted)) * 100).toFixed(0)}% of the time` });
+  if (audio && tail > 0)
+    await emitAudio(new Float32Array(tail), new Float32Array(tail));
+  if (audio)
+    post({
+      t: "info",
+      message: `mix limiter: average reduction ${(limiter.reductionDbSum / Math.max(1, limiter.reduced)).toFixed(1)} dB while active, active ${((limiter.reduced / Math.max(1, emitted)) * 100).toFixed(0)}% of the time`,
+    });
   await output.finalize();
-  post({ t: 'done', seconds: duration - t0, audioCodec });
+  post({ t: "done", seconds: duration - t0, audioCodec });
 }
 
 async function openTakeDir(takeId: string) {
   const root = await navigator.storage.getDirectory();
-  return (await root.getDirectoryHandle('takes')).getDirectoryHandle(takeId);
+  return (await root.getDirectoryHandle("takes")).getDirectoryHandle(takeId);
 }
 
 /**
@@ -413,14 +579,18 @@ async function openTakeDir(takeId: string) {
 async function readInk(dir: FileSystemDirectoryHandle, segs: Segment[]) {
   let log: Record<string, InkStroke> = {};
   try {
-    log = JSON.parse(await (await (await dir.getFileHandle('ink.json')).getFile()).text());
+    log = JSON.parse(
+      await (await (await dir.getFileHandle("ink.json")).getFile()).text(),
+    );
   } catch {
     /* nobody drew */
   }
   const strokes = Object.values(log).filter((s) => s.pts.length);
   return segs.map((seg) =>
     strokes
-      .filter((s) => s.pts[0][2] >= seg.start * 1000 && s.pts[0][2] < seg.end * 1000)
+      .filter(
+        (s) => s.pts[0][2] >= seg.start * 1000 && s.pts[0][2] < seg.end * 1000,
+      )
       .map((s) => ({ ...s, up: s.up ?? s.pts[s.pts.length - 1][2] })),
   );
 }
@@ -430,26 +600,39 @@ async function readInk(dir: FileSystemDirectoryHandle, segs: Segment[]) {
  * loaded only when there are any. Each emoji's animation was saved next to the
  * log during the take; Google is only asked if one is missing.
  */
-async function readReactions(dir: FileSystemDirectoryHandle): Promise<{ reactions: Reaction[]; sprite: Sprite | null }> {
+async function readReactions(
+  dir: FileSystemDirectoryHandle,
+): Promise<{ reactions: Reaction[]; sprite: Sprite | null }> {
   let reactions: Reaction[] = [];
   try {
-    reactions = JSON.parse(await (await (await dir.getFileHandle('reactions.json')).getFile()).text());
+    reactions = JSON.parse(
+      await (
+        await (await dir.getFileHandle("reactions.json")).getFile()
+      ).text(),
+    );
   } catch {
     /* nobody reacted */
   }
   if (!reactions.length) return { reactions, sprite: null };
-  const { Sprites } = await import('../lib/lottie');
+  const { Sprites } = await import("../lib/lottie");
   const sprites = new Sprites(128, async (cp) => {
     try {
-      return await (await (await dir.getFileHandle(`lottie-${cp}.json`)).getFile()).text();
+      return await (
+        await (await dir.getFileHandle(`lottie-${cp}.json`)).getFile()
+      ).text();
     } catch {
-      post({ t: 'warn', message: `the ${cp} reaction wasn't saved with the take; fetching it again` });
+      post({
+        t: "warn",
+        message: `the ${cp} reaction wasn't saved with the take; fetching it again`,
+      });
       const r = await fetch(lottieUrl(cp));
       if (!r.ok) throw new Error(`${cp}: ${r.status}`);
       return r.text();
     }
   });
-  await Promise.all([...new Set(reactions.map((r) => r.cp))].map((cp) => sprites.load(cp)));
+  await Promise.all(
+    [...new Set(reactions.map((r) => r.cp))].map((cp) => sprites.load(cp)),
+  );
   return { reactions, sprite: sprites.sprite };
 }
 
@@ -460,23 +643,43 @@ async function openCutout(): Promise<Cutout | null> {
     await c.ready;
     return c;
   } catch (e) {
-    post({ t: 'warn', message: `background removal unavailable, the overlay is a box instead: ${(e as Error)?.message ?? e}` });
+    post({
+      t: "warn",
+      message: `background removal unavailable, the overlay is a box instead: ${(e as Error)?.message ?? e}`,
+    });
     return null;
   }
 }
 
 /** End-screen order: tile order at take start, then anyone else who recorded a camera. */
 function orderedCamPeers(m: DirectorManifest, sources: Source[]) {
-  const withCam = new Set(sources.filter((s) => s.file.kind === 'cam' && s.video).map((s) => s.file.peer));
-  return [...m.order.filter((p) => withCam.has(p)), ...[...withCam].filter((p) => !m.order.includes(p)).sort()];
+  const withCam = new Set(
+    sources
+      .filter((s) => s.file.kind === "cam" && s.video)
+      .map((s) => s.file.peer),
+  );
+  return [
+    ...m.order.filter((p) => withCam.has(p)),
+    ...[...withCam].filter((p) => !m.order.includes(p)).sort(),
+  ];
 }
 
 /** Close decoders that the new segment won't use, so we never hold more open than needed. */
-function releaseUnused(cursors: Map<string, VideoCursor>, sources: Source[], seg: Segment, t: number) {
+function releaseUnused(
+  cursors: Map<string, VideoCursor>,
+  sources: Source[],
+  seg: Segment,
+  t: number,
+) {
   const keep = new Set<string>();
   for (const s of sources) {
     if (t < s.start || t >= s.end) continue;
-    if (seg.stage.kind === 'end' ? s.file.kind === 'cam' : s.file.peer === seg.stage.id) keep.add(s.file.name);
+    if (
+      seg.stage.kind === "end"
+        ? s.file.kind === "cam"
+        : s.file.peer === seg.stage.id
+    )
+      keep.add(s.file.name);
   }
   for (const [name, c] of cursors) {
     if (!keep.has(name)) {
@@ -494,7 +697,10 @@ class VideoCursor {
   constructor(private sink: VideoSampleSink) {}
 
   async at(ts: number): Promise<VideoSample | null> {
-    const stale = !this.it || (this.cur && ts < this.cur.timestamp - 0.05) || (this.next && ts > this.next.timestamp + 2);
+    const stale =
+      !this.it ||
+      (this.cur && ts < this.cur.timestamp - 0.05) ||
+      (this.next && ts > this.next.timestamp + 2);
     if (stale) {
       await this.close();
       this.it = this.sink.samples(ts);
@@ -551,12 +757,18 @@ class Mixer {
   }
 
   private stageAt(t: number) {
-    return (this.segs.find((s) => t >= s.start && t < s.end) ?? this.segs[this.segs.length - 1]).stage;
+    return (
+      this.segs.find((s) => t >= s.start && t < s.end) ??
+      this.segs[this.segs.length - 1]
+    ).stage;
   }
 
   async mix(t: number, n: number): Promise<[Float32Array, Float32Array]> {
     const from = Math.round(t * RATE);
-    const out: [Float32Array, Float32Array] = [new Float32Array(n), new Float32Array(n)];
+    const out: [Float32Array, Float32Array] = [
+      new Float32Array(n),
+      new Float32Array(n),
+    ];
     const step = 1 / (0.03 * RATE); // 30 ms fades
     for (const tr of this.tracks) {
       // Files usually start before zero (recorders start during the countdown)
@@ -577,14 +789,24 @@ class Mixer {
       let target = 0;
       for (let i = 0; i < need; i++) {
         const j = lead + i;
-        if (i === 0 || j % 480 === 0) target = audible(this.stageAt((from + j) / RATE), tr.peer, this.director) ? 1 : 0;
+        if (i === 0 || j % 480 === 0)
+          target = audible(
+            this.stageAt((from + j) / RATE),
+            tr.peer,
+            this.director,
+          )
+            ? 1
+            : 0;
         tr.gain += Math.max(-step, Math.min(step, target - tr.gain));
         if (tr.gain === 0) continue;
         const g = tr.gain * tr.level;
         out[0][j] += (L[i] ?? 0) * g;
         out[1][j] += (R[i] ?? 0) * g;
       }
-      tr.buf = [L.subarray(Math.min(need, L.length)), R.subarray(Math.min(need, R.length))];
+      tr.buf = [
+        L.subarray(Math.min(need, L.length)),
+        R.subarray(Math.min(need, R.length)),
+      ];
       tr.pos = from + n;
     }
     return out;
@@ -596,7 +818,7 @@ class Mixer {
    * is trimmed. Jitter under 10 ms is ignored. This also absorbs slow drift
    * between the mic's sample clock and the capture clock over a long take.
    */
-  private async fill(tr: Mixer['tracks'][number], need: number) {
+  private async fill(tr: Mixer["tracks"][number], need: number) {
     while (!tr.done && tr.buf[0].length < need) {
       const { value, done } = await tr.it.next();
       if (done || !value) {
@@ -638,7 +860,7 @@ function toStereo48k(s: AudioSample): [Float32Array, Float32Array] {
   const planes: Float32Array[] = [];
   for (let c = 0; c < Math.min(2, s.numberOfChannels); c++) {
     const a = new Float32Array(frames);
-    s.copyTo(a, { planeIndex: c, format: 'f32-planar' });
+    s.copyTo(a, { planeIndex: c, format: "f32-planar" });
     planes.push(a);
   }
   if (planes.length === 1) planes.push(planes[0]);
@@ -671,12 +893,27 @@ function concat(a: Float32Array, b: Float32Array) {
 type Ctx = OffscreenCanvasRenderingContext2D;
 
 /** Fills the box with the frame: centred "cover", or framed on `head` (auto-framing). */
-function drawCover(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h: number, head: Head | null = null) {
+function drawCover(
+  ctx: Ctx,
+  f: VideoSample,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  head: Head | null = null,
+) {
   const c = cropFor(head, f.displayWidth, f.displayHeight, w / h);
   f.draw(ctx, c.x, c.y, c.w, c.h, x, y, w, h);
 }
 
-function drawContain(ctx: Ctx, f: VideoSample, x: number, y: number, w: number, h: number) {
+function drawContain(
+  ctx: Ctx,
+  f: VideoSample,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
   const r = fitContain(f.displayWidth, f.displayHeight, w, h, x, y);
   f.draw(ctx, r.x, r.y, r.w, r.h);
 }
@@ -687,22 +924,29 @@ function roundRect(x: number, y: number, w: number, h: number, r: number) {
   return p;
 }
 
-function placeholder(ctx: Ctx, x: number, y: number, w: number, h: number, p?: Profile) {
-  ctx.fillStyle = '#1d1d26';
+function placeholder(
+  ctx: Ctx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  p?: Profile,
+) {
+  ctx.fillStyle = "#1d1d26";
   ctx.fillRect(x, y, w, h);
-  const initials = (p?.name || '?')
+  const initials = (p?.name || "?")
     .split(/\s+/)
     .map((s) => s[0])
-    .join('')
+    .join("")
     .slice(0, 2)
     .toUpperCase();
-  ctx.fillStyle = '#8b8b9a';
+  ctx.fillStyle = "#8b8b9a";
   ctx.font = `600 ${Math.round(Math.min(w, h) / 4)}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
   ctx.fillText(initials, x + w / 2, y + h / 2);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
 }
 
 /** Bottom-left name and subtitle; slides in, holds, fades out. */
@@ -716,23 +960,23 @@ function lowerThird(ctx: Ctx, p: Profile | undefined, t: number, len: number) {
   const yBase = H - 80;
   ctx.save();
   ctx.globalAlpha = ease;
-  ctx.font = '700 46px system-ui, sans-serif';
+  ctx.font = "700 46px system-ui, sans-serif";
   const nameW = ctx.measureText(p.name).width;
-  ctx.font = '500 28px system-ui, sans-serif';
+  ctx.font = "500 28px system-ui, sans-serif";
   const subW = p.subtitle ? ctx.measureText(p.subtitle).width : 0;
   const w = Math.max(nameW, subW) + 64;
   const h = p.subtitle ? 124 : 84;
   const y = yBase - h;
-  ctx.fillStyle = 'rgba(12,12,18,0.82)';
+  ctx.fillStyle = "rgba(12,12,18,0.82)";
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = LOWER_THIRD;
   ctx.fillRect(x, y, 8, h);
-  ctx.fillStyle = '#fff';
-  ctx.font = '700 46px system-ui, sans-serif';
+  ctx.fillStyle = "#fff";
+  ctx.font = "700 46px system-ui, sans-serif";
   ctx.fillText(p.name, x + 36, y + 62);
   if (p.subtitle) {
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.font = '500 28px system-ui, sans-serif';
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "500 28px system-ui, sans-serif";
     ctx.fillText(p.subtitle, x + 36, y + 104);
   }
   ctx.restore();

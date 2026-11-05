@@ -519,7 +519,8 @@ button.chip:hover {
   text-wrap: balance;
 }
 /* Same overlay as the final cut: a 32px inset from the chosen corner, in
-   units of the stage width. Shapes (render px of 1920): rectangle 156x195,
+   units of the stage width (a cutout sits on the bottom edge instead, its
+   body running off the picture). Shapes (render px of 1920): rectangle 156x195,
    square 176x176, circle 184x184, cutout 270x300. Position, size and shape always animate, so
    everyone sees the same glide / morph; html.resizing switches that off while
    the window is being resized, so it stays pinned instead. */
@@ -542,6 +543,7 @@ button.chip:hover {
   --w: 14.063cqw;
   --h: 15.625cqw;
   --r: 1.15cqw;
+  --mb: 0px;
 }
 .pip {
   --m: 1.667cqw;
@@ -595,12 +597,12 @@ button.chip:hover {
 .pip.c-bl,
 .pip-zone.c-bl {
   left: var(--m);
-  top: calc(56.25cqw - var(--h) - var(--m));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip.c-br,
 .pip-zone.c-br {
   left: calc(100cqw - var(--w) - var(--m));
-  top: calc(56.25cqw - var(--h) - var(--m));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip.movable .pip-face {
   cursor: grab;
@@ -738,11 +740,11 @@ html.resizing .pip-face {
 }
 .pip-spot.c-bl {
   left: var(--m);
-  top: calc(56.25cqw - var(--h) - var(--m));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip-spot.c-br {
   left: calc(100cqw - var(--w) - var(--m));
-  top: calc(56.25cqw - var(--h) - var(--m));
+  top: calc(56.25cqw - var(--h) - var(--mb, var(--m)));
 }
 .pip-spot:hover .pip-unhide,
 .pip-unhide:focus-visible {
