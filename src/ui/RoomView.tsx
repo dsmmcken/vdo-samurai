@@ -15,6 +15,7 @@ import { Stage } from './Stage';
 import { TileStrip } from './TileStrip';
 import { RemoteAudio } from './Video';
 import { RecordingDetails } from './RecordingDetails';
+import { ConnectionDetails } from './ConnectionDetails';
 import { WaitingMusic } from './WaitingMusic';
 
 // The picker, its search and the emoji list load on first use (or hover).
@@ -27,6 +28,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
   const [edit, setEdit] = useState<{ at: DOMRect; id: PeerId } | null>(null);
   const [menuAt, setMenuAt] = useState<DOMRect | null>(null);
   const [details, setDetails] = useState(false);
+  const [connDetails, setConnDetails] = useState<PeerId | null>(null);
   const [reactAt, setReactAt] = useState<DOMRect | null>(null);
   const iAmDirector = s.director === s.me;
   // Drawing is a pen you pick up (Esc puts it down): clicks on the stage stay
@@ -109,7 +111,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
         </div>
       </Stage>
 
-      <TileStrip room={room} s={s} onEditProfile={(at, id) => setEdit(edit?.id === id ? null : { at, id })} />
+      <TileStrip room={room} s={s} onEditProfile={(at, id) => setEdit(edit?.id === id ? null : { at, id })} onDetails={setConnDetails} />
 
       {edit && (
         <Popover anchor={edit.at} onClose={() => setEdit(null)}>
@@ -152,6 +154,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
       <Countdown startLocal={s.recording ? s.takeStartLocal : null} />
       <AfterTake room={room} s={s} onDetails={() => setDetails(true)} />
       {details && <RecordingDetails room={room} s={s} onClose={() => setDetails(false)} />}
+      {connDetails && <ConnectionDetails room={room} s={s} id={connDetails} onClose={() => setConnDetails(null)} />}
       {s.notice && <div className="glass toast">{s.notice}</div>}
       <WaitingMusic s={s} />
 

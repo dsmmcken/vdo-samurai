@@ -14,6 +14,9 @@ export type TrackRole = 'mic' | 'cam' | 'screen';
 
 export type SigMessage = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit | null };
 
+/** A mesh message passed along by a peer we both reach (see mesh.ts). */
+export type Relay = { to?: PeerId; from?: PeerId; m: unknown };
+
 export interface LinkEvents {
   message: (m: any) => void;
   stream: (stream: MediaStream) => void;
@@ -32,8 +35,19 @@ export class Link {
   /** 'bootstrap' until our ctl channel opens. */
   transport: 'bootstrap' | 'ctl' = 'bootstrap';
   route: 'direct' | 'relay' | null = null;
-  /** Signaling history, for debugging from the console. */
+  /** Signaling history, for debugging (the console, or the connection details). */
   readonly trace: string[] = [];
+  /** When this link was made, and when its signaling or connection last went wrong (performance.now()). */
+  readonly born = performance.now();
+  /** Since when the control channel isn't open (from birth until it first opens), and whether it ever was. */
+  downSince: number | null = this.born;
+  wasOpen = false;
+  unstableSince: number | null = null;
+  disconnectedSince: number | null = null;
+  /** When the mesh last tried to unstick a negotiation (see unstick). */
+  unstuckAt: number | null = null;
+  /** Relayed mesh messages (see mesh.ts), never shown to the room. */
+  onRelay: ((r: Relay) => void) | null = null;
   private makingOffer = false;
   private answeredFirst = false;
   private ignoreOffer = false;
@@ -43,6 +57,8 @@ export class Link {
 
   constructor(
     readonly peer: PeerId,
+    /** Same on both ends: tells this link's signals apart from an older one's. */
+    readonly id: string,
     private readonly polite: boolean,
     private sendSignal: (m: SigMessage) => void,
   ) {
@@ -75,8 +91,16 @@ export class Link {
       if (channel.label.startsWith('f:')) this.handlers.fileChannel?.(channel);
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') this.updateRoute();
+      const st = pc.connectionState;
+      this.log(`connection ${st}`);
+      if (st === 'connected') this.updateRoute();
+      this.disconnectedSince = st === 'disconnected' ? (this.disconnectedSince ?? performance.now()) : null;
       this.emit('state');
+    };
+    pc.onsignalingstatechange = () => {
+      const st = pc.signalingState;
+      this.unstableSince = st === 'stable' || st === 'closed' ? null : (this.unstableSince ?? performance.now());
+      if (st === 'stable') this.unstuckAt = null;
     };
 
     // Watchdog: after offer glare Chrome occasionally never emits fresh ICE
@@ -95,14 +119,21 @@ export class Link {
 
     this.ctl = pc.createDataChannel('ctl', { negotiated: true, id: 0 });
     this.ctl.onopen = () => {
+      this.downSince = null;
+      this.wasOpen = true;
       this.transport = 'ctl';
       this.sendSignal = (m) => this.send({ sig: m });
       this.emit('state');
     };
-    this.ctl.onclose = () => this.emit('state');
+    this.ctl.onclose = () => {
+      this.downSince ??= performance.now();
+      this.log('control channel closed');
+      this.emit('state');
+    };
     this.ctl.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.sig) this.receiveSignal(m.sig);
+      else if (m.relay) this.onRelay?.(m.relay);
       else this.handlers.message?.(m);
     };
     this.scr = pc.createDataChannel('scr', { negotiated: true, id: 1 });
@@ -111,7 +142,7 @@ export class Link {
   }
 
   private log(line: string) {
-    this.trace.push(line);
+    this.trace.push(`${clock()} ${line}`);
     if (this.trace.length > 200) this.trace.splice(0, 50);
   }
 
@@ -218,6 +249,22 @@ export class Link {
     }
   }
 
+  /**
+   * A negotiation that never finished (an offer or answer lost, or one that
+   * failed to apply): roll it back so the browser offers again from stable.
+   */
+  async unstick() {
+    const pc = this.pc;
+    this.unstuckAt = performance.now();
+    this.log(`unstick from ${pc.signalingState}`);
+    try {
+      if (pc.signalingState === 'have-local-offer' || pc.signalingState === 'have-remote-offer') await pc.setLocalDescription({ type: 'rollback' });
+      if (!this.polite) pc.restartIce();
+    } catch (e) {
+      this.log(`unstick failed ${e}`);
+    }
+  }
+
   private async updateRoute() {
     const stats = await this.pc.getStats();
     const byId = new Map<string, any>();
@@ -234,6 +281,11 @@ export class Link {
   close() {
     this.pc.close();
   }
+}
+
+/** Wall-clock time of day to the millisecond, for traces. */
+export function clock() {
+  return new Date().toISOString().slice(11, 23);
 }
 
 function preferCodecs(tr: RTCRtpTransceiver, first: string[]) {

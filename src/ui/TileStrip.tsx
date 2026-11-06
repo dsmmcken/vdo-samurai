@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
 import type { PeerId } from '../lib/types';
-import { Helmet, Grid, MicOff, Pencil, Screen, Waves } from './icons';
+import { Helmet, Grid, Info, MicOff, Pencil, Screen, Waves } from './icons';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
 import { MicMeter } from './MicMeter';
@@ -20,7 +20,7 @@ interface Ghost {
   s: Snapshot;
 }
 
-export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void }) {
+export function TileStrip({ room, s, onEditProfile, onDetails }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void; onDetails: (id: PeerId) => void }) {
   const [menu, setMenu] = useState<{ x: number; y: number; id: PeerId | 'end'; rect: DOMRect } | null>(null);
   const [dragging, setDraggingState] = useState<Slot | null>(null);
   // Drag events fire faster than React re-renders, so handlers read a ref.
@@ -253,6 +253,9 @@ export function TileStrip({ room, s, onEditProfile }: { room: Room; s: Snapshot;
           })()}
           <button onClick={() => (onEditProfile(menu.rect, menu.id as PeerId), setMenu(null))}>
             <Pencil size={16} /> {menu.id === s.me ? 'Edit your name' : `Edit ${nameOf(s, menu.id)}'s name`}
+          </button>
+          <button onClick={() => (onDetails(menu.id as PeerId), setMenu(null))}>
+            <Info size={16} /> {menu.id === s.me ? 'Your connection details' : `${nameOf(s, menu.id)}'s connection details`}
           </button>
           {locked && <p className="menu-note">The Shōgun (director) can't change while recording</p>}
         </div>

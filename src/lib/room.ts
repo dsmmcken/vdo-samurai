@@ -14,7 +14,7 @@
 //    data channels, resumably, and deletes them once the director confirms.
 import { Mesh } from './mesh';
 import { saveProfile } from './identity';
-import type { Link } from './link';
+import { clock, type Link } from './link';
 import { camEncoding, devicePref, MIC_ENCODING, openMicTrack, openScreen, openVideoTrack, screenEncoding, setDevicePref, type CamRole, type DeviceKind } from './media';
 import { FaceWatch } from './face/watch';
 import { denoise, denoisePref, loadDenoiser, setDenoisePref, type Denoised } from './denoise';
@@ -253,6 +253,12 @@ export class Room {
   private reactions = new Map<string, Reaction>();
   private reactWatchers = new Set<() => void>();
 
+  /** Media a peer says it sends that isn't arriving, since when (key: `peer media`). */
+  private mediaGaps = new Map<string, number>();
+  /** Connection details we asked a peer for (see requestDetails). */
+  private detailAsks = new Map<string, (lines: string[]) => void>();
+  private startedAt = performance.now();
+
   private listeners = new Set<Listener>();
   private snapshot!: Snapshot;
   private dirty = false;
@@ -289,6 +295,7 @@ export class Room {
     navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
     await this.restore();
     this.timers.push(setInterval(() => this.pingAll(), 5000));
+    this.timers.push(setInterval(() => this.checkMedia(), 2000));
     this.timers.push(setInterval(() => this.directorTick(), 500));
     this.timers.push(setInterval(() => this.reofferFiles(), REOFFER_MS));
     this.timers.push(setInterval(() => this.forwardXlog(), 2000));
@@ -608,12 +615,19 @@ export class Room {
         break;
       case 'ping':
         link.send({ t: 'pong', a: m.a, b: now() });
+        if (Array.isArray(m.peers)) this.mesh.heard(peer, m.peers);
         break;
       case 'pong':
         this.onPong(peer, m.a, m.b);
         break;
       case 'bye':
-        this.mesh.drop(peer);
+        this.mesh.drop(peer, link);
+        break;
+      case 'details?':
+        link.send({ t: 'details', id: m.id, lines: this.details() });
+        break;
+      case 'details':
+        this.detailAsks.get(m.id)?.(m.lines as string[]);
         break;
       case 'rec':
         this.dmOnRec(peer, m.takeId, m.profile);
@@ -689,8 +703,10 @@ export class Room {
     }
   }
 
+  /** Pings also say who we're connected to: how the mesh notices someone missing (mesh.ts). */
   private pingAll() {
-    for (const l of this.mesh.openLinks()) l.send({ t: 'ping', a: now() });
+    const peers = this.mesh.openLinks().map((l) => l.peer);
+    for (const l of this.mesh.openLinks()) l.send({ t: 'ping', a: now(), peers });
   }
 
   private onPong(peer: PeerId, a: number, b: number) {
@@ -1360,6 +1376,124 @@ export class Room {
       this.applyEncodings();
     }
     this.changed();
+  }
+
+  // ------------------------------------------------------------------ connection health
+
+  /**
+   * Media someone says they send that hasn't reached us for 10 s gets their
+   * link rebuilt: a camera that's on, a screen they share (encoded-once
+   * screens only send while on stage, so those count only then).
+   */
+  private checkMedia() {
+    const t = performance.now();
+    const seen = new Set<string>();
+    for (const [peer, what] of this.mediaMissing()) {
+      const key = `${peer} ${what}`;
+      seen.add(key);
+      const since = this.mediaGaps.get(key) ?? t;
+      if (!this.mediaGaps.has(key)) {
+        this.mediaGaps.set(key, t);
+        this.mesh.log(`${this.nameOf(peer)}'s ${what} isn't arriving`);
+      }
+      if (t - since >= 10_000) this.mesh.repair(peer, `${what} not arriving`);
+    }
+    for (const key of this.mediaGaps.keys()) if (!seen.has(key)) this.mediaGaps.delete(key);
+  }
+
+  private mediaMissing(): [PeerId, string][] {
+    const out: [PeerId, string][] = [];
+    const st = this.shared.stage.v;
+    for (const link of this.mesh.openLinks()) {
+      const peer = link.peer;
+      const p = this.presences.get(peer);
+      if (!p) continue;
+      if (p.camStreamId && !p.camOff && !link.remoteStreams.get(p.camStreamId)?.getVideoTracks().length) out.push([peer, 'camera']);
+      if (!p.hasScreen) continue;
+      if (this.viaCast(peer)) {
+        const onStage = st?.kind === 'peer' && st.id === peer && st.view === 'screen';
+        if (onStage && !this.views.get(peer)?.frames) out.push([peer, 'screen']);
+      } else if (p.screenStreamId && !link.remoteStreams.get(p.screenStreamId)?.getVideoTracks().length) out.push([peer, 'screen']);
+    }
+    return out;
+  }
+
+  /** Rebuild the link to `peer` now (the connection details' Reconnect). */
+  reconnect(peer: PeerId) {
+    this.mesh.repair(peer, 'reconnect asked for', true);
+  }
+
+  /** Someone's connection details: ours straight away, anyone else's over their link. */
+  requestDetails(peer: PeerId): Promise<string[]> {
+    if (peer === this.me) return Promise.resolve(this.details());
+    const link = this.mesh.links.get(peer);
+    if (!link?.open) return Promise.reject(new Error(`No open connection to ${this.nameOf(peer)}.`));
+    const id = rid(6);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.detailAsks.delete(id);
+        reject(new Error(`${this.nameOf(peer)} didn't answer within 8 s.`));
+      }, 8000);
+      this.detailAsks.set(id, (lines) => {
+        clearTimeout(timer);
+        this.detailAsks.delete(id);
+        resolve(lines);
+      });
+      link.send({ t: 'details?', id });
+    });
+  }
+
+  /** Our link to `peer`, as we see it. */
+  linkDetails(peer: PeerId): string[] {
+    const link = this.mesh.links.get(peer);
+    if (!link) return [`No link to ${this.nameOf(peer)}.`];
+    return [...this.linkSummary(link), '', ...link.trace.slice(-80)];
+  }
+
+  private linkSummary(link: Link): string[] {
+    const peer = link.peer;
+    const pc = link.pc;
+    const p = this.presences.get(peer);
+    const age = Math.round((performance.now() - link.born) / 1000);
+    const streams = [...link.remoteStreams.values()].map((s) => `${s.id.slice(0, 8)} [${s.getTracks().map((t) => `${t.kind}${t.readyState === 'ended' ? ' ended' : t.muted ? ' muted' : ''}`).join(', ')}]`);
+    const has = (id: string | null | undefined) => (id && link.remoteStreams.get(id)?.getVideoTracks().length ? 'arriving' : 'NOT ARRIVING');
+    const lines = [
+      `${this.nameOf(peer)} (${peer}) · link ${link.id}, ${age} s old`,
+      `  connection ${pc.connectionState}, ice ${pc.iceConnectionState}, signaling ${pc.signalingState}, control ${link.ctl.readyState}, route ${link.route ?? '?'}`,
+      `  signaling path: ${this.mesh.hasSig(peer) ? 'VDO.Ninja x-sig up' : 'x-sig down (relay)'}; repairs ${this.mesh.repairsOf(peer)}; clock ${this.offsetTo(peer) === null ? 'not synced' : `offset ${Math.round(this.offsetTo(peer)!)} ms`}`,
+      `  streams in: ${streams.join('; ') || 'none'}`,
+    ];
+    if (p) {
+      if (p.camStreamId) lines.push(`  camera ${p.camOff ? 'off' : has(p.camStreamId)}`);
+      if (p.hasScreen) lines.push(`  screen ${this.viaCast(peer) ? `encoded-once, ${this.views.get(peer)?.frames ?? 0} frames shown` : has(p.screenStreamId)}`);
+    } else lines.push('  no presence (hello) from them yet');
+    return lines;
+  }
+
+  /** Everything about our connections, for the connection details (ours or a peer asking). */
+  details(): string[] {
+    const ua = navigator.userAgent.match(/(Chrome|Firefox|Edg|Safari)\/[\d.]+/g)?.join(' ') ?? navigator.userAgent;
+    const st = this.shared.stage.v;
+    const lines = [
+      `# ${this.profile.name || 'Guest'} (${this.me}), session ${this.mesh.session}`,
+      `at ${clock()}, page open ${Math.round((performance.now() - this.startedAt) / 1000)} s, ${ua}, tab ${document.visibilityState}`,
+      `VDO.Ninja signaling: ${this.mesh.status}${this.mesh.error ? ` (${this.mesh.error})` : ''}`,
+      `screen encoded-once: send ${this.cast.send}, receive ${this.cast.receive}; sharing ${this.screen ? (this.caster ? 'yes (encoded-once)' : 'yes (track)') : 'no'}`,
+      `stage: ${st ? (st.kind === 'end' ? 'Multicam' : `${st.id === this.me ? 'us' : this.nameOf(st.id)}, ${st.view}`) : 'none'}`,
+      '',
+      `## Connections (${this.mesh.openLinks().length} open of ${this.mesh.links.size})`,
+    ];
+    for (const link of this.mesh.links.values()) lines.push(...this.linkSummary(link));
+    const missing = this.mesh.missingPeers();
+    if (missing.length) {
+      lines.push('', '## Missing (others reach them, we don\'t)');
+      for (const m of missing) lines.push(`${this.nameOf(m.peer)} (${m.peer}) for ${Math.round(m.ms / 1000)} s`);
+    }
+    const gaps = [...this.mediaGaps].map(([key, since]) => `${this.nameOf(key.split(' ')[0])}'s ${key.split(' ')[1]} for ${Math.round((performance.now() - since) / 1000)} s`);
+    if (gaps.length) lines.push('', '## Media not arriving', ...gaps);
+    lines.push('', '## Mesh log', ...this.mesh.trace);
+    for (const link of this.mesh.links.values()) lines.push('', `## Link to ${this.nameOf(link.peer)} (${link.id})`, ...link.trace.slice(-80));
+    return lines;
   }
 
   // ------------------------------------------------------------------ transfer log
