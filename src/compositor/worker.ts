@@ -64,7 +64,7 @@ const FPS = 30;
 // Above YouTube's 8 Mbps for 1080p30 (it sets no upper limit): every encode
 // loses a little, and this one starts from 8 Mbps sources that YouTube will
 // encode again.
-const VIDEO_BITRATE = 12_000_000;
+const VIDEO_BITRATE = 16_200_000;
 const RATE = 48000;
 const AUDIO_BLOCK = RATE / 2; // mix half a second at a time
 const BG = "#0d0d12";
