@@ -11,7 +11,8 @@
     "test:e2e": "vite build && node scripts/check-bundle.mjs && node tests/e2e.mjs",
     "test:cut": "node tests/cut-check.mjs",
     "build:kernels": "node scripts/build-kernels.mjs",
-    "build:emoji": "node scripts/build-emoji.mjs"
+    "build:emoji": "node scripts/build-emoji.mjs",
+    "test:animations": "node tests/animation-check.mjs"
   },
   "dependencies": {
     "@lottiefiles/dotlottie-web": "0.81.0",

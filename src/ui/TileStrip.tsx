@@ -1,15 +1,13 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Room, Snapshot } from '../lib/room';
-import type { PeerId } from '../lib/types';
-import { Helmet, Grid, Info, MicOff, Pencil, Screen, Waves } from './icons';
+import type { PeerId, Slot } from '../lib/types';
+import { slotAnimation } from '../lib/animation-api';
+import { Helmet, Grid, Info, MicOff, Pencil, Screen, Waves, Clapper, Code } from './icons';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
 import { MicMeter } from './MicMeter';
 import { Avatar } from './Avatar';
 
-
-/** A place in the strip: someone's tile, or Multicam. */
-type Slot = PeerId | 'end';
 
 /** Someone who just left: their tile stays, as it last was, while it animates out. */
 interface Ghost {
@@ -20,8 +18,8 @@ interface Ghost {
   s: Snapshot;
 }
 
-export function TileStrip({ room, s, onEditProfile, onDetails }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void; onDetails: (id: PeerId) => void }) {
-  const [menu, setMenu] = useState<{ x: number; y: number; id: PeerId | 'end'; rect: DOMRect } | null>(null);
+export function TileStrip({ room, s, onEditProfile, onDetails, onEditAnimation }: { room: Room; s: Snapshot; onEditProfile: (anchor: DOMRect, id: PeerId) => void; onDetails: (id: PeerId) => void; onEditAnimation: (name: string) => void }) {
+  const [menu, setMenu] = useState<{ x: number; y: number; id: Slot; rect: DOMRect } | null>(null);
   const [dragging, setDraggingState] = useState<Slot | null>(null);
   // Drag events fire faster than React re-renders, so handlers read a ref.
   const dragRef = useRef<Slot | null>(null);
@@ -47,7 +45,7 @@ export function TileStrip({ room, s, onEditProfile, onDetails }: { room: Room; s
   if (shown.join() !== s.strip.join()) {
     // Caught during render, so the tile that's leaving is never unmounted and remounted.
     setShown(s.strip);
-    const gone = shown.flatMap((id, at) => (id !== 'end' && !s.strip.includes(id) ? [{ id, at, s: last.current }] : []));
+    const gone = shown.flatMap((id, at) => (id !== 'end' && slotAnimation(id) === null && !s.strip.includes(id) ? [{ id, at, s: last.current }] : []));
     setGhosts((g) => [...g.filter((x) => !s.strip.includes(x.id)), ...gone]);
   }
   const slots: { id: Slot; ghost?: Ghost }[] = order.map((id) => ({ id }));
@@ -108,7 +106,7 @@ export function TileStrip({ room, s, onEditProfile, onDetails }: { room: Room; s
     onDragEnd: () => endDrag(false),
   });
 
-  const openMenu = (e: React.MouseEvent, id: PeerId | 'end') => {
+  const openMenu = (e: React.MouseEvent, id: Slot) => {
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, id, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
   };
@@ -135,6 +133,34 @@ export function TileStrip({ room, s, onEditProfile, onDetails }: { room: Room; s
               <div className="tile-name">Multicam</div>
             </div>
           );
+        const animation = slotAnimation(id);
+        if (animation !== null) {
+          // A pinned scripted animation: name and icon, like Multicam. It goes on stage once
+          // everyone here has it (a ring shows it's still on its way).
+          const info = s.animations.find((x) => x.name === animation);
+          const ready = !!info?.readyAll;
+          const active = st?.kind === 'animation' && st.name === animation;
+          const why = !info ? 'Getting this animation…' : info.error ? `This animation doesn't work here: ${info.error}` : !ready ? `On ${info.readyCount} of ${info.total} computers so far…` : `Play "${animation}" for everyone`;
+          const play = () => ready && room.clickTile(id);
+          return (
+            <div
+              key={id}
+              {...drag(id)}
+              className={`tile animation-tile ${active ? 'active' : ''} ${ready ? '' : 'waiting'} ${info?.error ? 'bad' : ''} ${dragging === id ? 'dragging' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-disabled={!ready}
+              title={why}
+              onClick={play}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && play()}
+              onContextMenu={(e) => openMenu(e, id)}
+            >
+              {!ready && !info?.error && <span className="animation-ring" aria-hidden />}
+              <Clapper size={30} />
+              <div className="tile-name">{animation}</div>
+            </div>
+          );
+        }
         const me = id === s.me;
         const p = me ? null : (ghost?.s ?? s).peers.get(id);
         const hasScreen = me ? !!s.screen : !!p?.presence?.hasScreen;
@@ -221,7 +247,22 @@ export function TileStrip({ room, s, onEditProfile, onDetails }: { room: Room; s
         <TilePuff key={`${p.ghost.id}-${p.x}`} x={p.x} y={p.y} onDone={() => setPuffs((all) => all.filter((x) => x !== p))} />
       ))}
 
-      {menu && menu.id !== 'end' && (
+      {menu && slotAnimation(menu.id) !== null && (() => {
+        const name = slotAnimation(menu.id)!;
+        return (
+          <div className="glass popover menu-list context" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+            <button onClick={() => (onEditAnimation(name), setMenu(null))}>
+              <Code size={16} /> Edit “{name}”
+            </button>
+            <button disabled={locked} onClick={() => (room.pinAnimation(name, false), setMenu(null))}>
+              <Clapper size={16} /> Disable (remove its tile)
+            </button>
+            {locked && <p className="menu-note">Tiles can't change while recording</p>}
+          </div>
+        );
+      })()}
+
+      {menu && menu.id !== 'end' && slotAnimation(menu.id) === null && (
         <div className="glass popover menu-list context" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           {s.director === menu.id ? (
             <button disabled={locked} onClick={() => (room.setDirector(null), setMenu(null))}>

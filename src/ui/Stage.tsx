@@ -7,6 +7,10 @@ import { endRows } from '../compositor/plan';
 import type { PeerId } from '../lib/types';
 import { nameOf } from './RoomView';
 import { Video } from './Video';
+import { lazy, Suspense } from 'react';
+
+// The animation player loads the first time an animation goes on stage.
+const AnimationView = lazy(() => import('./AnimationView').then((m) => ({ default: m.AnimationView })));
 
 /** The main stage mirrors the final cut's layout, using the low-bitrate live streams. Controls overlay it. */
 export function Stage({ room, s, pen, children }: { room: Room; s: Snapshot; pen: boolean; children?: React.ReactNode }) {
@@ -22,6 +26,13 @@ export function Stage({ room, s, pen, children }: { room: Room; s: Snapshot; pen
   let body: React.ReactNode;
   if (!st || (st.kind === 'peer' && !present(st.id))) {
     body = <div className="stage-empty">Click a tile below to put it on the main stage, and switch any time. Only the main stage is recorded.</div>;
+  } else if (st.kind === 'animation') {
+    // Each browser draws the animation itself, from the shared start time.
+    body = (
+      <Suspense fallback={null}>
+        <AnimationView key={`${st.hash}:${st.at}`} load={() => room.animationCode(st.hash)} startLocal={room.animationStartLocal(st)} speaker={s.current.speaker} className="stage-video" />
+      </Suspense>
+    );
   } else if (st.kind === 'end') {
     // Same rows as the final cut (plan.ts endRows): each row fills the width.
     // Only people whose camera is on (everyone, as initials, if nobody's is).

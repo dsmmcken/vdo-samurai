@@ -16,6 +16,7 @@ VDO.Ninja's hosted signaling server is only used so people can find each other. 
 | Recording: WebCodecs in a worker → fragmented MP4 in OPFS, camera and screen as separate files. Timing doesn't trust the browser's absolute timestamps (on Windows the first mic chunks can be seconds off): audio time is a sample count, video keeps its frame spacing, and each track's start is the earliest arrival seen. Recorders start when Record is pressed, before the countdown, so the encoder start-up hiccup never lands in the take. If capture fails mid-take, recording continues with `MediaRecorder`. Each person's recorder log is in ⋯ → Recording details. | `src/lib/recorder.ts`, `src/lib/capture-worker.ts` |
 | Upload: resumable data-channel transfer to the director. Files are deleted locally once the director confirms. | `src/lib/room.ts` |
 | Final cut: Mediabunny + WebCodecs in a Web Worker, written straight to OPFS. | `src/compositor/` |
+| Scripted animations: JavaScript canvas animations (intros, outros, title cards) that go on stage like a tile. Each room keeps a library that every browser in it stores (OPFS), so it's there in later meetings. | `src/lib/animation-*.ts`, `src/lib/animations.ts` |
 
 Rules for the edit:
 - The picture follows the director's stage log.
@@ -24,6 +25,17 @@ Rules for the edit:
 - The end screen is a grid of every camera, with no names.
 - Each person's name and subtitle show as a lower third for 5 s the first time they're on stage.
 - Audio is the director plus whoever is on stage; on the end screen, everyone. Each voice is polished in the render: 80 Hz high-pass (24 dB/oct), de-esser, slow leveler (±12 dB, holds in silence), gentle 3:1 compressor, then loudness-normalized to −16 LUFS (ITU-R BS.1770; gain capped so peaks only lightly touch the limiter). The mix goes through a 5 ms look-ahead limiter at −1.5 dBFS. Per-person numbers are in the render's Recording details. (`src/compositor/voice.ts`)
+
+## Scripted animations
+
+Short JavaScript canvas animations for intros, outros and interstitials. A script calls `samurai.animation({ name, duration, end, microphones, draw, audio, assets })` once; `draw(ctx, t, animation)` paints one 1920×1080 frame as a pure function of `t`.
+
+- **The window** (⋯ → Scripted animations): the room's library on the left (a switch per animation gives it a tile in the strip; delete on hover); on the right a Preview / Code tab per animation. Preview has its length, ending and microphones as controls: a change rewrites just that value in the script (`src/lib/animation-edit.ts`) and saves a new version for everyone. Code is the editor, with embedded files shown as `⟨file N⟩` markers. **New animation** takes a pasted or dropped `.js` file or the built-in 5-second VDO.Samurai intro. Files go last in a script, and may be placeholders (`assets: { logo: 'image' }`): the editor asks for each and puts it in. **Create with AI** shows the prompt to copy into your own assistant (API, rules, the JSON Schema, an example).
+- **Playing.** A tile works like any other: anyone can click it, and during a take only the Shōgun. It starts 0.6 s after the click on a shared clock; each browser draws it at 30 fps and plays its sound. At the end it goes back to what was on before (`'prev'`), holds, loops, or goes to the tile N places along the strip (`{ tile: N }`, wrapping).
+- **Final cut.** The Shōgun keeps the exact script that played with the take; the render draws its frames in the same sandbox, mixes its sound at the cue times (not through anyone's mic), and keeps only the microphones it asks for (`microphones: 'none' | 'director' | 'all'`).
+- **Sandbox** (`src/lib/animation-host.ts`). Scripts come from anyone in the room, so they run in workers inside a hidden `<iframe sandbox="allow-scripts">`: an opaque ("null") origin, so no access to this app's storage, cookies or pages, and a CSP of `default-src 'none'`, so no network. Chrome runs it in a process of its own. Inside, the worker also removes network, storage and code-from-string APIs before the script runs, and refuses `import()`. Loading and each frame are time-limited. Frames come back as pictures over a MessagePort; the render worker has the page start its sandboxes. `Math.random`, `Date.now` and `performance.now` are deterministic, so live and render match.
+- **Validation.** What a script declares is checked on the page against a JSON Schema (`ANIMATION_SCHEMA`, small validator in `src/lib/json-schema.ts`). Unknown properties are refused, so a typo is an error, not an ignored option.
+- **Library sync.** Per name, two last-writer-wins registers stamped with wall-clock time (never behind any stamp seen): the content (which version, or deleted) and whether it has a tile. Two people who edit the same animation apart, then meet, both end up with the later edit. Scripts (5 MB max, files included) travel by sha-256 on their own data channel, after any take upload, only from someone who says they have it. A tile plays once everyone present has that version.
 
 ## Develop
 
@@ -37,7 +49,9 @@ npm run build        # static site in dist/
 
 ## Test
 
-`npm run test:e2e` builds the app, then runs three headless Chromium peers through the real `wss.vdo.ninja`. They join (one by typing the password), pass the director role around, reorder tiles, rename someone, share a (fake) screen, record a take with stage switches, upload, render, and check that guests' storage is emptied. The final video lands in `test-results/final.mp4`.
+`npm run test:animations` checks scripted animations in headless Chromium: the library's merge rules, the strip, the schema, editing scripts as text, and the sandbox (null origin, no network, what a script can reach, deterministic frames, time limits, the render's path through the page).
+
+`npm run test:e2e` builds the app, then runs three headless Chromium peers through the real `wss.vdo.ninja`. They join (one by typing the password), pass the director role around, reorder tiles, rename someone, share a (fake) screen, record a take with stage switches and an animation (added by a guest, played by the Shōgun), upload, render, and check that guests' storage is emptied and the animation's frames and sound are in the cut. The final video lands in `test-results/final.mp4`.
 
 - `RELOAD_DIRECTOR=1` reloads the director right after Stop, to exercise upload resume.
 - `STATS=1` prints what each person sends live.

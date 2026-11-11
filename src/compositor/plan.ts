@@ -5,6 +5,8 @@ export interface Segment {
   start: number; // seconds
   end: number;
   stage: Stage;
+  /** An animation's t = 0, in take seconds. */
+  animationAt?: number;
 }
 
 export const LOWER_THIRD_S = 5;
@@ -18,12 +20,21 @@ export function segments(m: DirectorManifest): Segment[] {
   log.forEach((e, i) => {
     const start = i === 0 ? 0 : Math.min(duration, e.t / 1000);
     const end = i + 1 < log.length ? Math.min(duration, log[i + 1].t / 1000) : duration;
-    if (end > start) out.push({ start, end, stage: e.stage });
+    if (end > start) out.push({ start, end, stage: e.stage, ...(e.animationAt !== undefined ? { animationAt: e.animationAt / 1000 } : {}) });
   });
+  // An animation starts a moment after its tile is clicked (everyone loads it
+  // meanwhile): the cut stays on what was showing until it does, rather than
+  // holding its first frame.
+  for (let i = 1; i < out.length; i++) {
+    const seg = out[i];
+    if (seg.animationAt === undefined || seg.animationAt <= seg.start || out[i - 1].end !== seg.start) continue;
+    seg.start = out[i - 1].end = Math.min(seg.animationAt, seg.end);
+    if (seg.start === seg.end) out.splice(i--, 1);
+  }
   // Merge back-to-back identical stages so lower thirds and audio don't stutter.
   return out.reduce<Segment[]>((acc, s) => {
     const prev = acc[acc.length - 1];
-    if (prev && JSON.stringify(prev.stage) === JSON.stringify(s.stage)) prev.end = s.end;
+    if (prev && JSON.stringify(prev.stage) === JSON.stringify(s.stage) && prev.animationAt === s.animationAt) prev.end = s.end;
     else acc.push({ ...s });
     return acc;
   }, []);
@@ -66,12 +77,21 @@ export const SHOWN_PAD_S = 1;
  */
 export function shownSpans(m: DirectorManifest, peer: PeerId, kind: 'cam' | 'screen'): [number, number][] {
   return segments(m)
-    .filter(({ stage }) => (kind === 'cam' ? stage.kind === 'end' || stage.id === peer : stage.kind === 'peer' && stage.id === peer && stage.view === 'screen'))
+    .filter(({ stage }) =>
+      kind === 'cam'
+        ? // An animation shows no camera, but its microphones come from camera files.
+          stage.kind === 'end' || (stage.kind === 'animation' ? audible(stage, peer, m.take.director) : stage.id === peer)
+        : stage.kind === 'peer' && stage.id === peer && stage.view === 'screen',
+    )
     .map((s) => [s.start - SHOWN_PAD_S, s.end + SHOWN_PAD_S]);
 }
 
-/** Who you hear: the director, plus whoever is on stage (everyone on the end screen). */
+/**
+ * Who you hear: the director, plus whoever is on stage (everyone on the end
+ * screen). During an animation, whoever the animation says: nobody, the director, or all.
+ */
 export function audible(stage: Stage, peer: PeerId, director: PeerId) {
+  if (stage.kind === 'animation') return stage.microphones === 'all' || (stage.microphones === 'director' && peer === director);
   return peer === director || stage.kind === 'end' || stage.id === peer;
 }
 

@@ -6,7 +6,7 @@ import type { PeerId } from '../lib/types';
 import { fmtClock } from '../lib/util';
 import { AfterTake } from './AfterTake';
 import { Countdown } from './Countdown';
-import { AddReaction, Cam, CamOff, Check, Chevron, Copy, Dot, Draw, Helmet, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
+import { AddReaction, Clapper, Cam, CamOff, Check, Chevron, Copy, Dot, Draw, Helmet, Info, Leave, Speaker, Mic, MicOff, More, Pencil, Screen, Square, User } from './icons';
 import { Popover } from './Popover';
 import { emojiFont, PickerShell } from './PickerShell';
 import { ProfileForm } from './ProfileForm';
@@ -22,12 +22,16 @@ import { WaitingMusic } from './WaitingMusic';
 // Hovering the button starts on both the picker's code and its font.
 const loadPicker = () => (emojiFont.start(), import('./ReactionPicker'));
 const ReactionPicker = lazy(loadPicker);
+// The animations panel (and its AI prompt) loads when it's first opened.
+const AnimationsPanel = lazy(() => import('./AnimationsPanel').then((m) => ({ default: m.AnimationsPanel })));
 
 export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void }) {
   const s = useSyncExternalStore(room.subscribe, room.getSnapshot);
   const [edit, setEdit] = useState<{ at: DOMRect; id: PeerId } | null>(null);
   const [menuAt, setMenuAt] = useState<DOMRect | null>(null);
   const [details, setDetails] = useState(false);
+  /** The animations panel: open (true), or open on one animation (its name). */
+  const [animations, setAnimations] = useState<boolean | string>(false);
   const [connDetails, setConnDetails] = useState<PeerId | null>(null);
   const [reactAt, setReactAt] = useState<DOMRect | null>(null);
   const iAmDirector = s.director === s.me;
@@ -111,7 +115,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
         </div>
       </Stage>
 
-      <TileStrip room={room} s={s} onEditProfile={(at, id) => setEdit(edit?.id === id ? null : { at, id })} onDetails={setConnDetails} />
+      <TileStrip room={room} s={s} onEditProfile={(at, id) => setEdit(edit?.id === id ? null : { at, id })} onDetails={setConnDetails} onEditAnimation={setAnimations} />
 
       {edit && (
         <Popover anchor={edit.at} onClose={() => setEdit(null)}>
@@ -142,6 +146,7 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
             close={() => setMenuAt(null)}
             onEdit={() => (setEdit({ at: menuAt, id: s.me }), setMenuAt(null))}
             onDetails={() => (setDetails(true), setMenuAt(null))}
+            onAnimations={() => (setAnimations(true), setMenuAt(null))}
             onLeave={() => {
               const busy = s.recording || (s.myUpload && !s.myUpload.done);
               if (busy && !confirm(s.recording ? 'A take is recording. Leave anyway?' : "Your upload isn't finished. Leave anyway? It resumes if you come back.")) return;
@@ -154,6 +159,11 @@ export function RoomView({ room, onLeave }: { room: Room; onLeave: () => void })
       <Countdown startLocal={s.recording ? s.takeStartLocal : null} />
       <AfterTake room={room} s={s} onDetails={() => setDetails(true)} />
       {details && <RecordingDetails room={room} s={s} onClose={() => setDetails(false)} />}
+      {animations && (
+        <Suspense fallback={null}>
+          <AnimationsPanel room={room} s={s} open={typeof animations === 'string' ? animations : undefined} onClose={() => setAnimations(false)} />
+        </Suspense>
+      )}
       {connDetails && <ConnectionDetails room={room} s={s} id={connDetails} onClose={() => setConnDetails(null)} />}
       {s.notice && <div className="glass toast">{s.notice}</div>}
       <WaitingMusic s={s} />
@@ -184,7 +194,7 @@ function ViewToggle({ room, s }: { room: Room; s: Snapshot }) {
   );
 }
 
-function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; s: Snapshot; close: () => void; onEdit: () => void; onDetails: () => void; onLeave: () => void }) {
+function RoomMenu({ room, s, close, onEdit, onDetails, onAnimations, onLeave }: { room: Room; s: Snapshot; close: () => void; onEdit: () => void; onDetails: () => void; onAnimations: () => void; onLeave: () => void }) {
   const check = usePasswordCheck(room.password);
   const relayed = [...s.peers.values()].filter((p) => p.route === 'relay').length;
   const status =
@@ -205,6 +215,9 @@ function RoomMenu({ room, s, close, onEdit, onDetails, onLeave }: { room: Room; 
       <DeviceMenu room={room} s={s} kind="cam" label="Camera" icon={<Cam size={16} />} close={close} />
       <DeviceMenu room={room} s={s} kind="mic" label="Microphone" icon={<Mic size={16} />} close={close} />
       <DeviceMenu room={room} s={s} kind="speaker" label="Speakers" icon={<Speaker size={16} />} close={close} />
+      <button onClick={onAnimations}>
+        <Clapper size={16} /> Scripted animations{s.animations.length ? ` (${s.animations.length})` : ''}
+      </button>
       <button onClick={onDetails}>
         <Info size={16} /> Recording details
       </button>

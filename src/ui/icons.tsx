@@ -49,3 +49,15 @@ export const GitHub = svg(
 );
 export const MusicNote = svg(<path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" />);
 export const MusicOff = svg(<path d="M4.27 3L3 4.27l9 9v.28A4 4 0 1014 17v-1.73L19.73 21 21 19.73 4.27 3zM14 7h4V3h-6v5.18l2 2V7z" />);
+// Clapperboard: an animation.
+export const Clapper = svg(<path d="M3 10h18v9a1 1 0 01-1 1H4a1 1 0 01-1-1v-9zM2.6 6.4l16.3-3.9.9 3.6-16.3 3.9-.9-3.6z" />);
+export const Play = svg(<path d="M8 5.5v13a.5.5 0 00.77.42l10.2-6.5a.5.5 0 000-.84L8.77 5.08A.5.5 0 008 5.5z" />);
+export const Trash = svg(<path d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 11a1 1 0 01-1 1H8a1 1 0 01-1-1L6 9zm4 2v8h1.5v-8H10zm2.5 0v8H14v-8h-1.5z" />);
+export const Pin = svg(<path d="M14.5 2.5l7 7-2 1-1.8-.6-3.6 3.6.4 4-1.5 1.5-3.6-3.6L4.6 20.2 3.8 19.4l4.8-4.8L5 11l1.5-1.5 4 .4L14.1 6.3l-.6-1.8 1-2z" />);
+export const Plus = svg(<path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />);
+// Sparkle: write it with AI.
+export const Sparkle = svg(<path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zm7 11l.95 2.55L22.5 16.5l-2.55.95L19 20l-.95-2.55-2.55-.95 2.55-.95L19 13z" />);
+export const Code = svg(<path d="M8.6 6.6L3.2 12l5.4 5.4L10 16l-4-4 4-4-1.4-1.4zm6.8 0L14 8l4 4-4 4 1.4 1.4 5.4-5.4-5.4-5.4z" />);
+export const Download = svg(<path d="M11 4h2v8.2l2.6-2.6L17 11l-5 5-5-5 1.4-1.4 2.6 2.6V4zM5 18h14v2H5v-2z" />);
+export const Pause = svg(<path d="M7 5h3.5v14H7V5zm6.5 0H17v14h-3.5V5z" />);
+export const Replay = svg(<path d="M12 5a7 7 0 11-6.93 8h2.02A5 5 0 1012 7v3L7.5 6 12 2v3z" />);

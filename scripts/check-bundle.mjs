@@ -19,6 +19,9 @@ const banned = {
   'noise reduction (fastenhancer-web)': /fastenhancer-processor/,
   'reaction search (emoji-search.ts)': /half-typed|EmojiSearch|\(i\|in\|e\|es\|s\)/,
   'background removal (lib/cutout)': /uPersonR|segmenter: unexpected input/,
+  'animation player (animation-player.ts, AnimationView.tsx)': /Animation stopped:|\[animation\] sound failed/,
+  'animation sandbox host (animation-sandbox.ts)': /to draw \(an endless loop\?\)/,
+  'animations panel, AI prompt and examples': /You are helping me write a|Paste an animation script, or drop/,
 };
 const seen = new Set();
 const walk = (file) => {

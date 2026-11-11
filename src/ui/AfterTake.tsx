@@ -25,7 +25,7 @@ export function AfterTake({ room, s, onDetails }: { room: Room; s: Snapshot; onD
   const [saved, setSaved] = useState<string | null>(null);
   const dm = s.directorTake;
   const isDirector = !!dm?.take.stopAt;
-  const takeId = isDirector ? dm!.take.id : s.take?.stopAt ? s.take.id : null;
+  const takeId = isDirector ? dm!.take.id : s.take?.stopAt && !s.take.cancelled ? s.take.id : null;
   const rows = s.race ?? [];
   const mineDone = !isDirector && !!s.myUpload?.done;
   const everyoneDone = rows.length > 0 && rows.every((r) => r.done);

@@ -18,10 +18,18 @@ export function Countdown({ startLocal }: { startLocal: number | null }) {
     return () => cancelAnimationFrame(raf);
   }, [startLocal]);
   if (label === null) return null;
-  // Dims for everyone as soon as Record is pressed; the numbers follow.
+  // Dims for everyone as soon as Record is pressed, with "Get ready" until
+  // the numbers start (the recorders spin up meanwhile); it leaves as 3 arrives.
   return (
     <div className="countdown" aria-live="assertive">
-      {label && <span key={label}>{label}</span>}
+      <span className={`get-ready ${label ? 'out' : ''}`} aria-hidden={!!label}>
+        <span className="get">Get </span>ready
+      </span>
+      {label && (
+        <span key={label} className="count">
+          {label}
+        </span>
+      )}
     </div>
   );
 }
