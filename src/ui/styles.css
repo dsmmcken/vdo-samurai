@@ -1383,9 +1383,35 @@ html.resizing .pip-cut {
   place-items: center;
   pointer-events: none;
   z-index: 60;
-  background: rgba(0, 0, 0, 0.35);
+  /* On at once when Record is pressed: no fade. */
+  background: rgba(0, 0, 0, 0.65);
+  animation: none;
+  transition: none;
 }
-.countdown span {
+.countdown > span {
+  grid-area: 1 / 1;
+}
+.get-ready {
+  /* Set like the numbers, on one line: just "Ready" where "Get ready" won't fit. */
+  font-size: min(24vw, 160px);
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  text-transform: uppercase;
+  color: #fff;
+}
+@media (max-width: 1099px) {
+  .get-ready .get {
+    display: none;
+  }
+}
+.get-ready.out {
+  opacity: 0;
+  transform: scale(1.25);
+  filter: blur(8px);
+  transition: opacity 0.35s ease-in, transform 0.35s ease-in, filter 0.35s ease-in;
+}
+.countdown .count {
   font-size: min(40vw, 240px);
   font-weight: 800;
   color: #fff;

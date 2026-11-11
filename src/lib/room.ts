@@ -46,7 +46,7 @@ import type {
   Stamped,
   Take,
 } from './types';
-import { now, rid, sleep } from './util';
+import { afterPaint, now, rid, sleep } from './util';
 import { cutoutCorner, PIP_MOVE_S } from './overlay';
 import { AnimationLibrary, type AnimationInfo } from './animations';
 import { buildStrip, keepAbsent, liveAnimations, ANIMATION_MAX_BYTES, animationSlot, slotAnimation, tileAfter, type AnimationIndex, type AnimationMeta } from './animation-api';
@@ -1275,6 +1275,8 @@ export class Room {
   stopRecording() {
     const t = this.shared.take.v;
     if (!t || t.stopAt || t.director !== this.me) return;
+    // Stopped before "go": nothing worth keeping.
+    if (now() < t.startAt) return this.set('take', { ...t, stopAt: t.startAt, cancelled: true });
     this.set('take', { ...t, stopAt: Math.max(now(), t.startAt) });
   }
 
@@ -1283,6 +1285,7 @@ export class Room {
   private onTake() {
     const take = this.shared.take.v;
     if (!take) return;
+    if (take.cancelled) return void this.cancelTake(take);
     if (!take.stopAt && this.active?.take.id !== take.id) this.beginTake(take);
     if (take.stopAt) {
       if (this.active?.take.id === take.id) this.endTake(take);
@@ -1320,6 +1323,9 @@ export class Room {
     if (this.active !== a || a.stopping) return;
     const wait = take.startAt - PREROLL_MS - this.dirOffset(take)! - now();
     if (wait > 0) await sleep(wait);
+    // The countdown's dim goes on screen first: starting the recorders blocks
+    // the page for a moment, and the dim should land with the click.
+    await afterPaint();
     if (this.active !== a || a.stopping) return;
     a.began = true;
     if (!this.mine.has(take.id)) this.mine.set(take.id, { take, files: [], acked: [], complete: false, camOff: this.camOff ? [[-PREROLL_MS, null]] : [], frames: [[-PREROLL_MS, this.head]] });
@@ -1365,6 +1371,7 @@ export class Room {
     // A first estimate goes on disk right away (so a crash still leaves a usable
     // entry); the exact start replaces it when the recorder finishes.
     rec.started.then((t) => {
+      if (this.mine.get(a.take.id) !== m) return; // thrown away meanwhile
       const at = this.toTake(a.take, t);
       m.files.push({ name: rec.name, peer: this.me, kind, offset: at, audioOffset: at, size: 0, mime: rec.mime });
       fs.writeJson(a.take.id, 'mine.json', m);
@@ -1432,6 +1439,25 @@ export class Room {
       await Promise.all(this.lottieSaves.values());
     }
     await this.finishMine(take);
+  }
+
+  /** A take stopped during the countdown: recorders stop and every file goes, here and everywhere. */
+  private async cancelTake(take: Take) {
+    const a = this.active;
+    const had = a?.take.id === take.id || this.dm?.take.id === take.id || this.mine.has(take.id);
+    if (!had) return;
+    // Forgotten first, so nothing still in flight writes to it again.
+    this.mine.delete(take.id);
+    if (a?.take.id === take.id) {
+      if (a.stopping) return;
+      a.stopping = true;
+      this.active = null;
+      await Promise.all(a.recorders.map((r) => r.stop().catch(() => {})));
+    }
+    if (this.dm?.take.id === take.id) await this.discardTake();
+    this.uploadQueue = this.uploadQueue.filter((u) => u.takeId !== take.id);
+    await fs.removeTake(take.id);
+    this.say('Recording stopped before it started: nothing was kept.');
   }
 
   /** Our files for a finished take: register them (director) or start uploading. */

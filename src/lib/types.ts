@@ -72,6 +72,8 @@ export interface Take {
   startAt: number;
   /** Recording end, on the director's clock; absent while recording. */
   stopAt?: number;
+  /** Stopped during the countdown: everyone throws it away. */
+  cancelled?: boolean;
 }
 
 /** Last-writer-wins register. `ts` is a Lamport clock; ties break on `by`. */

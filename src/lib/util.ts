@@ -5,6 +5,13 @@ export const now = () => performance.timeOrigin + performance.now();
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** After the next frame is on screen (or 100 ms, in a hidden tab where frames don't come). */
+export const afterPaint = () =>
+  new Promise<void>((r) => {
+    const t = setTimeout(r, 100);
+    requestAnimationFrame(() => setTimeout(() => (clearTimeout(t), r())));
+  });
+
 const ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789';
 export function rid(n = 8) {
   const bytes = crypto.getRandomValues(new Uint8Array(n));
