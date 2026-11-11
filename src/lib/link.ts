@@ -21,6 +21,8 @@ export interface LinkEvents {
   message: (m: any) => void;
   stream: (stream: MediaStream) => void;
   fileChannel: (ch: RTCDataChannel) => void;
+  /** An animation script arriving (animations.ts), on its own low-priority channel. */
+  animationChannel: (ch: RTCDataChannel) => void;
   /** A piece of an encoded screen frame (see screencast.ts). */
   screenData: (buf: ArrayBuffer) => void;
   state: () => void;
@@ -89,6 +91,7 @@ export class Link {
     };
     pc.ondatachannel = ({ channel }) => {
       if (channel.label.startsWith('f:')) this.handlers.fileChannel?.(channel);
+      else if (channel.label.startsWith('sc:')) this.handlers.animationChannel?.(channel);
     };
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;

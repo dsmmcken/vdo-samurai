@@ -1269,14 +1269,16 @@ html.resizing .pip-cut {
 .claim:hover {
   background: rgba(255, 255, 255, 0.2);
 }
-.end-tile {
+.end-tile,
+.animation-tile {
   display: grid;
   place-items: center;
   color: var(--muted);
   background: transparent;
   border: 1px dashed rgba(255, 255, 255, 0.18);
 }
-.end-tile .tile-name {
+.end-tile .tile-name,
+.animation-tile .tile-name {
   background: none;
   text-align: center;
   color: var(--muted);
@@ -2236,4 +2238,1014 @@ pre,
 }
 .picker-credit:hover {
   color: var(--accent);
+}
+
+/* ---------- animations */
+.animation-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #000;
+}
+.animation-view canvas {
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+.animation-note {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--muted);
+  font-size: 13px;
+  max-width: calc(100% - 32px);
+}
+.animation-note.bad {
+  color: var(--bad);
+}
+.animation-tile {
+  position: relative;
+}
+.animation-tile .tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.animation-tile.waiting {
+  cursor: progress;
+  opacity: 0.7;
+}
+.animation-tile.bad {
+  cursor: not-allowed;
+  color: var(--bad);
+}
+/* Still on its way to someone: a ring turns round the tile's icon. */
+.animation-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -34px 0 0 -23px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--accent);
+  animation: animation-spin 1s linear infinite;
+}
+@keyframes animation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animations-modal {
+  width: min(1120px, 100%);
+  height: min(780px, calc(100vh - 32px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.animations-modal.drop {
+  outline: 2px dashed var(--accent);
+  outline-offset: -8px;
+}
+.animations-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.animations-head > svg {
+  color: var(--accent);
+}
+.animations-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.animations-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg);
+}
+.animations-title span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+.animations-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+}
+.animations-lib {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+  min-height: 0;
+}
+.lib-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lib-actions .btn {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.lib-label,
+.prompt-label {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lib-list {
+  list-style: none;
+  margin: 0 -6px;
+  padding: 0;
+  flex: 1;
+  overflow: auto;
+  /* A line between creating and the library: only when there's a library. */
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.lib-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.lib-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.lib-item.on {
+  background: rgba(255, 183, 197, 0.12);
+}
+.lib-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.lib-empty {
+  flex: 1;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lib-empty p {
+  margin: 4px 0;
+}
+.lib-foot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.animations-modal .link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.animations-modal .link:hover {
+  text-decoration: underline;
+}
+.animations-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px 24px;
+  min-height: 100%;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pane-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.grow {
+  flex: 1;
+}
+.pane-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(255, 196, 61, 0.14);
+  color: var(--gold);
+}
+.pill.ok {
+  background: rgba(70, 194, 122, 0.14);
+  color: var(--ok);
+}
+.pill.bad {
+  background: rgba(255, 95, 85, 0.14);
+  color: var(--bad);
+}
+/* Getting started. */
+.welcome h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+}
+.welcome p {
+  margin: 0;
+  max-width: 64ch;
+  color: var(--muted);
+}
+.start-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 8px 0;
+}
+.new-starts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.start-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.start-card:hover {
+  border-color: rgba(255, 183, 197, 0.5);
+  background: rgba(255, 183, 197, 0.06);
+}
+.start-card svg {
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.start-card span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.start-card.big {
+  padding: 18px;
+  gap: 6px;
+}
+.welcome-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Editor. */
+.script-box,
+.describe-box {
+  width: 100%;
+  resize: vertical;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font: 12px/1.55 ui-monospace, monospace;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.script-box {
+  flex: 1;
+  min-height: 260px;
+}
+.describe-box {
+  min-height: 80px;
+  margin-top: 6px;
+  font: inherit;
+}
+.animation-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 95, 85, 0.12);
+  color: var(--bad);
+  font: 12px/1.5 ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.animation-ok {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(70, 194, 122, 0.12);
+  color: var(--ok);
+  font-size: 13px;
+}
+.animation-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+/* AI prompt. */
+.ai-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ai-steps li > div {
+  margin-top: 8px;
+}
+.prompt-view,
+.script-view {
+  margin: 0;
+  flex: 1;
+  min-height: 160px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font: 12px/1.55 ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* One animation. */
+.animation-stage {
+  position: relative;
+  /* The full width of the page (lined up with the title and the tabs), unless the
+     window is too short for that: then as tall as leaves room for the options. */
+  width: min(100%, calc((min(780px, 100vh - 32px) - 330px) * 16 / 9));
+  align-self: flex-start;
+  flex-shrink: 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+.animation-stage-empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+/* The preview player (AnimationPlayer.tsx). */
+.player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  outline: none;
+}
+.player canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.player.idle,
+.player.idle canvas {
+  cursor: none;
+}
+/* Play / pause, flashed in the middle: grows and fades, then it's gone. */
+.player-flash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  pointer-events: none;
+  animation: player-flash 0.6s ease-out forwards;
+}
+@keyframes player-flash {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+/* Before the first play, and at the end: a big button that stays. */
+.player-big {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 68px;
+  height: 68px;
+  margin: -34px 0 0 -34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s, background 0.15s;
+}
+.player-big:hover {
+  transform: scale(1.06);
+  background: rgba(0, 0, 0, 0.75);
+}
+/* The bar: fades in on movement, out when the pointer leaves or rests. */
+.player-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 12px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.player.show .player-bar,
+.player:focus-visible .player-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.player-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+}
+.player-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.player-time {
+  font: 12px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.player-seek {
+  flex: 1;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.player-seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--p), rgba(255, 255, 255, 0.3) var(--p));
+}
+.player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transform: scale(0);
+  transition: transform 0.12s;
+}
+.player-seek:hover::-webkit-slider-thumb,
+.player-seek:focus-visible::-webkit-slider-thumb,
+.player-seek:active::-webkit-slider-thumb {
+  transform: scale(1);
+}
+.player-seek::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.player-seek::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.player-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .player-flash {
+    animation-duration: 0.01s;
+  }
+}
+.animation-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.animation-facts li {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  color: var(--muted);
+}
+.animation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.switch input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+@media (max-width: 760px) {
+  .animations-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .animations-lib {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: 240px;
+  }
+  .lib-actions {
+    flex-direction: row;
+  }
+  .lib-foot,
+  .animations-title span {
+    display: none;
+  }
+  .pane {
+    padding: 16px;
+  }
+}
+
+/* Scripted animations, quieter bits. */
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+.icon-btn.danger:hover:not(:disabled) {
+  color: var(--bad);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.animations-modal .animation-ok {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.welcome {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.welcome .start-cards {
+  width: min(100%, 680px);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.welcome .start-card {
+  align-items: center;
+  text-align: center;
+  padding: 20px 14px;
+}
+/* Files in the script being edited. */
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 13px;
+}
+.files-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.file-chip em {
+  font-style: normal;
+  color: var(--muted);
+}
+.file-chip.missing {
+  background: rgba(255, 196, 61, 0.12);
+  outline: 1px dashed rgba(255, 196, 61, 0.5);
+}
+.file-chip.missing .link {
+  color: var(--gold);
+}
+.chip-x {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip-x:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg);
+}
+/* An animation's options, as one sentence of controls. */
+.animation-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 460px);
+  font-size: 13px;
+}
+.animation-options[aria-busy='true'] {
+  opacity: 0.6;
+}
+/* One option per line: its label, then its control. */
+.opt {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.opt > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.opt-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.animation-options input[type='number'] {
+  width: 72px;
+}
+.animation-options input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.animation-options input[type='number'],
+.animation-options input[type='text'],
+.animation-options select {
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--fg);
+  font: inherit;
+}
+/* Create with AI: three steps in a row, joined by a line. */
+.wizard {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.wizard li {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.wizard li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: 36px;
+  right: -6px;
+  height: 1px;
+  background: var(--line);
+}
+.wizard-n {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 183, 197, 0.5);
+  background: var(--panel);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.wizard-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding-right: 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+.wizard-text span {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* What to tell the AI: always shown, in columns. */
+.ask ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 6px 12px;
+}
+.ask li {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+.ask li span {
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .wizard {
+    grid-template-columns: 1fr;
+  }
+  .wizard li::after {
+    display: none;
+  }
+}
+/* The prompt scrolls in place, so Copy stays in view at the bottom right. */
+.pane.fill {
+  height: 100%;
+  min-height: 420px;
+}
+.pane.fill .prompt-view {
+  flex: 1 1 0;
+  max-height: none;
+}
+/* A (?) whose hint floats above everything (Tip.tsx). */
+.tip {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  flex-shrink: 0;
+}
+.tip:hover,
+.tip:focus-visible {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.tip-pop {
+  position: fixed;
+  z-index: 1000;
+  max-width: min(300px, calc(100vw - 16px));
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #24242c;
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  pointer-events: none;
+}
+/* Library rows: the enable switch, then the name (the part that's selected), then delete on hover or focus. */
+.lib-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 6px;
+}
+.lib-row .lib-item {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding-right: 34px;
+}
+.lib-row .lib-name {
+  display: block;
+}
+.lib-del {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.lib-del:hover {
+  color: var(--bad);
+}
+/* An on/off switch (a checkbox with role="switch"): a recessed track with a raised knob. */
+.toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  margin: 0;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #0c0c11, #1b1b22);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 0 rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+  flex-shrink: 0;
+}
+.toggle::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffffff, #d9d9e0);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.35),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.12);
+  transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.4, 1.2);
+}
+.toggle:checked {
+  background: linear-gradient(180deg, #d98898, #ffb7c5);
+  box-shadow:
+    inset 0 2px 4px rgba(90, 20, 40, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.25),
+    0 0 10px rgba(255, 183, 197, 0.25);
+}
+.toggle:checked::before {
+  transform: translateX(14px);
+}
+.toggle:hover:not(:disabled)::before {
+  background: linear-gradient(180deg, #ffffff, #ececf1);
+}
+.toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.lib-del:hover {
+  color: var(--bad);
+}
+/* Preview / Code. */
+.tabs {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.tabs button {
+  border: 0;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tabs button.on {
+  background: var(--raised);
+  color: var(--fg);
+}
+/* The editor: a label and its control, one under the other, then the actions. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grow-field {
+  flex: 1;
+  min-height: 0;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.field-row label {
+  font-weight: 600;
+}
+.field-row .link {
+  font-size: 13px;
+}
+.grow-field .script-box {
+  flex: 1;
+  min-height: 200px;
+  resize: none;
+}
+.field-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Files a pasted script asked for (placeholders), only while some are missing. */
+.needs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 196, 61, 0.1);
+  color: var(--gold);
+  font-size: 13px;
 }

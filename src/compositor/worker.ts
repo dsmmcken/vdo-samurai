@@ -56,6 +56,9 @@ import {
   type Segment,
 } from "./plan";
 import { LoudnessMeter } from "./loudness";
+import { AnimationSandbox, useSpawn } from "../lib/animation-sandbox";
+import { spawnViaPage } from "../lib/animation-host";
+import { animationTime, type AnimationMeta } from "../lib/animation-api";
 import { Limiter, VoiceChain } from "./voice";
 
 const W = 1920;
@@ -83,8 +86,16 @@ const MAX_CUT_DB = 12;
 const LIMITER_HEADROOM_DB = 3; // loudest peaks may go at most this far into the limiter
 
 const post = (m: unknown) => (self as unknown as Worker).postMessage(m);
+// Animations run in the page's null-origin sandbox frame; a worker can't make one, so the page starts them for us.
+useSpawn(
+  spawnViaPage(
+    (m, transfer) => (self as unknown as Worker).postMessage(m, transfer),
+    (fn) => self.addEventListener("message", (e) => fn((e as MessageEvent).data)),
+  ),
+);
 
 self.onmessage = async (e: MessageEvent<{ manifest: DirectorManifest }>) => {
+  if (!e.data?.manifest) return; // animation sandbox news (animation-host.ts), not a render
   try {
     await render(e.data.manifest);
   } catch (err) {
@@ -103,7 +114,7 @@ interface Source {
 }
 
 /**
- * 192 kbps, not YouTube's 384 for stereo: our sound is mono voices (recorded
+ * 192 kbps, not YouTube's 384 for stereo: our sound is mono microphones (recorded
  * as 128 kbps Opus) placed identically in both channels, which AAC codes
  * almost as mono, and YouTube streams it at about 128 kbps anyway. 192 leaves
  * headroom for this re-encode, and is the most Windows' AAC encoder takes.
@@ -175,6 +186,8 @@ async function render(m: DirectorManifest) {
   const thirds = lowerThirds(segs, t0);
   const ink = await readInk(dir, segs);
   const { reactions, sprite } = await readReactions(dir);
+  const animations = await openAnimations(dir, segs);
+  const music = animationPlacements(segs, animations);
 
   // Output.
   const fh = await dir.getFileHandle("final.mp4", { create: true });
@@ -201,7 +214,7 @@ async function render(m: DirectorManifest) {
   });
   const audioSources = sources.filter((s) => s.audio);
   const { codec: audioCodec, bitrate: audioBitrate } = await pickAudio();
-  const audio = audioSources.length
+  const audio = audioSources.length || music.length
     ? new AudioSampleSource({ codec: audioCodec, bitrate: audioBitrate })
     : null;
   post({
@@ -270,7 +283,7 @@ async function render(m: DirectorManifest) {
           : `${who}: ${lufs.toFixed(1)} LUFS after polish → gain ${sign(db)} dB${db < toTarget - 0.05 ? " (held back by peaks)" : ""}; leveler ${sign(st.levelerDb)} dB, compression −${st.compressionDb.toFixed(1)} dB, de-esser ${Math.round(st.deEss * 100)}% of speech`,
     });
   }
-  const mixer = new Mixer(audioSources, segs, m.take.director, gains);
+  const mixer = new Mixer(audioSources, segs, m.take.director, gains, music);
 
   // Bus limiter. Its 5 ms look-ahead delays the audio, so the first LOOKAHEAD
   // samples out are dropped and the tail is flushed at the end: no A/V shift.
@@ -429,7 +442,25 @@ async function render(m: DirectorManifest) {
     ctx.fillStyle = BG;
     ctx.fillRect(0, 0, W, H);
     const st = seg.stage;
-    if (st.kind === "end") {
+    if (st.kind === "animation") {
+      // The animation's own frame at this moment, from its sandbox: what everyone saw live.
+      const sc = animations.get(st.hash);
+      if (sc && !sc.sandbox.broken) {
+        try {
+          const bitmap = await sc.sandbox.bitmap(
+            animationTime(sc.meta, t - (seg.animationAt ?? seg.start)),
+          );
+          ctx.drawImage(bitmap, 0, 0, W, H);
+          bitmap.close();
+        } catch (e) {
+          post({
+            t: "warn",
+            message: `animation "${st.name}" stopped drawing at ${t.toFixed(1)} s (black from here): ${(e as Error).message}`,
+          });
+        }
+      }
+      drawInk(ctx, ink[segIdx], t * 1000, FULL, inkNames);
+    } else if (st.kind === "end") {
       // Only people whose camera is on (initials for everyone if nobody's is).
       const on = camPeers.filter((p) => !camOff(p, t));
       const shown = on.length ? on : camPeers;
@@ -545,6 +576,7 @@ async function render(m: DirectorManifest) {
   }
 
   for (const c of cursors.values()) await c.close();
+  for (const sc of animations.values()) sc.sandbox.close();
   cutout?.close();
   await mixer.close();
   // Flush the limiter's look-ahead tail.
@@ -676,7 +708,7 @@ function releaseUnused(
     if (
       seg.stage.kind === "end"
         ? s.file.kind === "cam"
-        : s.file.peer === seg.stage.id
+        : seg.stage.kind === "peer" && s.file.peer === seg.stage.id
     )
       keep.add(s.file.name);
   }
@@ -741,6 +773,7 @@ class Mixer {
     private segs: Segment[],
     private director: PeerId,
     levels: Map<string, number>,
+    private music: Placement[] = [],
   ) {
     this.tracks = sources.map((s) => ({
       peer: s.file.peer,
@@ -808,6 +841,19 @@ class Mixer {
       ];
       tr.pos = from + n;
     }
+    // Animation sound, as it is (no voice polish): placed exactly, faded at cuts.
+    for (const p of this.music) {
+      const a = Math.max(from, p.from);
+      const b = Math.min(from + n, p.to);
+      for (let i = a; i < b; i++) {
+        const k = i - p.from + p.offset;
+        // Faded only where a cut clips it.
+        const edge = Math.min(p.offset > 0 ? i - p.from : Infinity, p.clipped ? p.to - 1 - i : Infinity);
+        const g = p.gain * (edge < MUSIC_FADE ? edge / MUSIC_FADE : 1);
+        out[0][i - from] += (p.L[k] ?? 0) * g;
+        out[1][i - from] += (p.R[k] ?? 0) * g;
+      }
+    }
     return out;
   }
 
@@ -845,7 +891,7 @@ class Mixer {
   }
 }
 
-/** Voices are processed in mono (the mic is mono anyway); stereo is averaged. */
+/** Microphones are processed in mono (the mic is mono anyway); stereo is averaged. */
 function toMono48k(s: AudioSample): Float32Array {
   const [l, r] = toStereo48k(s);
   if (l === r) return l;
@@ -979,4 +1025,134 @@ function lowerThird(ctx: Ctx, p: Profile | undefined, t: number, len: number) {
     ctx.fillText(p.subtitle, x + 36, y + 104);
   }
   ctx.restore();
+}
+
+/** Animation sound's fade at the edges of where it plays (cuts, loop passes), in samples. */
+const MUSIC_FADE = Math.round(RATE * 0.02);
+
+interface OpenAnimation {
+  sandbox: AnimationSandbox;
+  meta: AnimationMeta;
+  /** Each sound asset, decoded to 48 kHz stereo. */
+  sounds: Map<string, [Float32Array, Float32Array]>;
+}
+
+/** One stretch of animation sound in the mix, in take samples. */
+interface Placement {
+  from: number;
+  to: number;
+  /** Where in the sound `from` is. */
+  offset: number;
+  L: Float32Array;
+  R: Float32Array;
+  gain: number;
+  /** It stops before the sound ends. */
+  clipped: boolean;
+}
+
+/**
+ * The animations this take shows, from the scripts the director kept with it, each
+ * in its own sandbox (the same one that played it live). One that's missing or
+ * broken is left black, with a warning.
+ */
+async function openAnimations(dir: FileSystemDirectoryHandle, segs: Segment[]) {
+  const out = new Map<string, OpenAnimation>();
+  for (const seg of segs) {
+    const st = seg.stage;
+    if (st.kind !== "animation" || out.has(st.hash)) continue;
+    try {
+      const code = await (
+        await (await dir.getFileHandle(`animation-${st.hash}.js`)).getFile()
+      ).text();
+      const { sandbox, meta, sounds } = await AnimationSandbox.open(code);
+      const decoded = new Map<string, [Float32Array, Float32Array]>();
+      for (const [name, bytes] of Object.entries(sounds)) {
+        try {
+          decoded.set(name, await decodeSound(bytes));
+        } catch (e) {
+          post({
+            t: "warn",
+            message: `animation "${st.name}": sound "${name}" couldn't be decoded, left out: ${(e as Error).message}`,
+          });
+        }
+      }
+      out.set(st.hash, { sandbox, meta, sounds: decoded });
+      post({
+        t: "info",
+        message: `animation "${meta.name}": ${meta.duration} s, ending ${typeof meta.end === "object" ? `tile ${meta.end.tile}` : meta.end}, microphones ${meta.microphones}, ${meta.audio.length} sound cue(s)`,
+      });
+    } catch (e) {
+      post({
+        t: "warn",
+        message: `animation "${st.name}" can't be rendered (black instead): ${(e as Error).message}`,
+      });
+    }
+  }
+  return out;
+}
+
+async function decodeSound(bytes: ArrayBuffer): Promise<[Float32Array, Float32Array]> {
+  const input = new Input({
+    formats: ALL_FORMATS,
+    source: new BlobSource(new Blob([bytes])),
+  });
+  const track = await input.getPrimaryAudioTrack();
+  if (!track) throw new Error("no audio in it");
+  const L: Float32Array[] = [];
+  const R: Float32Array[] = [];
+  for await (const a of new AudioSampleSink(track).samples()) {
+    const [l, r] = toStereo48k(a);
+    a.close();
+    L.push(l);
+    R.push(r);
+  }
+  const join = (parts: Float32Array[]) => {
+    const all = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) all.set(p, (at += p.length) - p.length);
+    return all;
+  };
+  return [join(L), join(R)];
+}
+
+/**
+ * Where each animation's sound cues play, in take samples: from the cue's time
+ * into the animation until the sound ends or the animation leaves the stage (and, for
+ * a looping animation, until its pass ends, when the cues start again).
+ */
+function animationPlacements(segs: Segment[], animations: Map<string, OpenAnimation>): Placement[] {
+  const out: Placement[] = [];
+  for (const seg of segs) {
+    const st = seg.stage;
+    if (st.kind !== "animation") continue;
+    const sc = animations.get(st.hash);
+    if (!sc) continue;
+    const zero = seg.animationAt ?? seg.start;
+    const dur = sc.meta.duration;
+    const loop = sc.meta.end === "loop";
+    const first = loop ? Math.max(0, Math.floor((seg.start - zero) / dur)) : 0;
+    for (let k = first; loop ? zero + k * dur < seg.end : k === 0; k++) {
+      const base = zero + k * dur;
+      const passEnd = loop ? base + dur : Infinity;
+      for (const cue of sc.meta.audio) {
+        const snd = sc.sounds.get(cue.asset);
+        if (!snd) continue;
+        const start = base + cue.at;
+        const natural = start + snd[0].length / RATE;
+        const end = Math.min(natural, seg.end, passEnd);
+        const from = Math.max(start, seg.start);
+        if (end <= from) continue;
+        out.push({
+          from: Math.round(from * RATE),
+          to: Math.round(end * RATE),
+          offset: Math.round((from - start) * RATE),
+          L: snd[0],
+          R: snd[1],
+          gain: cue.gain,
+          clipped: end < natural - 1 / RATE,
+        });
+      }
+    }
+  }
+  return out;
 }

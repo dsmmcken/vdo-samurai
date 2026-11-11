@@ -105,6 +105,31 @@ const fakeScreen = () => {
   };
 };
 
+// The animation a guest adds: magenta, a white bar moving with t, and a 1 kHz
+// tone (a generated WAV asset) cued at 0.5 s. Mics are left out while it plays.
+const toneWav = (() => {
+  const rate = 48000, n = rate * 1.5;
+  const b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * 2, 28);
+  b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 1000 * i) / rate) * 0.2 * 32767), 44 + i * 2);
+  return `data:audio/wav;base64,${b.toString('base64')}`;
+})();
+const ANIMATION_SCRIPT = `samurai.animation({
+  name: 'E2E Animation',
+  duration: 2.5,
+  end: 'prev',
+  microphones: 'none',
+  assets: { tone: '${toneWav}' },
+  audio: [{ asset: 'tone', at: 0.5, gain: 0.4 }],
+  draw(ctx, t, { w, h }) {
+    ctx.fillStyle = '#ff00ff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(100 + t * 600, 500, 80, 80);
+  },
+});`;
 const room = `e2e-${rand()}`;
 const pw = `${rand()}${rand()}`;
 const url = `http://localhost:${PORT}/#room=${room}&pw=${pw}`;
@@ -159,7 +184,7 @@ try {
   const [dir, sam, cam] = pages;
 
   log('waiting for the mesh');
-  for (const p of pages) await p.waitForFunction(() => document.querySelectorAll('.strip .tile:not(.end-tile)').length === 3, null, { timeout: 60000 });
+  for (const p of pages) await p.waitForFunction(() => document.querySelectorAll('.strip .tile:not(.end-tile):not(.animation-tile)').length === 3, null, { timeout: 60000 });
   log('all three see three tiles');
   log('waiting music chips with company:', await Promise.all(pages.map((p) => p.locator('.music-chip').count())));
 
@@ -217,10 +242,10 @@ try {
   log('rename from another tile applied');
 
   // Drag the last tile to the front; the new order syncs to everyone.
-  const names = (p) => p.evaluate(() => [...document.querySelectorAll('.strip .tile:not(.end-tile) .tile-name')].map((n) => n.textContent.replace(' (you)', '')));
+  const names = (p) => p.evaluate(() => [...document.querySelectorAll('.strip .tile:not(.end-tile):not(.animation-tile) .tile-name')].map((n) => n.textContent.replace(' (you)', '')));
   const before = await names(sam);
   const last = before[before.length - 1];
-  await sam.locator('.strip .tile:not(.end-tile)').last().dragTo(sam.locator('.strip .tile').first());
+  await sam.locator('.strip .tile:not(.end-tile):not(.animation-tile)').last().dragTo(sam.locator('.strip .tile').first());
   await dir.waitForFunction((n) => document.querySelector('.strip .tile .tile-name')?.textContent?.startsWith(n), last, { timeout: 10000 });
   log('order before', JSON.stringify(before), 'after (director view)', JSON.stringify(await names(dir)));
   log('reorder synced');
@@ -232,6 +257,20 @@ try {
   await cam.screenshot({ path: 'test-results/after-edit.png' });
   await sam.waitForSelector('.tile:has-text("Dana Director") .badge.crown');
   log('crown visible on other peers');
+
+  // A guest adds an animation from ⋯ → Scripted animations; it reaches everyone and its tile becomes playable.
+  await cam.getByRole('button', { name: 'More' }).click();
+  await cam.getByRole('button', { name: /^Scripted animations/ }).click();
+  await cam.getByRole('button', { name: /^Paste a script/ }).click();
+  await cam.getByLabel('Animation script').fill(ANIMATION_SCRIPT);
+  await cam.getByRole('button', { name: 'Add animation' }).click();
+  await cam.waitForSelector('.animation-ok', { timeout: 20000 });
+  log('animation added by a guest:', await cam.locator('.animation-ok').textContent());
+  await cam.screenshot({ path: 'test-results/animations-panel.png' });
+  await cam.getByRole('button', { name: 'Close' }).click();
+  const animationAt0 = Date.now();
+  for (const p of pages) await p.waitForSelector('.animation-tile:not(.waiting):has-text("E2E Animation")', { timeout: 60000 });
+  log(`animation tile ready on all three in ${Date.now() - animationAt0} ms`);
 
   await sam.getByRole('button', { name: 'Share screen' }).click();
   await dir.waitForSelector('.tile:has-text("Sam Screen") .badge[title="Screen share ready"]');
@@ -430,6 +469,14 @@ try {
   log('camera submenu lists:', JSON.stringify(devs));
   await dir.locator('.submenu [role=menuitemradio]').first().click();
   await sleep(500);
+  // The Shōgun plays the animation: everyone sees it, and it hands back to Cam Only by itself.
+  await dir.locator('.animation-tile', { hasText: 'E2E Animation' }).click();
+  await Promise.all([sam, cam].map((p) => p.waitForSelector('.stage .animation-view', { timeout: 5000 })));
+  await sleep(1400);
+  await sam.screenshot({ path: 'test-results/animation-guest.png' });
+  await dir.waitForSelector('.stage .animation-view', { state: 'detached', timeout: 8000 });
+  log('animation played for everyone, then the stage went back to:', await dir.evaluate(() => JSON.stringify(window.samurai.getSnapshot().stage)));
+  await sleep(1000);
   // Cam Only goes camera-off for the end screen: it should show only the other two.
   await cam.getByRole('button', { name: 'Turn camera off' }).click();
   await dir.locator('.tile.end-tile').click();
@@ -548,6 +595,7 @@ try {
   await checkReactionNames(cam, dir);
   await checkInk(dir, camInkColour, 0, "on the director's camera");
   await checkInk(dir, inkColour, 1, "on Sam's screen");
+  await checkAnimation(dir);
   if (process.env.FAIL_AUDIO || process.env.REPORT || process.env.DIRECTOR_SCREEN) {
     const dm = await dir.evaluate(() => window.samurai.dm);
     log('director report:\n  ' + dm.reports[dm.take.director].join('\n  '));
@@ -571,7 +619,8 @@ try {
       const out = [];
       const root = await navigator.storage.getDirectory();
       const walk = async (d, pre) => {
-        for await (const [n, h] of d.entries()) h.kind === 'directory' ? await walk(h, `${pre}${n}/`) : out.push(pre + n);
+        // The room's animation library stays (it's for later meetings).
+        for await (const [n, h] of d.entries()) h.kind === 'directory' ? n !== 'animations' && (await walk(h, `${pre}${n}/`)) : out.push(pre + n);
       };
       await walk(root, '');
       return out;
@@ -606,6 +655,49 @@ try {
 } finally {
   for (const b of browsers) await b.close();
   server.kill();
+}
+
+/**
+ * The animation in the final cut: its picture (magenta, with a white bar that moves
+ * with t) where the stage log has it, its 1 kHz tone from the cue at 0.5 s, and
+ * no microphones (it says microphones: 'none').
+ */
+async function checkAnimation(dir) {
+  const dm = await dir.evaluate(() => window.samurai.dm);
+  const starts = Object.values(dm.files).map((f) => f.offset / 1000);
+  const t0 = Math.min(3, Math.max(0, ...starts.filter((t) => t < 3)));
+  const ev = dm.stageLog.find((e) => e.stage.kind === 'animation');
+  if (!ev) throw new Error('no animation in the stage log');
+  const next = dm.stageLog.find((e) => e.t > ev.t && e.stage.kind !== 'animation');
+  const zero = ev.animationAt / 1000 - t0; // the animation's t = 0, in output time
+  log(`animation in the log: t=0 at ${(ev.animationAt / 1000).toFixed(2)} s take time, on stage ${(ev.t / 1000).toFixed(2)}–${(next.t / 1000).toFixed(2)} s (${((next.t - ev.animationAt) / 1000).toFixed(2)} s from its start; duration 2.5, then back to ${next.stage.kind === 'peer' ? dm.profiles[next.stage.id]?.name : next.stage.kind})`);
+  const px = (T, x, y) => [...execFileSync('ffmpeg', ['-v', 'error', '-ss', String(T), '-i', 'test-results/final.mp4', '-frames:v', '1', '-vf', `crop=8:8:${x}:${y},scale=1:1`, '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'])];
+  const magenta = ([r, g, b]) => r > 200 && g < 60 && b > 200;
+  const white = ([r, g, b]) => r > 200 && g > 200 && b > 200;
+  // The bar sits at x = 100 + t * 600 (y 500..580).
+  const frames = [0.6, 1.2, 1.8].map((t) => ({ t, bg: magenta(px(zero + t, 60, 200)), bar: white(px(zero + t, 100 + t * 600 + 20, 530)), before: magenta(px(zero + t, 100 + t * 600 - 60, 530)) }));
+  log('animation frames in the cut:', frames.map((f) => `t=${f.t}: ${f.bg ? 'magenta' : 'NOT magenta'}, ${f.bar ? 'bar where it should be' : 'NO bar'}${f.before ? '' : ', bar too early'}`).join(' | '));
+  // Tone: 1 kHz energy (Goertzel) in the animation vs. just after it.
+  const pcm = execFileSync('ffmpeg', ['-v', 'error', '-i', 'test-results/final.mp4', '-ac', '1', '-ar', '8000', '-f', 's16le', '-'], { maxBuffer: 1 << 28 });
+  const a = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length / 2);
+  const tone = (from, to) => {
+    const i0 = Math.max(0, Math.round(from * 8000));
+    const i1 = Math.min(a.length, Math.round(to * 8000));
+    const k = 2 * Math.cos((2 * Math.PI * 1000) / 8000);
+    let s1 = 0, s2 = 0, e = 0;
+    for (let i = i0; i < i1; i++) {
+      const s0 = a[i] / 32768 + k * s1 - s2;
+      s2 = s1;
+      s1 = s0;
+      e += (a[i] / 32768) ** 2;
+    }
+    const p = s1 * s1 + s2 * s2 - k * s1 * s2;
+    return { tone: Math.sqrt(p) / (i1 - i0), rms: Math.sqrt(e / Math.max(1, i1 - i0)) };
+  };
+  const inAnimation = tone(zero + 0.7, zero + 1.9);
+  const beforeCue = tone(zero + 0.05, zero + 0.45);
+  log(`animation sound: 1 kHz level ${inAnimation.tone.toFixed(4)} during the cue vs ${beforeCue.tone.toFixed(4)} before it ->`, inAnimation.tone > 0.01 && inAnimation.tone > 10 * beforeCue.tone ? 'TONE PRESENT' : 'tone missing');
+  log(`animation microphones 'none': level before the cue rms ${beforeCue.rms.toFixed(4)} ->`, beforeCue.rms < 0.01 ? 'silent (microphones left out)' : 'microphones audible');
 }
 
 /** Reads the wall-clock barcode and the beeps back out of the final cut. */

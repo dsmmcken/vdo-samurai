@@ -38,14 +38,18 @@ import type {
   RaceRow,
   RecFile,
   SenderManifest,
+  AnimationStage,
   SharedKey,
   SharedState,
+  Slot,
   Stage,
   Stamped,
   Take,
 } from './types';
 import { now, rid, sleep } from './util';
 import { cutoutCorner, PIP_MOVE_S } from './overlay';
+import { AnimationLibrary, type AnimationInfo } from './animations';
+import { buildStrip, keepAbsent, liveAnimations, ANIMATION_MAX_BYTES, animationSlot, slotAnimation, tileAfter, type AnimationIndex, type AnimationMeta } from './animation-api';
 
 /**
  * Upload message size: Chrome negotiates 256 KB, which means a quarter of the
@@ -89,10 +93,16 @@ export const COUNTDOWN_MS = 3000;
  * long counts as gone.
  */
 const SCREEN_GONE_MS = 2000;
+/** Slots a strip order remembers (people who've been here, animation tiles). */
+const ORDER_MAX = 200;
 const LEAD_MS = 1500; // time for the start message to reach everyone, and for recorders to spin up
 // Recorders start as soon as the take is announced, before the countdown shows:
 // spinning up encoders makes the page hitch, and that shouldn't land on "3".
 const PREROLL_MS = COUNTDOWN_MS + LEAD_MS;
+/** An animation starts this long after it's clicked: time for the message to reach everyone. Anyone slower to load it joins a few frames in, still in sync. */
+const ANIMATION_LEAD_MS = 200;
+/** An animation script asked for and not arriving is asked for again (maybe from someone else) after this. */
+const ANIMATION_FETCH_MS = 60_000;
 
 export interface PeerView {
   id: PeerId;
@@ -100,6 +110,15 @@ export interface PeerView {
   cam: MediaStream | null;
   screen: MediaStream | null;
   route: 'direct' | 'relay' | null;
+}
+
+/** An animation in the library, with who in the room can play it now. */
+export interface RoomAnimation extends AnimationInfo {
+  /** People here (us included) who can play this version. */
+  readyCount: number;
+  total: number;
+  /** Everyone here can: its tile can go on stage. */
+  readyAll: boolean;
 }
 
 export interface RenderState {
@@ -128,8 +147,10 @@ export interface Snapshot {
   meshError: string | null;
   peers: Map<PeerId, PeerView>;
   tiles: PeerId[];
-  /** The bottom strip: the tiles, with the Multicam tile ('end') wherever it was dragged. */
-  strip: (PeerId | 'end')[];
+  /** The bottom strip: the tiles, with Multicam ('end') and pinned animations wherever they were dragged. */
+  strip: Slot[];
+  /** The room's animation library. */
+  animations: RoomAnimation[];
   director: PeerId | null;
   stage: Stage | null;
   corner: Corner;
@@ -189,6 +210,13 @@ export class Room {
   private head: Head | null = null;
   private faceWatch = new FaceWatch((h) => this.onHead(h));
   private presences = new Map<PeerId, Presence>();
+  /** This room's animations (animations.ts), and scripts we've asked someone for. */
+  private animations: AnimationLibrary;
+  private animationFetch = new Map<string, { peer: PeerId; at: number }>();
+  private animationSends = new Set<string>();
+  private animationsAnnounced = '';
+  /** Applies the ending of the animation on stage when it's over. */
+  private animationEnd: ReturnType<typeof setTimeout> | null = null;
   private clocks = new Map<PeerId, { samples: { rtt: number; offset: number }[] }>();
   private lamport = 0;
   private shared: SharedState = {
@@ -274,6 +302,8 @@ export class Room {
     this.me = me;
     this.profile = profile;
     this.mesh = new Mesh(me, roomName, password, (link) => this.attach(link), () => this.changed());
+    this.animations = new AnimationLibrary(roomName, me, () => this.onAnimations());
+    this.restoreOrder();
     this.rebuild();
   }
 
@@ -294,7 +324,9 @@ export class Room {
     });
     navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
     await this.restore();
+    await this.animations.load();
     this.timers.push(setInterval(() => this.pingAll(), 5000));
+    this.timers.push(setInterval(() => this.pullAnimations(), 5000));
     this.timers.push(setInterval(() => this.checkMedia(), 2000));
     this.timers.push(setInterval(() => this.directorTick(), 500));
     this.timers.push(setInterval(() => this.reofferFiles(), REOFFER_MS));
@@ -307,6 +339,7 @@ export class Room {
   async leave() {
     this.timers.forEach(clearInterval);
     if (this.pipLater) clearTimeout(this.pipLater);
+    if (this.animationEnd) clearTimeout(this.animationEnd);
     this.faceWatch.stop();
     // Camera, mic and screen first: disconnecting from signaling can take a
     // moment, and the camera light shouldn't wait for it.
@@ -437,6 +470,7 @@ export class Room {
       peers,
       tiles,
       strip: this.strip(tiles),
+      animations: this.roomAnimations(peers),
       director: this.shared.director.v,
       stage: this.shared.stage.v,
       corner: this.shared.corner.v,
@@ -468,16 +502,16 @@ export class Room {
     return [...order, ...rest];
   }
 
-  /**
-   * The tiles plus Multicam, after as many of them as it followed when it was
-   * last placed. Last by default, and placed last it stays last, after newcomers.
-   */
-  private strip(tiles: PeerId[]): (PeerId | 'end')[] {
-    const v = this.shared.order.v;
-    const at = v.indexOf('end');
-    if (at < 0 || !v.slice(at + 1).some((id) => tiles.includes(id))) return [...tiles, 'end'];
-    const n = v.slice(0, at).filter((id) => tiles.includes(id)).length;
-    return [...tiles.slice(0, n), 'end', ...tiles.slice(n)];
+  /** The tiles plus Multicam and the pinned animations, each where it was last dragged (animation-api.ts buildStrip). */
+  private strip(tiles: PeerId[]): Slot[] {
+    return buildStrip(tiles, this.shared.order.v, ['end', ...this.animations.pinned().map((p) => animationSlot(p.name))]);
+  }
+
+  private roomAnimations(peers: Map<PeerId, PeerView>): RoomAnimation[] {
+    return this.animations.list().map((i) => {
+      const others = [...peers.keys()].filter((p) => this.hasAnimation(p, i.hash)).length;
+      return { ...i, readyCount: others + (i.meta ? 1 : 0), total: peers.size + 1, readyAll: !!i.meta && others === peers.size };
+    });
   }
 
   private say(msg: string | null) {
@@ -493,7 +527,10 @@ export class Room {
   }
 
   private set<K extends SharedKey>(key: K, v: SharedState[K]['v']) {
-    const st = { v, ts: ++this.lamport, by: this.me } as SharedState[K];
+    // A clock that never runs behind the wall clock: a strip order saved in an
+    // earlier session (restoreOrder) loses to anything set since.
+    this.lamport = Math.max(this.lamport + 1, Date.now());
+    const st = { v, ts: this.lamport, by: this.me } as SharedState[K];
     this.shared[key] = st;
     this.mesh.broadcast({ t: 'set', key, st });
     this.onShared(key);
@@ -514,10 +551,12 @@ export class Room {
   }
 
   private onShared(key: SharedKey) {
+    if (key === 'order') this.saveOrder();
     if (key === 'take') this.onTake();
     if (key === 'stage' || key === 'corner' || key === 'pip') this.logStage();
     if (key === 'stage') this.applyEncodings();
     if (key === 'stage') this.onInkStage();
+    if (key === 'stage') this.scheduleAnimationEnd();
     this.changed();
   }
 
@@ -529,12 +568,14 @@ export class Room {
     link.on('message', (m) => this.onMessage(peer, link, m));
     link.on('stream', () => this.changed());
     link.on('fileChannel', (ch) => this.receiveFile(peer, ch));
+    link.on('animationChannel', (ch) => this.receiveAnimation(peer, ch));
     link.on('screenData', (buf) => this.viaCast(peer) && this.viewFor(peer).receive(buf));
     link.on('state', () => {
       if (link.open && !greeted) {
         greeted = true;
         link.send({ t: 'hello', presence: this.presence() });
         link.send({ t: 'state', shared: this.shared });
+        link.send({ t: 'animations', idx: this.animations.index() });
         this.syncClock(link);
         if (this.race) link.send({ t: 'race', takeId: this.race.takeId, rows: this.race.rows });
         // The director (re)appeared: resume any uploads we owe them.
@@ -565,6 +606,7 @@ export class Room {
       screenCast: !!this.caster,
       ink: this.inkSlot,
       joinedAt: this.joinedAt,
+      animations: this.animations.ready(),
     };
   }
 
@@ -601,6 +643,7 @@ export class Room {
         }
         if (this.dm && this.active) this.dm.profiles[peer] = m.presence.profile;
         this.claimInk();
+        this.pullAnimations();
         this.changed();
         break;
       }
@@ -691,6 +734,12 @@ export class Room {
       case 'react':
         this.onReact(peer, m);
         break;
+      case 'animations':
+        this.onAnimationIndex(peer, m.idx);
+        break;
+      case 'animation?':
+        if (typeof m.hash === 'string') this.sendAnimation(link, m.hash);
+        break;
     }
   }
 
@@ -757,7 +806,7 @@ export class Room {
     // While we upload a take, our camera goes out at thumbnail quality so the upload gets the bandwidth.
     if (!s || this.owesFiles()) return 'tile';
     if (s.kind === 'end') return 'grid';
-    if (s.id !== this.me) return 'tile';
+    if (s.kind === 'animation' || s.id !== this.me) return 'tile';
     return s.view === 'cam' || !this.screen ? 'stage' : 'tile';
   }
 
@@ -1144,10 +1193,16 @@ export class Room {
     return !this.takeLocked() || this.shared.director.v === this.me;
   }
 
-  /** Clicking a tile: put it on stage, or flip camera/screen if it's already there. */
-  clickTile(id: PeerId | 'end') {
+  /** Clicking a tile: put it on stage, or flip camera/screen if it's already there (an animation starts over). */
+  clickTile(id: Slot) {
     if (!this.canSetStage()) return this.say('Only the Shōgun (director) can switch the stage while recording.');
     if (id === 'end') return this.set('stage', { kind: 'end' });
+    const animation = slotAnimation(id);
+    if (animation !== null) {
+      const st = this.animationStage(animation);
+      if (!st) return this.say(`"${animation}" isn't ready on everyone's computer yet.`);
+      return this.set('stage', st);
+    }
     const hasScreen = id === this.me ? !!this.screen : !!this.presences.get(id)?.hasScreen;
     const cur = this.shared.stage.v;
     if (cur?.kind === 'peer' && cur.id === id) {
@@ -1163,9 +1218,35 @@ export class Room {
     this.set('stage', stage);
   }
 
-  reorder(order: (PeerId | 'end')[]) {
+  reorder(order: Slot[]) {
     if (this.takeLocked()) return this.say('Tiles are locked while recording.');
-    this.set('order', order);
+    this.setOrder(order);
+  }
+
+  /**
+   * A new strip order from what's showing. Whoever isn't here (and animation
+   * tiles turned off) keeps their place in it, for when they're back; deleted
+   * animations drop out.
+   */
+  private setOrder(showing: Slot[]) {
+    const live = new Set(liveAnimations(this.animations.index()).map(([name]) => animationSlot(name)));
+    this.set('order', keepAbsent(showing, this.shared.order.v).filter((x) => slotAnimation(x) === null || live.has(x)).slice(0, ORDER_MAX));
+  }
+
+  /** The room's last strip order, as this browser last saw it: everyone who comes back finds their tile where it was. */
+  private restoreOrder() {
+    try {
+      const st = JSON.parse(localStorage.getItem(`samurai:order:${this.roomName}`) || 'null');
+      if (!st || !Array.isArray(st.v) || !st.v.every((x: unknown) => typeof x === 'string') || !Number.isFinite(st.ts) || typeof st.by !== 'string') return;
+      this.shared.order = { v: st.v.slice(0, ORDER_MAX), ts: st.ts, by: st.by };
+      this.lamport = Math.max(this.lamport, st.ts);
+    } catch {}
+  }
+
+  private saveOrder() {
+    try {
+      localStorage.setItem(`samurai:order:${this.roomName}`, JSON.stringify(this.shared.order));
+    } catch {}
   }
 
   /** Anyone can make anyone (or nobody) the director, except while recording. */
@@ -1173,7 +1254,7 @@ export class Room {
     if (this.takeLocked()) return this.say("The Shōgun (director) can't change while recording.");
     this.set('director', id);
     // The director's tile always leads the strip.
-    if (id) this.set('order', [id, ...this.snapshot.strip.filter((x) => x !== id)]);
+    if (id) this.setOrder([id, ...this.snapshot.strip.filter((x) => x !== id)]);
   }
 
   /** Anyone can fix anyone's name; the owner applies it and tells everyone. */
@@ -1479,7 +1560,7 @@ export class Room {
       `at ${clock()}, page open ${Math.round((performance.now() - this.startedAt) / 1000)} s, ${ua}, tab ${document.visibilityState}`,
       `VDO.Ninja signaling: ${this.mesh.status}${this.mesh.error ? ` (${this.mesh.error})` : ''}`,
       `screen encoded-once: send ${this.cast.send}, receive ${this.cast.receive}; sharing ${this.screen ? (this.caster ? 'yes (encoded-once)' : 'yes (track)') : 'no'}`,
-      `stage: ${st ? (st.kind === 'end' ? 'Multicam' : `${st.id === this.me ? 'us' : this.nameOf(st.id)}, ${st.view}`) : 'none'}`,
+      `stage: ${st ? (st.kind === 'end' ? 'Multicam' : st.kind === 'animation' ? `animation "${st.name}"` : `${st.id === this.me ? 'us' : this.nameOf(st.id)}, ${st.view}`) : 'none'}`,
       '',
       `## Connections (${this.mesh.openLinks().length} open of ${this.mesh.links.size})`,
     ];
@@ -2021,8 +2102,11 @@ export class Room {
     this.saveDm();
     this.worker?.terminate();
     const w = (this.worker = new Worker(new URL('../compositor/worker.ts', import.meta.url), { type: 'module' }));
+    // The render draws animations in sandboxes it asks this page to start (animation-host.ts, loaded only then).
+    const animations = import('./animation-host').then((h) => h.serveAnimations(w));
     w.onmessage = async (e) => {
       const m = e.data;
+      if (m?.t === 'animation-spawn' || m?.t === 'animation-kill') return void animations.then((serve) => serve(m));
       if (m.t === 'progress') this.render = { state: 'rendering', progress: m.progress, speed: m.speed };
       if (m.t === 'warn') {
         console.warn('[compositor]', m.message);
@@ -2089,7 +2173,9 @@ export class Room {
     const st = this.shared.stage.v;
     if (!dm || !st || !this.active?.began || this.active.take.id !== dm.take.id) return;
     if (this.shared.take.v?.stopAt) return;
-    dm.stageLog.push({ t: Math.max(0, now() - dm.take.startAt), stage: st, corner: this.shared.corner.v, pip: this.shared.pip.v });
+    const animationAt = st.kind === 'animation' ? Math.round(this.animationStartLocal(st) - dm.take.startAt) : undefined;
+    if (st.kind === 'animation') this.keepAnimation(dm.take.id, st.hash);
+    dm.stageLog.push({ t: Math.max(0, now() - dm.take.startAt), stage: st, corner: this.shared.corner.v, pip: this.shared.pip.v, ...(animationAt !== undefined ? { animationAt } : {}) });
     for (const [id, p] of this.presences) dm.profiles[id] = p.profile;
     dm.profiles[this.me] = this.profile;
     this.saveDm();
@@ -2100,7 +2186,7 @@ export class Room {
   /** Ink belongs to what's on stage when it's drawn (a screen, a camera, the end screen, or nothing): a cut clears it. */
   private onInkStage() {
     const st = this.shared.stage.v;
-    const key = !st ? 'empty' : st.kind === 'end' ? 'end' : `${st.id}:${st.view}`;
+    const key = !st ? 'empty' : st.kind === 'end' ? 'end' : st.kind === 'animation' ? `animation:${st.name}:${st.at}` : `${st.id}:${st.view}`;
     if (key === this.inkStage) return;
     this.penUp();
     this.ink.clear();
@@ -2254,5 +2340,261 @@ export class Room {
         this.lottieSaves.delete(cp); // the next one tries again; the render falls back to Google
       }),
     );
+  }
+
+  // ------------------------------------------------------------------ animations
+  //
+  // The library syncs like this: on connect, everyone sends their registers
+  // (no scripts); changes go out as they happen and are passed on. Scripts are
+  // fetched by version from someone who says (in their presence) they can play
+  // it, on a channel of their own, after any take upload. An animation's tile works
+  // once everyone here can play that version.
+
+  /** Adds an animation script (or a new version of one); throws with a message for its author. */
+  async addAnimation(code: string) {
+    const { name, delta } = await this.animations.add(code);
+    this.mesh.broadcast({ t: 'animations', idx: delta });
+    return name;
+  }
+
+  removeAnimation(name: string) {
+    const st = this.shared.stage.v;
+    if (st?.kind === 'animation' && st.name === name && this.takeLocked()) return this.say("An animation can't be deleted while it's on stage during a take.");
+    this.mesh.broadcast({ t: 'animations', idx: this.animations.remove(name) });
+  }
+
+  /**
+   * Renames an animation: its script, with the new name, becomes a new entry
+   * (keeping whether it has a tile) and the old one is deleted. Throws with a
+   * message for the person renaming it.
+   */
+  async renameAnimation(from: string, to: string) {
+    to = to.trim();
+    const old = this.animations.list().find((a) => a.name === from);
+    if (!old || to === from) return from;
+    if (this.animations.list().some((a) => a.name === to)) throw new Error(`There's already an animation called “${to}”.`);
+    const st = this.shared.stage.v;
+    if (st?.kind === 'animation' && st.name === from && this.takeLocked()) throw new Error("An animation can't be renamed while it's on stage during a take.");
+    const code = await this.animations.code(old.hash);
+    if (code === null) throw new Error("This animation's script hasn't arrived yet.");
+    const { setOption } = await import('./animation-edit');
+    const name = await this.addAnimation(setOption(code, 'name', JSON.stringify(to)));
+    if (!old.pinned) this.pinAnimation(name, false);
+    this.mesh.broadcast({ t: 'animations', idx: this.animations.remove(from) });
+    // Its tile keeps its place in the strip.
+    const slot = animationSlot(from);
+    if (this.shared.order.v.includes(slot) && !this.takeLocked()) this.set('order', this.shared.order.v.map((x) => (x === slot ? animationSlot(name) : x)));
+    return name;
+  }
+
+  pinAnimation(name: string, pinned: boolean) {
+    if (this.takeLocked()) return this.say('Tiles are locked while recording.');
+    this.mesh.broadcast({ t: 'animations', idx: this.animations.pin(name, pinned) });
+  }
+
+  animationCode(hash: string) {
+    return this.animations.code(hash);
+  }
+
+  animationMeta(hash: string): AnimationMeta | null {
+    return this.animations.meta(hash);
+  }
+
+  /** When an animation on stage has t = 0, on our clock. */
+  animationStartLocal(st: AnimationStage) {
+    return st.at - (this.offsetTo(st.by) ?? 0);
+  }
+
+  /** The speaker chosen in the menu (null: the system's). */
+  get speakerId() {
+    return this.speaker;
+  }
+
+  private onAnimations() {
+    // The versions we can play are in our presence: tell everyone when that changes.
+    const ready = this.animations.ready().sort().join();
+    if (ready !== this.animationsAnnounced) {
+      this.animationsAnnounced = ready;
+      this.mesh.broadcast({ t: 'hello', presence: this.presence() });
+    }
+    this.pullAnimations();
+    this.scheduleAnimationEnd();
+    this.changed();
+  }
+
+  private onAnimationIndex(from: PeerId, idx: unknown) {
+    const { delta } = this.animations.merge(idx);
+    if (Object.keys(delta).length) this.mesh.broadcast({ t: 'animations', idx: delta }, from);
+  }
+
+  /** Asks for every script we're missing (live animations, and whatever is on stage) from someone who has it. */
+  private pullAnimations() {
+    const want = new Set(liveAnimations(this.animations.index() as AnimationIndex).map(([, e]) => e.content.hash));
+    const st = this.shared.stage.v;
+    if (st?.kind === 'animation') want.add(st.hash);
+    const t = now();
+    for (const hash of want) {
+      if (this.animations.has(hash)) continue;
+      const f = this.animationFetch.get(hash);
+      if (f && t - f.at < ANIMATION_FETCH_MS && this.mesh.links.get(f.peer)?.open) continue;
+      const from = this.mesh.openLinks().find((l) => this.hasAnimation(l.peer, hash));
+      if (!from) continue;
+      this.animationFetch.set(hash, { peer: from.peer, at: t });
+      from.send({ t: 'animation?', hash });
+    }
+  }
+
+  /** Sends a script someone asked for: on its own channel, in small pieces, after any take upload. */
+  private async sendAnimation(link: Link, hash: string) {
+    const key = `${link.peer}/${hash}`;
+    if (this.animationSends.has(key) || !this.animations.has(hash)) return;
+    this.animationSends.add(key);
+    try {
+      const busy = () => this.uploading || this.receiving.size > 0;
+      while (busy() && link.open) await sleep(1000);
+      const bytes = await this.animations.bytes(hash);
+      if (!bytes || !link.open) return;
+      const ch = link.pc.createDataChannel(`sc:${hash}`, { ordered: true });
+      ch.binaryType = 'arraybuffer';
+      await new Promise<void>((res, rej) => {
+        const timer = setTimeout(() => rej(new Error('channel never opened')), 15_000);
+        ch.onopen = () => (clearTimeout(timer), res());
+        ch.onclose = () => (clearTimeout(timer), rej(new Error('channel closed')));
+      });
+      for (let i = 0; i < bytes.length; i += SAFE_CHUNK) {
+        // Keep little queued, and step aside for a take upload that starts meanwhile.
+        while (ch.readyState === 'open' && (ch.bufferedAmount > LOW_WATER || busy())) await sleep(busy() ? 500 : 20);
+        if (ch.readyState !== 'open') throw new Error('channel closed');
+        ch.send(bytes.subarray(i, i + SAFE_CHUNK));
+      }
+      ch.send('end');
+      while (ch.readyState === 'open' && ch.bufferedAmount > 0) await sleep(50);
+      setTimeout(() => ch.close(), 1000);
+    } catch (e) {
+      console.warn('[animations] sending', hash.slice(0, 8), 'to', this.nameOf(link.peer), 'failed:', (e as Error).message);
+    } finally {
+      this.animationSends.delete(key);
+    }
+  }
+
+  /** A script arriving: only one we asked for, and kept only if it's the version it says. */
+  private receiveAnimation(peer: PeerId, ch: RTCDataChannel) {
+    const hash = ch.label.slice(3);
+    if (!this.animationFetch.has(hash) || this.animations.has(hash)) return ch.close();
+    ch.binaryType = 'arraybuffer';
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    let done = false;
+    ch.onmessage = async (e) => {
+      if (typeof e.data === 'string') {
+        if (e.data !== 'end' || done) return;
+        done = true;
+        ch.close();
+        const all = new Uint8Array(size);
+        let at = 0;
+        for (const p of parts) all.set(p, (at += p.length) - p.length);
+        const ok = await this.animations.store(hash, all).catch(() => false);
+        this.animationFetch.delete(hash);
+        if (!ok) console.warn('[animations]', this.nameOf(peer), 'sent a script that is not', hash.slice(0, 8));
+        return;
+      }
+      size += e.data.byteLength;
+      if (size > ANIMATION_MAX_BYTES) {
+        done = true;
+        ch.close();
+        this.animationFetch.delete(hash);
+        return;
+      }
+      parts.push(new Uint8Array(e.data));
+    };
+    ch.onclose = () => {
+      if (!done) this.animationFetch.delete(hash); // ask again on the next pull
+    };
+  }
+
+  /** This person says (in their presence) they can play this version. */
+  private hasAnimation(peer: PeerId, hash: string) {
+    const list = this.presences.get(peer)?.animations;
+    return Array.isArray(list) && list.includes(hash);
+  }
+
+  /** Everyone here can play this version. */
+  private animationReadyAll(hash: string) {
+    return !!this.animations.meta(hash) && this.mesh.openLinks().every((l) => this.hasAnimation(l.peer, hash));
+  }
+
+  /**
+   * The stage for starting an animation now, or null if it isn't ready everywhere.
+   * Started from another animation, it inherits that one's `prev`: animations chained
+   * by their endings (intro → title card) hand back to what was on before them.
+   */
+  private animationStage(name: string): AnimationStage | null {
+    const e = this.animations.entry(name);
+    if (!e || e.content.deleted) return null;
+    const meta = this.animations.meta(e.content.hash);
+    if (!meta || !this.animationReadyAll(e.content.hash)) return null;
+    const cur = this.shared.stage.v;
+    return { kind: 'animation', name, hash: e.content.hash, at: Math.round(now() + ANIMATION_LEAD_MS), by: this.me, microphones: meta.microphones, prev: cur?.kind === 'animation' ? cur.prev : cur };
+  }
+
+  /** What putting a strip slot on stage means, without the click's camera/screen flip. */
+  private stageFor(slot: Slot): Stage | null {
+    if (slot === 'end') return { kind: 'end' };
+    const animation = slotAnimation(slot);
+    if (animation !== null) return this.animationStage(animation);
+    const hasScreen = slot === this.me ? !!this.screen : !!this.presences.get(slot)?.hasScreen;
+    return { kind: 'peer', id: slot, view: hasScreen ? 'screen' : 'cam' };
+  }
+
+  /**
+   * Who applies an animation's ending: during a take, the director (only they can
+   * switch the stage); otherwise whoever started it, or if they've left, the
+   * smallest id here.
+   */
+  private endsAnimation(st: AnimationStage) {
+    const take = this.shared.take.v;
+    if (take && !take.stopAt) return take.director === this.me;
+    const here = [this.me, ...this.mesh.openLinks().map((l) => l.peer)];
+    return here.includes(st.by) ? st.by === this.me : here.sort()[0] === this.me;
+  }
+
+  private scheduleAnimationEnd() {
+    if (this.animationEnd) clearTimeout(this.animationEnd);
+    this.animationEnd = null;
+    const st = this.shared.stage.v;
+    if (st?.kind !== 'animation') return;
+    const meta = this.animations.meta(st.hash);
+    if (!meta || meta.end === 'hold' || meta.end === 'loop') return;
+    const wait = this.animationStartLocal(st) + meta.duration * 1000 - now();
+    this.animationEnd = setTimeout(() => this.endAnimation(st, meta), Math.max(0, wait));
+  }
+
+  private endAnimation(st: AnimationStage, meta: AnimationMeta) {
+    this.animationEnd = null;
+    if (JSON.stringify(this.shared.stage.v) !== JSON.stringify(st)) return;
+    if (!this.endsAnimation(st)) {
+      // Someone else's job; look again shortly in case they've gone.
+      this.animationEnd = setTimeout(() => this.endAnimation(st, meta), 1500);
+      return;
+    }
+    let next: Stage | null = null;
+    if (meta.end === 'prev') next = st.prev;
+    else if (typeof meta.end === 'object') {
+      const slot = tileAfter(this.snapshot.strip, animationSlot(st.name), meta.end.tile);
+      next = slot ? this.stageFor(slot) : null;
+      // An animation there that isn't ready everywhere: back to what was on before instead.
+      if (!next && slot && slotAnimation(slot) !== null) next = st.prev;
+    }
+    if (next) this.set('stage', next);
+  }
+
+  /** Director: the animation's script goes with the take, so the render has exactly what played. */
+  private keepAnimation(takeId: string, hash: string) {
+    void (async () => {
+      if (await fs.fileSize(takeId, `animation-${hash}.js`)) return;
+      const code = await this.animations.code(hash);
+      if (code === null) return console.warn('[animations] no script to keep for', hash.slice(0, 8));
+      await fs.writeText(takeId, `animation-${hash}.js`, code);
+    })().catch((e) => console.warn('[animations] could not keep the script with the take', e));
   }
 }

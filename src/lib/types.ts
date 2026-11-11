@@ -27,10 +27,33 @@ export interface Presence {
   ink?: number;
   /** When we joined (our clock, ms): tiles nobody has placed line up in join order. */
   joinedAt?: number;
+  /** Animation versions (hashes) this browser has and can play (animations.ts). */
+  animations?: string[];
+}
+
+/** Which microphones stay in the final mix while an animation is on stage. */
+export type AnimationMicrophones = 'none' | 'director' | 'all';
+
+/**
+ * An animation on stage (animations.ts): a version of a room's animation script, started at
+ * `at` on `by`'s clock. `prev` is what was on stage before the animation (or before
+ * the animations that led to it), for an ending of 'prev'; never an animation.
+ */
+export interface AnimationStage {
+  kind: 'animation';
+  name: string;
+  hash: string;
+  at: number;
+  by: PeerId;
+  microphones: AnimationMicrophones;
+  prev: Stage | null;
 }
 
 /** What the main stage shows. A peer's screen falls back to their camera when they aren't sharing. */
-export type Stage = { kind: 'peer'; id: PeerId; view: 'cam' | 'screen' } | { kind: 'end' };
+export type Stage = { kind: 'peer'; id: PeerId; view: 'cam' | 'screen' } | { kind: 'end' } | AnimationStage;
+
+/** A place in the strip: someone's tile, Multicam, or a pinned animation (`animation:<name>`). */
+export type Slot = PeerId | 'end' | `animation:${string}`;
 
 /** Where the presenter's camera overlay sits when a screen is on stage. */
 export type Corner = 'tl' | 'tr' | 'bl' | 'br';
@@ -60,8 +83,8 @@ export interface Stamped<T> {
 
 export interface SharedState {
   director: Stamped<PeerId | null>;
-  /** Tile order; may hold 'end' for where the Multicam tile sits. */
-  order: Stamped<(PeerId | 'end')[]>;
+  /** Tile order; may hold 'end' and `animation:<name>` for where Multicam and pinned animations sit. */
+  order: Stamped<Slot[]>;
   stage: Stamped<Stage | null>;
   take: Stamped<Take | null>;
   corner: Stamped<Corner>;
@@ -75,6 +98,8 @@ export interface StageEvent {
   stage: Stage;
   corner?: Corner;
   pip?: PipStyle;
+  /** An animation's t = 0, in ms since take start (it may have started before the take). */
+  animationAt?: number;
 }
 
 /** A recorded file, as described by the peer that recorded it. */
