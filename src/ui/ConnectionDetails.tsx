@@ -16,6 +16,9 @@ export function ConnectionDetails({ room, s, id, onClose }: { room: Room; s: Sna
   const [ours, setOurs] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
   const [asked, setAsked] = useState(0);
+  // Your own details also offer the last few sessions, saved as they ran (a closed tab's included).
+  const earlier = me ? room.earlierLogs() : [];
+  const [showEarlier, setShowEarlier] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -32,6 +35,7 @@ export function ConnectionDetails({ room, s, id, onClose }: { room: Room; s: Sna
   const sections: [string, string[]][] = [];
   if (!me) sections.push([`Your connection to ${name}`, ours]);
   if (theirs?.lines) sections.push([me ? 'Your session' : `${name}'s session`, theirs.lines]);
+  if (showEarlier) for (const l of earlier) sections.push([`Earlier session · room ${l.room} · last saved ${new Date(l.at).toLocaleString()}`, l.lines]);
   const text = sections.map(([who, lines]) => `## ${who}\n${lines.join('\n')}`).join('\n\n');
 
   return (
@@ -49,7 +53,7 @@ export function ConnectionDetails({ room, s, id, onClose }: { room: Room; s: Sna
               <h3>{who}</h3>
               <pre>
                 {lines.map((l, i) => (
-                  <div key={i} className={/NOT ARRIVING|failed|missing|stuck|not connected|no way to reach|could not/i.test(l) ? 'bad' : /disconnected|repair|rebuild|relay|unstick|isn't arriving/i.test(l) ? 'warn' : ''}>
+                  <div key={i} className={/NOT ARRIVING|failed|missing|stuck|not connected|no way to reach|could not|STALLED|DROPPED|SKIPPING|WAITING FOR A KEY|PAUSED|MUTED|showed none/i.test(l) ? 'bad' : /disconnected|repair|rebuild|relay|unstick|isn't arriving|lost sync|skipping|queued \(last send/i.test(l) ? 'warn' : ''}>
                     {l || ' '}
                   </div>
                 ))}
@@ -63,6 +67,11 @@ export function ConnectionDetails({ room, s, id, onClose }: { room: Room; s: Sna
           {!me && (
             <button className="btn ghost sm" onClick={() => (room.reconnect(id), setTimeout(() => setAsked((n) => n + 1), 3000))} title={`Rebuild the connection to ${name}`}>
               Reconnect
+            </button>
+          )}
+          {earlier.length > 0 && (
+            <button className="btn ghost sm" onClick={() => setShowEarlier((v) => !v)} title="Your details from the last few sessions in this browser, saved as they ran">
+              {showEarlier ? 'Hide earlier sessions' : `Earlier sessions (${earlier.length})`}
             </button>
           )}
           <button className="btn ghost sm" onClick={() => setAsked((n) => n + 1)}>

@@ -86,7 +86,7 @@ export class Mesh {
 
   log(line: string) {
     this.trace.push(`${clock()} ${line}`);
-    if (this.trace.length > 300) this.trace.splice(0, 100);
+    if (this.trace.length > 600) this.trace.splice(0, 200);
   }
 
   async start() {
@@ -194,16 +194,26 @@ export class Mesh {
 
   /** Over x-sig if it's up, else relayed through a peer we both reach. False: no way to reach them. */
   private sendTo(peer: PeerId, m: Wire) {
+    // Signals are too many to log; everything else says which way it went.
+    const what = m.sig ? null : m.hello ? `${m.reply ? (m.kept ? 'hello reply (kept)' : 'hello reply') : m.fresh ? 'hello (rebuild)' : 'hello'} link ${m.link}` : m.rebuild ? 'rebuild request' : 'message';
     const ch = this.sigByPeer.get(peer);
     if (ch?.readyState === 'open') {
-      ch.send(JSON.stringify(m));
+      try {
+        ch.send(JSON.stringify(m));
+      } catch (e) {
+        this.log(`→ ${peer} ${what ?? 'signal'} over x-sig failed: ${e}`);
+        return false;
+      }
+      if (what) this.log(`→ ${peer} ${what} over x-sig`);
       return true;
     }
     const via = this.relayFor(peer);
     if (via) {
       via.send({ relay: { to: peer, m } satisfies Relay });
+      if (what) this.log(`→ ${peer} ${what} relayed via ${via.peer}`);
       return true;
     }
+    this.log(`→ ${peer} ${what ?? 'signal'}: no x-sig and no one to relay through (rosters: ${[...this.rosters].map(([p, r]) => `${p}:[${[...r.peers].join(',')}]`).join(' ') || 'none'})`);
     return false;
   }
 
@@ -221,7 +231,11 @@ export class Mesh {
       // Passing it along: one hop, to someone we're linked with.
       if (r.to === this.me) return;
       const out = this.links.get(r.to);
-      if (out?.open) out.send({ relay: { from: from.peer, m: r.m } satisfies Relay });
+      const m = r.m as Wire;
+      if (out?.open) {
+        out.send({ relay: { from: from.peer, m: r.m } satisfies Relay });
+        if (!m?.sig) this.log(`relayed ${m?.hello ? 'hello' : m?.rebuild ? 'rebuild request' : 'message'} from ${from.peer} to ${r.to}`);
+      } else this.log(`relay from ${from.peer} to ${r.to} DROPPED: no open link to ${r.to}${out ? ` (${out.pc.connectionState})` : ''}`);
     } else if (r.from && r.from !== this.me) {
       this.receive(r.from, r.m as Wire, from.peer);
     }
@@ -319,6 +333,13 @@ export class Mesh {
       // A link still coming up is the check above's business.
       if (t - since >= MISSING_MS && !(l && !l.wasOpen && t - l.born < OPEN_MS)) this.repair(p, 'others reach them, we don\'t');
     }
+  }
+
+  /** Each peer's last roster, for the connection details. */
+  rosterLines(name: (id: PeerId) => string): string[] {
+    const t = performance.now();
+    const out = [...this.rosters].map(([from, r]) => `${name(from)}: ${[...r.peers].map((p) => (p === this.me ? 'us' : name(p))).join(', ') || 'nobody'} (${((t - r.at) / 1000).toFixed(0)} s ago)`);
+    return out.length ? out : ['none yet'];
   }
 
   /** Peers others reach and we don't, and for how long (ms). */

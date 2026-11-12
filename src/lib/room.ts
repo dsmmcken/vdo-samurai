@@ -93,6 +93,11 @@ export const COUNTDOWN_MS = 3000;
  * long counts as gone.
  */
 const SCREEN_GONE_MS = 2000;
+/** Connection details of the last few sessions, kept in localStorage (see saveLog). */
+const SAVED_LOG_KEY = 'samurai:connection-logs';
+const SAVED_LOGS = 4;
+const SAVED_LOG_BYTES = 1_500_000;
+export type SavedLog = { session: string; room: string; me: PeerId; at: string; lines: string[] };
 /** Slots a strip order remembers (people who've been here, animation tiles). */
 const ORDER_MAX = 200;
 const LEAD_MS = 1500; // time for the start message to reach everyone, and for recorders to spin up
@@ -328,15 +333,20 @@ export class Room {
     this.timers.push(setInterval(() => this.pingAll(), 5000));
     this.timers.push(setInterval(() => this.pullAnimations(), 5000));
     this.timers.push(setInterval(() => this.checkMedia(), 2000));
+    this.timers.push(setInterval(() => this.saveLog(), 5000));
     this.timers.push(setInterval(() => this.directorTick(), 500));
     this.timers.push(setInterval(() => this.reofferFiles(), REOFFER_MS));
     this.timers.push(setInterval(() => this.forwardXlog(), 2000));
     document.addEventListener('visibilitychange', () => (this.uploading || this.receiving.size) && this.xlog.add(tabState()));
-    window.addEventListener('pagehide', () => this.mesh.broadcast({ t: 'bye' }));
+    window.addEventListener('pagehide', () => {
+      this.mesh.broadcast({ t: 'bye' });
+      this.saveLog();
+    });
     await this.mesh.start();
   }
 
   async leave() {
+    this.saveLog();
     this.timers.forEach(clearInterval);
     if (this.pipLater) clearTimeout(this.pipLater);
     if (this.animationEnd) clearTimeout(this.animationEnd);
@@ -554,6 +564,7 @@ export class Room {
     if (key === 'order') this.saveOrder();
     if (key === 'take') this.onTake();
     if (key === 'stage' || key === 'corner' || key === 'pip') this.logStage();
+    if (key === 'stage') this.stageSince = performance.now();
     if (key === 'stage') this.applyEncodings();
     if (key === 'stage') this.onInkStage();
     if (key === 'stage') this.scheduleAnimationEnd();
@@ -647,6 +658,9 @@ export class Room {
         this.changed();
         break;
       }
+      case 'scr-hb':
+        if (this.viaCast(peer)) this.views.get(peer)?.heartbeat(m.seq, !!m.skipping);
+        break;
       case 'scr-key':
         this.caster?.requestKey(peer);
         break;
@@ -844,7 +858,10 @@ export class Room {
   private viewFor(peer: PeerId) {
     let v = this.views.get(peer);
     if (!v) {
-      v = new ScreenView(() => this.mesh.links.get(peer)?.send({ t: 'scr-key' }));
+      v = new ScreenView(
+        () => this.mesh.links.get(peer)?.send({ t: 'scr-key' }),
+        (line) => this.mesh.log(`screen from ${this.nameOf(peer)}: ${line}`),
+      );
       this.views.set(peer, v);
     }
     return v;
@@ -893,7 +910,11 @@ export class Room {
       });
       if (track && (await castSupport()).send && this.screen === s) {
         try {
-          this.caster = new ScreenCaster(track);
+          this.caster = new ScreenCaster(
+            track,
+            (line) => this.mesh.log(`screen out: ${line.replace(/^(\w+):/, (_, id) => `${this.nameOf(id)}:`)}`),
+            (peer, m) => this.mesh.links.get(peer)?.send({ t: 'scr-hb', ...m }),
+          );
         } catch (e) {
           console.warn('[screencast] unavailable, sending the screen as a track', e);
         }
@@ -1492,7 +1513,44 @@ export class Room {
    * link rebuilt: a camera that's on, a screen they share (encoded-once
    * screens only send while on stage, so those count only then).
    */
+  /** When the stage last changed (a sharer only sends, and heartbeats, while its screen is on stage). */
+  private stageSince = performance.now();
+  /** Per screen view: frames decoded vs. frames its video elements showed, at the last check. */
+  private shown = new Map<PeerId, { decoded: number; painted: number; logged: boolean }>();
+
+  /**
+   * Frames decoded onto a screen's canvas but its video element not moving:
+   * a display problem (the browser's canvas capture or <video>), not the network.
+   */
+  private checkScreenDisplay() {
+    const st = this.shared.stage.v;
+    for (const [peer, v] of this.views) {
+      if (st?.kind === 'peer' && st.id === peer && st.view === 'screen') v.checkBeat(this.stageSince);
+      const id = v.stream.getVideoTracks()[0]?.id;
+      const els = [...document.querySelectorAll('video')].filter((el) => (el.srcObject as MediaStream | null)?.getVideoTracks()[0]?.id === id);
+      if (!els.length) {
+        this.shown.delete(peer);
+        continue;
+      }
+      const painted = Math.max(...els.map((el) => el.getVideoPlaybackQuality?.().totalVideoFrames ?? 0));
+      const prev = this.shown.get(peer);
+      const cur = { decoded: v.frames, painted, logged: prev?.logged ?? false };
+      if (prev && cur.decoded - prev.decoded >= 3 && cur.painted === prev.painted) {
+        if (!cur.logged) {
+          const el = els[0];
+          this.mesh.log(`screen from ${this.nameOf(peer)}: ${cur.decoded - prev.decoded} frames decoded in 2 s but the video showed none (${el.paused ? 'paused' : 'playing'}, readyState ${el.readyState}, ${el.videoWidth}x${el.videoHeight})`);
+        }
+        cur.logged = true;
+      } else if (cur.painted !== (prev?.painted ?? painted)) {
+        if (prev?.logged) this.mesh.log(`screen from ${this.nameOf(peer)}: video showing frames again`);
+        cur.logged = false;
+      }
+      this.shown.set(peer, cur);
+    }
+  }
+
   private checkMedia() {
+    this.checkScreenDisplay();
     const t = performance.now();
     const seen = new Set<string>();
     for (const [peer, what] of this.mediaMissing()) {
@@ -1570,12 +1628,12 @@ export class Room {
     const lines = [
       `${this.nameOf(peer)} (${peer}) · link ${link.id}, ${age} s old`,
       `  connection ${pc.connectionState}, ice ${pc.iceConnectionState}, signaling ${pc.signalingState}, control ${link.ctl.readyState}, route ${link.route ?? '?'}`,
-      `  signaling path: ${this.mesh.hasSig(peer) ? 'VDO.Ninja x-sig up' : 'x-sig down (relay)'}; repairs ${this.mesh.repairsOf(peer)}; clock ${this.offsetTo(peer) === null ? 'not synced' : `offset ${Math.round(this.offsetTo(peer)!)} ms`}`,
+      `  signaling path: ${this.mesh.hasSig(peer) ? 'VDO.Ninja x-sig up' : 'x-sig down (relay)'}; repairs ${this.mesh.repairsOf(peer)}; clock ${this.offsetTo(peer) === null ? 'not synced' : `offset ${Math.round(this.offsetTo(peer)!)} ms`}; last heard ${link.lastHeard ? `${((performance.now() - link.lastHeard) / 1000).toFixed(1)} s ago` : 'never'}`,
       `  streams in: ${streams.join('; ') || 'none'}`,
     ];
     if (p) {
       if (p.camStreamId) lines.push(`  camera ${p.camOff ? 'off' : has(p.camStreamId)}`);
-      if (p.hasScreen) lines.push(`  screen ${this.viaCast(peer) ? `encoded-once, ${this.views.get(peer)?.frames ?? 0} frames shown` : has(p.screenStreamId)}`);
+      if (p.hasScreen) lines.push(`  screen ${this.viaCast(peer) ? `encoded-once: ${this.views.get(peer)?.state() ?? 'no view yet'}` : has(p.screenStreamId)}`);
     } else lines.push('  no presence (hello) from them yet');
     return lines;
   }
@@ -1601,9 +1659,61 @@ export class Room {
     }
     const gaps = [...this.mediaGaps].map(([key, since]) => `${this.nameOf(key.split(' ')[0])}'s ${key.split(' ')[1]} for ${Math.round((performance.now() - since) / 1000)} s`);
     if (gaps.length) lines.push('', '## Media not arriving', ...gaps);
+    lines.push('', '## Who each peer says it reaches (from their pings)', ...this.mesh.rosterLines((id) => this.nameOf(id)));
+    if (this.caster) lines.push('', '## Our screen, encoded-once', ...this.caster.state((id) => this.nameOf(id)));
+    lines.push('', '## Video elements', ...this.videoLines());
     lines.push('', '## Mesh log', ...this.mesh.trace);
     for (const link of this.mesh.links.values()) lines.push('', `## Link to ${this.nameOf(link.peer)} (${link.id})`, ...link.trace.slice(-80));
     return lines;
+  }
+
+  /** What each <video> on the page is showing, and whether it's moving (compare two refreshes). */
+  private videoLines(): string[] {
+    const labels = new Map<string, string>();
+    for (const t of this.cam?.getVideoTracks() ?? []) labels.set(t.id, 'our camera');
+    for (const t of this.screen?.getVideoTracks() ?? []) labels.set(t.id, 'our screen');
+    for (const l of this.mesh.links.values()) for (const st of l.remoteStreams.values()) for (const t of st.getVideoTracks()) labels.set(t.id, `${this.nameOf(l.peer)}'s ${st.id === this.presences.get(l.peer)?.screenStreamId ? 'screen (track)' : 'camera'}`);
+    for (const [peer, v] of this.views) for (const t of v.stream.getVideoTracks()) labels.set(t.id, `${this.nameOf(peer)}'s screen (encoded-once)`);
+    const out: string[] = [];
+    for (const el of document.querySelectorAll('video')) {
+      const t = (el.srcObject as MediaStream | null)?.getVideoTracks()[0];
+      const q = el.getVideoPlaybackQuality?.();
+      const where = el.closest('.stage') ? 'stage' : el.closest('.tile') ? 'tile' : el.closest('.pip') ? 'pip' : 'other';
+      out.push(`${t ? (labels.get(t.id) ?? 'unknown track') : 'no stream'} [${where}]: ${el.videoWidth}x${el.videoHeight}, ${el.paused ? 'PAUSED' : 'playing'}, readyState ${el.readyState}, t ${el.currentTime.toFixed(1)} s, ${q ? `${q.totalVideoFrames} frames painted, ${q.droppedVideoFrames} dropped` : 'no playback stats'}, track ${t ? `${t.readyState}${t.muted ? ' MUTED' : ''}` : '-'}`);
+    }
+    return out.length ? out : ['none'];
+  }
+
+  // ------------------------------------------------------------------ saved logs
+
+  /** Our details, saved every 5 s and on leaving, so they outlive the tab: the last few sessions are kept. */
+  private saveLog() {
+    try {
+      const entry: SavedLog = { session: this.mesh.session, room: this.roomName, me: this.me, at: new Date().toISOString(), lines: this.details() };
+      const logs = Room.savedLogs().filter((l) => l.session !== entry.session);
+      logs.unshift(entry);
+      let json = JSON.stringify(logs.slice(0, SAVED_LOGS));
+      // Over budget (storage is shared with the rest of the app): keep fewer.
+      for (let n = SAVED_LOGS - 1; json.length > SAVED_LOG_BYTES && n >= 1; n--) json = JSON.stringify(logs.slice(0, n));
+      localStorage.setItem(SAVED_LOG_KEY, json);
+    } catch (e) {
+      console.debug('[room] could not save the connection log', e);
+    }
+  }
+
+  /** Saved sessions other than this one, newest first: for after a tab was closed. */
+  earlierLogs(): SavedLog[] {
+    return Room.savedLogs().filter((l) => l.session !== this.mesh.session);
+  }
+
+  /** Saved sessions, newest first (this one included, as of its last save). */
+  static savedLogs(): SavedLog[] {
+    try {
+      const v = JSON.parse(localStorage.getItem(SAVED_LOG_KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
   }
 
   // ------------------------------------------------------------------ transfer log
