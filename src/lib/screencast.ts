@@ -17,8 +17,19 @@ export const CAST_CODEC = 'av01.0.08M.08'; // AV1 main, level 4.0: up to 2048x11
 /** Each message: a header, then one piece of an encoded frame. */
 const HEADER = 20; // flags u8, part u8, parts u8, -, seq u32, width u16, height u16, timestamp f64
 const PIECE = 60_000; // under every browser's data channel message limit
-/** A viewer whose channel holds more than this skips to the next key frame. */
-const BACKLOG = 1_500_000;
+/**
+ * A viewer whose channel holds more than its limit skips to the next key frame.
+ * The limit is about half a second of what that viewer has been measured to
+ * take (more queued is just lag), within these bounds; unmeasured, the ceiling.
+ */
+const BACKLOG = 750_000;
+const BACKLOG_S = 0.5;
+const MIN_BACKLOG = 96_000;
+/** Queued above this at both ends of a second: the channel is the bottleneck, so what drained is its throughput. */
+const BUSY = 16_000;
+/** The encoder's budget for moving content (screencast-worker.ts): at most this, at least the floor, else 70% of the slowest viewer. */
+const BUDGET_MAX = 2_500_000;
+const BUDGET_MIN = 300_000;
 /**
  * A viewer with more frames than this waiting to decode is showing the past
  * (a stalled channel flushing at once, say): it skips to a fresh key frame
@@ -64,7 +75,17 @@ type Viewer = {
   bytes: number;
   skips: number;
   lastSendAt: number;
+  /** Measured throughput (bytes/s), or null while it has never been the bottleneck. */
+  rate: number | null;
+  /** Queued at the last tick, and handed over since. */
+  prevBuf: number;
+  sentTick: number;
+  /** Bytes ever handed to the channel, and where in that stream the latest key frame sits. */
+  total: number;
+  keyStart: number;
+  keyEnd: number;
 };
+const kbps = (bytesPerS: number) => `${Math.round((bytesPerS * 8) / 1000)} kbps`;
 
 /** Seconds since a performance.now() time, for logs. */
 const ago = (t: number) => (t ? `${((performance.now() - t) / 1000).toFixed(1)} s ago` : 'never');
@@ -79,6 +100,9 @@ export class ScreenCaster {
   /** Bytes handed to the channels, for the e2e test and debugging. */
   sent = 0;
   private beatTimer: ReturnType<typeof setInterval>;
+  private lastTick = performance.now();
+  /** What the encoder was last told it may spend on moving content (bits/s). */
+  private budget = BUDGET_MAX;
 
   constructor(
     track: MediaStreamTrack,
@@ -88,9 +112,7 @@ export class ScreenCaster {
     private beat: (peer: string, m: { seq: number; skipping: boolean }) => void = () => {},
   ) {
     this.clone = track.clone();
-    this.beatTimer = setInterval(() => {
-      if (this.live) for (const [id, v] of this.viewers) this.beat(id, { seq: this.seq - 1, skipping: v.needKey });
-    }, 1000);
+    this.beatTimer = setInterval(() => this.tick(), 1000);
     const video = new (globalThis as any).MediaStreamTrackProcessor({ track: this.clone }).readable;
     this.worker.onmessage = (e: MessageEvent<CastOut>) => {
       const m = e.data;
@@ -109,10 +131,10 @@ export class ScreenCaster {
     for (const [id, v] of this.viewers) if (channels.get(id) !== v.ch) this.viewers.delete(id);
     for (const [id, ch] of channels) {
       if (this.viewers.has(id)) continue;
-      const v: Viewer = { ch, needKey: true, backlogged: false, sentSeq: -1, bytes: 0, skips: 0, lastSendAt: 0 };
+      const v: Viewer = { ch, needKey: true, backlogged: false, sentSeq: -1, bytes: 0, skips: 0, lastSendAt: 0, rate: null, prevBuf: 0, sentTick: 0, total: 0, keyStart: 0, keyEnd: 0 };
       this.viewers.set(id, v);
       // Caught up again after a backlog: start over from a key frame.
-      ch.bufferedAmountLowThreshold = BACKLOG / 4;
+      ch.bufferedAmountLowThreshold = this.limitOf(v) / 4;
       ch.addEventListener('bufferedamountlow', () => {
         if (!v.needKey) return;
         if (v.backlogged) this.log(`${id}: channel drained, sending a key frame`);
@@ -128,6 +150,72 @@ export class ScreenCaster {
       if (live) for (const v of this.viewers.values()) v.needKey = true;
       this.post({ t: 'live', on: live });
     }
+  }
+
+  /**
+   * What counts against the limit: the queue, less what's left of the latest
+   * key frame. A key frame can be bigger than the limit by itself; counting it
+   * would skip every frame after it, and the viewer would only ever get keys.
+   */
+  private queuedOf(v: Viewer) {
+    return v.ch.bufferedAmount - this.keyQueued(v);
+  }
+
+  /** What's left of the latest key frame in the channel. */
+  private keyQueued(v: Viewer) {
+    return Math.max(0, v.keyEnd - Math.max(v.keyStart, v.total - v.ch.bufferedAmount));
+  }
+
+  /**
+   * The limit for what's queued behind the latest key frame. While that key is
+   * still draining, frames made meanwhile wait behind it: allow up to a key's
+   * worth of them, or every key would be followed by a skip, which needs another key.
+   */
+  private allowedOf(v: Viewer) {
+    return this.limitOf(v) + (this.keyQueued(v) > 0 ? v.keyEnd - v.keyStart : 0);
+  }
+
+  private limitOf(v: Viewer) {
+    return v.rate === null ? BACKLOG : Math.min(BACKLOG, Math.max(MIN_BACKLOG, v.rate * BACKLOG_S));
+  }
+
+  /**
+   * Once a second: measure each viewer's throughput, set its queue limit, set
+   * the encoder's budget from the slowest, and send heartbeats.
+   */
+  private tick() {
+    const now = performance.now();
+    const dt = (now - this.lastTick) / 1000;
+    this.lastTick = now;
+    for (const v of this.viewers.values()) {
+      const buf = v.ch.bufferedAmount;
+      const drained = Math.max(0, v.prevBuf + v.sentTick - buf);
+      if (v.prevBuf > BUSY && buf > BUSY && dt > 0.3) {
+        // Backed up the whole second: what got through is what it takes.
+        const sample = drained / dt;
+        v.rate = v.rate === null ? sample : 0.6 * v.rate + 0.4 * sample;
+      } else if (v.rate !== null && buf <= BUSY) {
+        // Keeping up: let the estimate recover, and forget it once it's plenty.
+        v.rate *= 1.15;
+        if (v.rate * 8 > BUDGET_MAX * 2) v.rate = null;
+      }
+      v.prevBuf = buf;
+      v.sentTick = 0;
+      v.ch.bufferedAmountLowThreshold = this.limitOf(v) / 4;
+    }
+    this.setBudget();
+    if (this.live) for (const [id, v] of this.viewers) this.beat(id, { seq: this.seq - 1, skipping: v.needKey });
+  }
+
+  private setBudget() {
+    let slow: [string, number] | null = null;
+    for (const [id, v] of this.viewers) if (v.ch.readyState === 'open' && v.rate !== null && (!slow || v.rate < slow[1])) slow = [id, v.rate];
+    const budget = slow ? Math.min(BUDGET_MAX, Math.max(BUDGET_MIN, slow[1] * 8 * 0.7)) : BUDGET_MAX;
+    if (Math.abs(budget - this.budget) < this.budget * 0.1 && !(budget === BUDGET_MAX && this.budget !== BUDGET_MAX)) return;
+    this.budget = budget;
+    this.post({ t: 'budget', bps: budget });
+    if (slow && budget < BUDGET_MAX) this.log(`${slow[0]}: slowest viewer, takes about ${kbps(slow[1])}; encoder budget now ${Math.round(budget / 1000)} kbps (sharp frames coarser)`);
+    else this.log(`encoder budget back to ${Math.round(budget / 1000)} kbps: no viewer is holding it back`);
   }
 
   /** A viewer lost its place (decoder error, reconnect). */
@@ -159,8 +247,9 @@ export class ScreenCaster {
     for (const [id, v] of this.viewers) {
       if (v.ch.readyState !== 'open') continue;
       if (v.needKey && !m.key) continue;
-      if (v.ch.bufferedAmount > BACKLOG) {
-        if (!v.backlogged) this.log(`${id}: ${kb(v.ch.bufferedAmount)} queued (last send ${ago(v.lastSendAt)}), skipping until it drains`);
+      const limit = this.allowedOf(v);
+      if (this.queuedOf(v) > limit) {
+        if (!v.backlogged) this.log(`${id}: ${kb(this.queuedOf(v))} queued behind the last key frame (${kb(v.ch.bufferedAmount)} in all), over its ${kb(limit)} limit (${v.rate === null ? 'throughput not measured yet' : `takes about ${kbps(v.rate)}`}; last send ${ago(v.lastSendAt)}), skipping until it drains`);
         v.needKey = true; // the bufferedamountlow handler asks for a key frame once it drains
         v.backlogged = true;
         v.skips++;
@@ -171,6 +260,11 @@ export class ScreenCaster {
         for (const p of pieces) v.ch.send(p);
         this.sent += m.data.byteLength;
         v.bytes += m.data.byteLength;
+        const n = pieces.reduce((a, p) => a + p.byteLength, 0);
+        v.sentTick += n;
+        if (m.key) v.keyStart = v.total;
+        v.total += n;
+        if (m.key) v.keyEnd = v.total;
         v.sentSeq = seq;
         v.lastSendAt = performance.now();
       } catch (e) {
@@ -182,9 +276,9 @@ export class ScreenCaster {
 
   /** For the connection details. */
   state(name: (id: string) => string): string[] {
-    const lines = [`encoder ${this.live ? 'live (on stage)' : 'idle (not on stage)'}, ${this.seq} frames made, ${kb(this.sent)} sent in all`];
+    const lines = [`encoder ${this.live ? 'live (on stage)' : 'idle (not on stage)'}, ${this.seq} frames made, ${kb(this.sent)} sent in all; budget ${Math.round(this.budget / 1000)} kbps`];
     for (const [id, v] of this.viewers)
-      lines.push(`  to ${name(id)}: channel ${v.ch.readyState}, ${kb(v.ch.bufferedAmount)} queued, ${v.needKey ? (v.backlogged ? 'SKIPPING (backlog)' : 'waiting for a key frame') : 'in sync'}, sent up to #${v.sentSeq} (${kb(v.bytes)}), last send ${ago(v.lastSendAt)}, backlog skips ${v.skips}`);
+      lines.push(`  to ${name(id)}: channel ${v.ch.readyState}, ${kb(v.ch.bufferedAmount)} queued of a ${kb(this.limitOf(v))} limit (${v.rate === null ? 'keeping up' : `takes about ${kbps(v.rate)}`}), ${v.needKey ? (v.backlogged ? 'SKIPPING (backlog)' : 'waiting for a key frame') : 'in sync'}, sent up to #${v.sentSeq} (${kb(v.bytes)}), last send ${ago(v.lastSendAt)}, backlog skips ${v.skips}`);
     if (!this.viewers.size) lines.push('  no viewers taking it encoded-once');
     return lines;
   }

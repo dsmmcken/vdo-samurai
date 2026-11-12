@@ -44,6 +44,8 @@ export class Link {
   /** Since when the control channel isn't open (from birth until it first opens), and whether it ever was. */
   downSince: number | null = this.born;
   wasOpen = false;
+  /** When the control channel last opened. */
+  openedAt: number | null = null;
   /** When anything last arrived on the control channel (both sides ping every 5 s). */
   lastHeard = 0;
   unstableSince: number | null = null;
@@ -125,7 +127,7 @@ export class Link {
 
     this.ctl = pc.createDataChannel('ctl', { negotiated: true, id: 0 });
     this.ctl.onopen = () => {
-      this.lastHeard = performance.now();
+      this.lastHeard = this.openedAt = performance.now();
       this.downSince = null;
       this.wasOpen = true;
       this.transport = 'ctl';
@@ -280,6 +282,43 @@ export class Link {
       if (!this.polite) pc.restartIce();
     } catch (e) {
       this.log(`unstick failed ${e}`);
+    }
+  }
+
+  /**
+   * ICE in one line, for the mesh log: the candidates each side offered (type,
+   * protocol, address family), the candidate pairs by state, whether any
+   * connectivity check was answered, and the pair in use. The answer to "why
+   * did this link never connect?".
+   */
+  async iceSummary(): Promise<string> {
+    try {
+      const stats = await this.pc.getStats();
+      const byId = new Map<string, any>();
+      stats.forEach((s: any) => byId.set(s.id, s));
+      const count = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+      const ours = new Map<string, number>(), theirs = new Map<string, number>(), pairs = new Map<string, number>();
+      let sent = 0, answered = 0;
+      let chosen: any = null;
+      const kind = (c: any) => {
+        const a = String(c?.address ?? c?.ip ?? '');
+        return `${c?.candidateType ?? '?'}/${c?.protocol ?? '?'}/${a.endsWith('.local') ? 'mdns' : a.includes(':') ? 'v6' : a ? 'v4' : '?'}`;
+      };
+      for (const s of byId.values()) {
+        if (s.type === 'local-candidate') count(ours, kind(s));
+        else if (s.type === 'remote-candidate') count(theirs, kind(s));
+        else if (s.type === 'candidate-pair') {
+          count(pairs, s.state);
+          sent += s.requestsSent ?? 0;
+          answered += s.responsesReceived ?? 0;
+          if (s.selected || (s.nominated && s.state === 'succeeded')) chosen ??= s;
+        } else if (s.type === 'transport' && s.selectedCandidatePairId) chosen = byId.get(s.selectedCandidatePairId) ?? chosen;
+      }
+      const fmt = (m: Map<string, number>) => [...m].map(([k, n]) => `${n} ${k}`).join(', ') || 'none';
+      const via = chosen ? `; using ${kind(byId.get(chosen.localCandidateId))} ↔ ${kind(byId.get(chosen.remoteCandidateId))}${chosen.currentRoundTripTime ? `, rtt ${Math.round(chosen.currentRoundTripTime * 1000)} ms` : ''}` : '';
+      return `ICE ours [${fmt(ours)}] theirs [${fmt(theirs)}]; pairs [${fmt(pairs)}]; checks sent ${sent}, answered ${answered}${via}`;
+    } catch (e) {
+      return `ICE stats unavailable (${e})`;
     }
   }
 

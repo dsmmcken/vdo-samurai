@@ -33,6 +33,9 @@ const DISCONNECTED_MS = 15_000;
  * messages ride on it.
  */
 const SILENT_MS = 12_000;
+/** After this many repairs in a row without a lasting link, try only every SLOW_REPAIR_MS. */
+const GIVE_UP_AFTER = 6;
+const SLOW_REPAIR_MS = 120_000;
 /** A roster older than this no longer counts. */
 const ROSTER_MS = 15_000;
 
@@ -68,6 +71,10 @@ export class Mesh {
   private missing = new Map<PeerId, number>();
   private repairs = new Map<PeerId, { n: number; at: number }>();
   private lastBuild = new Map<PeerId, number>();
+  /** Link ids of hellos we sent, and when: a reply to one we've since moved past is stale. */
+  private myHellos = new Map<string, number>();
+  /** Signals that found no path, per peer: logged once per few seconds, with a count. */
+  private noPath = new Map<PeerId, { at: number; n: number }>();
   /** Peers that said goodbye: not missing, even if someone's roster still lists them. */
   private gone = new Map<PeerId, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -146,7 +153,11 @@ export class Mesh {
         this.log(`x-sig to ${peer} closed`);
       }
     };
-    if (opener) ch.send(JSON.stringify({ hello: this.me, session: this.session, link: rid(6) } satisfies Wire));
+    if (opener) {
+      const link = rid(6);
+      this.sentHello(link);
+      ch.send(JSON.stringify({ hello: this.me, session: this.session, link } satisfies Wire));
+    }
   }
 
   /** A message on x-sig, or relayed (`via`: the peer that passed it along). */
@@ -175,15 +186,25 @@ export class Mesh {
         // it). Building one under its id would talk to their dead one: start fresh.
         this.log(`${peer} kept link ${id}, ours is ${cur?.id ?? 'gone'}: rebuilding`);
         if (this.me > peer) this.rebuildNow(peer, `they kept link ${id}`);
-        else this.sendTo(peer, { rebuild: this.me, why: `you kept link ${id}, ours is ${cur?.id ?? 'gone'}` });
+        else this.sendTo(peer, { rebuild: this.me, why: `you kept link ${id}, ours is ${cur?.id ?? 'gone'}`, link: id });
+      } else if (cur && cur.id !== id && cur.born > (this.myHellos.get(id) ?? Infinity)) {
+        // A reply to a hello we've since replaced with a newer one (crossed
+        // rebuilds): building its link now would tear down the newer one.
+        this.log(`stale reply from ${peer} for link ${id}: we've since built ${cur.id}; ignored`);
       } else if (!cur || cur.id !== id || cur.pc.connectionState === 'closed' || cur.pc.connectionState === 'failed') {
         // A reply to our hello: build unless we already did (rebuilds build eagerly).
         this.build(peer, id);
       }
     } else if (m.rebuild) {
       // Only the impolite side starts rebuilds, so two can't cross.
-      this.log(`${peer} asks for a rebuild: ${m.why ?? ''}`);
-      if (this.me > peer && performance.now() - (this.lastBuild.get(peer) ?? -Infinity) > 2000) this.rebuildNow(peer, `asked: ${m.why ?? ''}`);
+      const cur = this.links.get(peer);
+      const t = performance.now();
+      this.log(`${peer} asks for a rebuild${m.link ? ` of link ${m.link}` : ''}: ${m.why ?? ''}`);
+      if (this.me < peer) this.log(`  ignored: only the side with the larger id rebuilds`);
+      else if (m.link && cur && m.link !== cur.id && t - cur.born < OPEN_MS) this.log(`  ignored: link ${m.link} is already replaced by ${cur.id} (${Math.round((t - cur.born) / 1000)} s old, still coming up)`);
+      else if (t - (this.lastBuild.get(peer) ?? -Infinity) <= 2000) this.log(`  ignored: we rebuilt ${Math.round(t - this.lastBuild.get(peer)!)} ms ago`);
+      // Same backoff as our own repairs: asking mustn't make a hopeless pair thrash.
+      else if (!this.repair(peer, `asked: ${m.why ?? ''}`)) this.log(`  not yet: backing off (${this.backoffText(peer)})`);
     } else if (m.sig) {
       // Accept late signals here even after our side moved to ctl: the two
       // sides switch at slightly different moments. Not an older link's, though.
@@ -213,7 +234,14 @@ export class Mesh {
       if (what) this.log(`→ ${peer} ${what} relayed via ${via.peer}`);
       return true;
     }
-    this.log(`→ ${peer} ${what ?? 'signal'}: no x-sig and no one to relay through (rosters: ${[...this.rosters].map(([p, r]) => `${p}:[${[...r.peers].join(',')}]`).join(' ') || 'none'})`);
+    const np = this.noPath.get(peer);
+    const t = performance.now();
+    if (!what && np && t - np.at < 5000) {
+      np.n++;
+      return false;
+    }
+    this.noPath.set(peer, { at: t, n: 0 });
+    this.log(`→ ${peer} ${what ?? 'signal'}: no x-sig and no one to relay through (rosters: ${[...this.rosters].map(([p, r]) => `${p}:[${[...r.peers].join(',')}]`).join(' ') || 'none'})${np?.n ? `; ${np.n} more signals dropped since the last such line` : ''}`);
     return false;
   }
 
@@ -243,7 +271,13 @@ export class Mesh {
 
   /** A hello means a fresh link: their reload, or a rebuild. */
   private build(peer: PeerId, id: string) {
-    this.links.get(peer)?.close();
+    const old = this.links.get(peer);
+    if (old && !old.wasOpen && old.pc.connectionState !== 'closed' && performance.now() - old.born > 3000) {
+      // Why it never connected (stats are asked for before it's closed).
+      const oid = old.id;
+      void old.iceSummary().then((s) => this.log(`link ${oid} to ${peer} never connected: ${s}`));
+    }
+    old?.close();
     this.lastBuild.set(peer, performance.now());
     const link = new Link(peer, id, this.me < peer, (sig) => void this.sendTo(peer, { sig, link: id }));
     link.onRelay = (r) => this.onRelay(link, r);
@@ -253,6 +287,7 @@ export class Mesh {
       if (this.links.get(peer) !== link) return;
       const st = link.pc.connectionState;
       this.log(`link ${id} to ${peer}: ${st}`);
+      if (st === 'connected' || st === 'failed') void link.iceSummary().then((s) => this.log(`link ${id} to ${peer} ${st}: ${s}`));
       if (st === 'failed' || st === 'closed') {
         this.links.delete(peer);
         this.onChange();
@@ -263,23 +298,48 @@ export class Mesh {
     this.onChange();
   }
 
+  /** How long after `n` repairs in a row the next may happen. */
+  private backoff(n: number) {
+    return Math.min(n >= GIVE_UP_AFTER ? SLOW_REPAIR_MS : 30_000, 3000 * 2 ** n);
+  }
+
+  private backoffText(peer: PeerId) {
+    const r = this.repairs.get(peer);
+    if (!r) return 'no repairs yet';
+    return `${r.n} in a row, next in ${Math.max(0, Math.round((r.at + this.backoff(r.n) - performance.now()) / 1000))} s`;
+  }
+
   /**
-   * Get a working link to `peer` back, backing off (3 s doubling to 30 s,
-   * forgotten after two quiet minutes) so a hopeless pair doesn't thrash.
+   * Get a working link to `peer` back, backing off (3 s doubling to 30 s; a pair
+   * that has failed GIVE_UP_AFTER times in a row, every 2 min) so a hopeless
+   * pair doesn't thrash. A link that stays up a minute clears the count.
    */
-  repair(peer: PeerId, why: string, force = false) {
+  repair(peer: PeerId, why: string, force = false): boolean {
     const t = performance.now();
     let r = this.repairs.get(peer) ?? { n: 0, at: -Infinity };
-    if (t - r.at > 120_000) r = { n: 0, at: -Infinity };
-    if (!force && t - r.at < Math.min(30_000, 3000 * 2 ** r.n)) return;
+    if (t - r.at > 300_000) r = { n: 0, at: -Infinity };
+    if (!force && t - r.at < this.backoff(r.n)) return false;
+    if (r.n + 1 === GIVE_UP_AFTER) this.log(`repair ${peer}: ${GIVE_UP_AFTER} in a row without a lasting link; trying only every ${SLOW_REPAIR_MS / 60_000} min from now (Reconnect still works)`);
     this.repairs.set(peer, { n: r.n + 1, at: t });
-    if (this.me > peer) return this.rebuildNow(peer, why);
+    if (this.me > peer) {
+      this.rebuildNow(peer, why);
+      return true;
+    }
     this.log(`repair ${peer} (${why}): asking them to rebuild`);
-    if (!this.sendTo(peer, { rebuild: this.me, why })) this.unreachable(peer);
+    // Says which link it's about, so a request that crosses their rebuild doesn't undo it.
+    if (!this.sendTo(peer, { rebuild: this.me, why, link: this.links.get(peer)?.id })) this.unreachable(peer);
+    return true;
+  }
+
+  private sentHello(id: string) {
+    const t = performance.now();
+    this.myHellos.set(id, t);
+    for (const [k, at] of this.myHellos) if (t - at > 120_000) this.myHellos.delete(k);
   }
 
   private rebuildNow(peer: PeerId, why: string) {
     const id = rid(6);
+    this.sentHello(id);
     this.log(`repair ${peer} (${why}): rebuilding as link ${id}`);
     if (!this.sendTo(peer, { hello: this.me, session: this.session, link: id, fresh: true })) return this.unreachable(peer);
     this.build(peer, id);
@@ -304,11 +364,18 @@ export class Mesh {
   private tick() {
     const t = performance.now();
     for (const [peer, l] of this.links) {
+      if (l.open && l.openedAt !== null && t - l.openedAt > 60_000 && this.repairs.has(peer)) {
+        this.log(`repair ${peer}: link ${l.id} up for a minute, repair count cleared (was ${this.repairs.get(peer)!.n})`);
+        this.repairs.delete(peer);
+      }
       // pc.close() and some failures close the channel without a connection state event.
       const down = l.open ? 0 : t - (l.downSince ?? t);
       if (down > (l.wasOpen ? REOPEN_MS : OPEN_MS)) this.repair(peer, `${l.wasOpen ? 'lost' : 'not connected'} for ${Math.round(down / 1000)} s (${l.pc.connectionState}, ${l.pc.signalingState})`);
       else if (l.open && l.unstableSince !== null && t - l.unstableSince > STUCK_MS) {
-        if (l.unstuckAt === null) l.unstick();
+        if (l.unstuckAt === null) {
+          this.log(`${peer}: negotiation stuck in ${l.pc.signalingState} for ${Math.round((t - l.unstableSince) / 1000)} s: rolling back`);
+          l.unstick();
+        }
         else if (t - l.unstuckAt > STUCK_MS) this.repair(peer, `negotiation stuck in ${l.pc.signalingState}`);
       } else if (l.disconnectedSince !== null && t - l.disconnectedSince > DISCONNECTED_MS) this.repair(peer, 'disconnected');
       else if (l.open && t - l.lastHeard > SILENT_MS) this.repair(peer, `nothing heard for ${Math.round((t - l.lastHeard) / 1000)} s (${l.pc.connectionState})`);

@@ -93,6 +93,9 @@ export const COUNTDOWN_MS = 3000;
  * long counts as gone.
  */
 const SCREEN_GONE_MS = 2000;
+/** Media someone says they send, missing this long on a settled link: rebuild it, at most this many times in a row. */
+const MEDIA_GAP_MS = 20_000;
+const MEDIA_REPAIRS = 3;
 /** Connection details of the last few sessions, kept in localStorage (see saveLog). */
 const SAVED_LOG_KEY = 'samurai:connection-logs';
 const SAVED_LOGS = 4;
@@ -286,8 +289,10 @@ export class Room {
   private reactions = new Map<string, Reaction>();
   private reactWatchers = new Set<() => void>();
 
+  /** Rebuilds made for media that wasn't arriving (key: `peer media`), until it arrives. */
+  private mediaRepairs = new Map<string, number>();
   /** Media a peer says it sends that isn't arriving, since when (key: `peer media`). */
-  private mediaGaps = new Map<string, number>();
+  private mediaGaps = new Map<string, { at: number; link: string }>();
   /** Connection details we asked a peer for (see requestDetails). */
   private detailAsks = new Map<string, (lines: string[]) => void>();
   private startedAt = performance.now();
@@ -564,7 +569,13 @@ export class Room {
     if (key === 'order') this.saveOrder();
     if (key === 'take') this.onTake();
     if (key === 'stage' || key === 'corner' || key === 'pip') this.logStage();
-    if (key === 'stage') this.stageSince = performance.now();
+    if (key === 'stage') {
+      this.stageSince = performance.now();
+      const st = this.shared.stage;
+      const v = st.v;
+      const what = !v ? 'nothing' : v.kind === 'end' ? 'Multicam' : v.kind === 'animation' ? `animation "${v.name}"` : `${v.id === this.me ? 'our' : `${this.nameOf(v.id)}'s`} ${v.view}`;
+      this.mesh.log(`stage: ${what} (set by ${st.by === this.me ? 'us' : this.nameOf(st.by)})`);
+    }
     if (key === 'stage') this.applyEncodings();
     if (key === 'stage') this.onInkStage();
     if (key === 'stage') this.scheduleAnimationEnd();
@@ -730,6 +741,7 @@ export class Room {
         break;
       case 'mute':
         // Anyone can mute anyone; only you can unmute yourself.
+        this.mesh.log(`mute: ${this.nameOf(peer)} asked us to mute${this.micMuted ? ' (already muted)' : ''}`);
         if (!this.micMuted) {
           this.toggleMic();
           this.say(`${this.nameOf(peer)} muted you.`);
@@ -1092,6 +1104,7 @@ export class Room {
 
   toggleMic() {
     this.micMuted = !this.micMuted;
+    this.mesh.log(`mute: our mic ${this.micMuted ? 'muted' : 'on'}`);
     this.cam?.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
     if (this.denoiser) this.denoiser.raw.enabled = !this.micMuted;
     this.announce();
@@ -1100,7 +1113,9 @@ export class Room {
   /** Anyone can mute anyone (not unmute: that's theirs to do). */
   muteOf(id: PeerId) {
     if (id === this.me) return !this.micMuted && this.toggleMic();
-    this.mesh.links.get(id)?.send({ t: 'mute' });
+    const link = this.mesh.links.get(id);
+    this.mesh.log(`mute: asked ${this.nameOf(id)} to mute${link?.open ? '' : ` — NOT SENT, no open link (${link ? link.pc.connectionState : 'none'})`}`);
+    link?.send({ t: 'mute' });
   }
 
   /** Anyone can turn anyone's noise reduction on or off; the owner applies it. */
@@ -1509,7 +1524,7 @@ export class Room {
   // ------------------------------------------------------------------ connection health
 
   /**
-   * Media someone says they send that hasn't reached us for 10 s gets their
+   * Media someone says they send that hasn't reached us for 20 s gets their
    * link rebuilt: a camera that's on, a screen they share (encoded-once
    * screens only send while on stage, so those count only then).
    */
@@ -1535,7 +1550,8 @@ export class Room {
       const painted = Math.max(...els.map((el) => el.getVideoPlaybackQuality?.().totalVideoFrames ?? 0));
       const prev = this.shown.get(peer);
       const cur = { decoded: v.frames, painted, logged: prev?.logged ?? false };
-      if (prev && cur.decoded - prev.decoded >= 3 && cur.painted === prev.painted) {
+      // Firefox reports 0 painted frames for every MediaStream video: only a counter that has moved means anything.
+      if (prev && prev.painted > 0 && cur.decoded - prev.decoded >= 3 && cur.painted === prev.painted) {
         if (!cur.logged) {
           const el = els[0];
           this.mesh.log(`screen from ${this.nameOf(peer)}: ${cur.decoded - prev.decoded} frames decoded in 2 s but the video showed none (${el.paused ? 'paused' : 'playing'}, readyState ${el.readyState}, ${el.videoWidth}x${el.videoHeight})`);
@@ -1556,14 +1572,33 @@ export class Room {
     for (const [peer, what] of this.mediaMissing()) {
       const key = `${peer} ${what}`;
       seen.add(key);
-      const since = this.mediaGaps.get(key) ?? t;
-      if (!this.mediaGaps.has(key)) {
-        this.mediaGaps.set(key, t);
-        this.mesh.log(`${this.nameOf(peer)}'s ${what} isn't arriving`);
+      // Timed per link: a rebuilt link gets its own full wait for tracks to arrive.
+      const link = this.mesh.links.get(peer)?.id ?? '';
+      let gap = this.mediaGaps.get(key);
+      if (gap?.link !== link) {
+        gap = { at: t, link };
+        this.mediaGaps.set(key, gap);
+        this.mesh.log(`${this.nameOf(peer)}'s ${what} isn't arriving (link ${link})`);
       }
-      if (t - since >= 10_000) this.mesh.repair(peer, `${what} not arriving`);
+      const since = gap.at;
+      // Long enough for a stuck negotiation to be rolled back first (mesh.ts, 10 s).
+      if (t - since < MEDIA_GAP_MS) continue;
+      const n = this.mediaRepairs.get(key) ?? 0;
+      if (n >= MEDIA_REPAIRS) {
+        // Rebuilding didn't help: stop taking everything else down with it.
+        if (n === MEDIA_REPAIRS) this.mesh.log(`${this.nameOf(peer)}'s ${what} still not arriving after ${n} rebuilds: no more rebuilds for it (Reconnect in the connection details still works)`);
+        this.mediaRepairs.set(key, MEDIA_REPAIRS + 1);
+      } else if (this.mesh.repair(peer, `${what} not arriving (rebuild ${n + 1} of at most ${MEDIA_REPAIRS})`)) this.mediaRepairs.set(key, n + 1);
     }
     for (const key of this.mediaGaps.keys()) if (!seen.has(key)) this.mediaGaps.delete(key);
+    // Arrived (or no longer expected) on a settled link: forget the rebuilds it took.
+    for (const [key, n] of this.mediaRepairs) {
+      const [peer, what] = key.split(' ');
+      const l = this.mesh.links.get(peer);
+      if (seen.has(key) || !l?.open || l.unstableSince !== null) continue;
+      this.mediaRepairs.delete(key);
+      this.mesh.log(`${this.nameOf(peer)}'s ${what} fine again after ${Math.min(n, MEDIA_REPAIRS)} rebuild${n === 1 ? '' : 's'}`);
+    }
   }
 
   private mediaMissing(): [PeerId, string][] {
@@ -1657,7 +1692,7 @@ export class Room {
       lines.push('', '## Missing (others reach them, we don\'t)');
       for (const m of missing) lines.push(`${this.nameOf(m.peer)} (${m.peer}) for ${Math.round(m.ms / 1000)} s`);
     }
-    const gaps = [...this.mediaGaps].map(([key, since]) => `${this.nameOf(key.split(' ')[0])}'s ${key.split(' ')[1]} for ${Math.round((performance.now() - since) / 1000)} s`);
+    const gaps = [...this.mediaGaps].map(([key, g]) => `${this.nameOf(key.split(' ')[0])}'s ${key.split(' ')[1]} for ${Math.round((performance.now() - g.at) / 1000)} s (link ${g.link})`);
     if (gaps.length) lines.push('', '## Media not arriving', ...gaps);
     lines.push('', '## Who each peer says it reaches (from their pings)', ...this.mesh.rosterLines((id) => this.nameOf(id)));
     if (this.caster) lines.push('', '## Our screen, encoded-once', ...this.caster.state((id) => this.nameOf(id)));

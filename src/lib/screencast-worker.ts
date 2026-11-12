@@ -12,6 +12,8 @@ export type CastIn =
   | { t: 'start'; video: ReadableStream<VideoFrame> }
   | { t: 'live'; on: boolean }
   | { t: 'key' }
+  /** What the slowest viewer can take (screencast.ts measures it). */
+  | { t: 'budget'; bps: number }
   | { t: 'stop' };
 export type CastOut = { t: 'chunk'; key: boolean; ts: number; w: number; h: number; data: ArrayBuffer } | { t: 'warn'; message: string };
 
@@ -23,10 +25,19 @@ const SETTLE_MS = 400; // still this long before sharpening
 const SETTLE_AREA = 0.002; // ...if at least this much of the picture changed since the last sharp frame
 const SETTLE_GAP_MS = 1500; // and at most this often
 const BUDGET_BPS = 2_500_000; // moving content; above it, coarser and then fewer frames
+const BUDGET_MIN = 300_000;
 
 const post = (m: CastOut, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(m, transfer);
 
 let live = false;
+/** Moving content's budget: BUDGET_BPS, or less for a slow viewer (see screencast.ts). */
+let budget = BUDGET_BPS;
+/**
+ * The sharp still frame's quantizer: 10 at the full budget, coarser as it
+ * shrinks. One sharp 1080p key frame can be 250 KB: seven seconds for a viewer
+ * that takes 300 kbps.
+ */
+const settledQ = () => Math.round(Q_SETTLED + (30 - Q_SETTLED) * Math.min(1, Math.max(0, (BUDGET_BPS - budget) / (BUDGET_BPS - BUDGET_MIN))));
 let wantKey = true;
 let latest: VideoFrame | null = null;
 let fresh = false;
@@ -40,6 +51,7 @@ self.onmessage = (e: MessageEvent<CastIn>) => {
     if (m.on && !live) wantKey = true;
     live = m.on;
   } else if (m.t === 'key') wantKey = true;
+  else if (m.t === 'budget') budget = Math.max(BUDGET_MIN, Math.min(BUDGET_BPS, m.bps));
   else if (m.t === 'stop') stop();
 };
 
@@ -73,8 +85,10 @@ let keyThumb: Uint8Array | null = null; // last sharp (settled) frame
 let lastChange = 0;
 let lastSettle = 0;
 let settled = false;
-let skip = false; // over budget at the coarsest quantizer: every other frame
-const recent: { at: number; bytes: number }[] = [];
+let skip = false; // over budget at the coarsest quantizer: frames wait until the last second is under it
+const recent: { at: number; bytes: number; key: boolean }[] = [];
+/** The last delta frame's size: roughly what the next one will cost. */
+let lastDelta = 0;
 
 function configure(w: number, h: number) {
   encoder?.close();
@@ -83,7 +97,8 @@ function configure(w: number, h: number) {
     output: (chunk) => {
       const data = new ArrayBuffer(chunk.byteLength);
       chunk.copyTo(data);
-      if (chunk.type === 'delta') recent.push({ at: performance.now(), bytes: data.byteLength });
+      recent.push({ at: performance.now(), bytes: data.byteLength, key: chunk.type === 'key' });
+      if (chunk.type === 'delta') lastDelta = data.byteLength;
       post({ t: 'chunk', key: chunk.type === 'key', ts: chunk.timestamp, w: size.w, h: size.h, data }, [data]);
     },
     error: (e) => {
@@ -106,13 +121,18 @@ function encode(f: VideoFrame, key: boolean, quantizer: number) {
 /** Coarser while moving content runs over budget, finer again when it doesn't. */
 function rateControl(now: number) {
   while (recent.length && recent[0].at < now - 1000) recent.shift();
-  const bps = recent.reduce((a, r) => a + r.bytes, 0) * 8;
-  if (bps > BUDGET_BPS) {
+  // Key frames count only while a slow viewer has cut the budget: at full
+  // budget a sharp still frame shouldn't make the moving frames after it coarser.
+  const bps = recent.reduce((a, r) => a + (r.key && budget >= BUDGET_BPS ? 0 : r.bytes), 0) * 8;
+  // Would the next frame (about as big as the last) take the second over budget?
+  if (bps + lastDelta * 8 > budget) {
+    // Coarser first; at the coarsest, fewer frames: skip until the last second
+    // is back under budget (the next frame sent shows the latest picture anyway).
     if (q < Q_MAX) q = Math.min(Q_MAX, q + 4);
-    else skip = !skip;
+    else skip = true;
   } else {
     skip = false;
-    if (bps < BUDGET_BPS * 0.4 && q > Q_MOVING) q -= 2;
+    if (bps < budget * 0.4 && q > Q_MOVING) q -= 2;
   }
 }
 
@@ -133,7 +153,7 @@ function tick() {
         settled = false;
       }
       if (skip && !wantKey) return;
-      encode(f, false, wantKey && settled ? Q_SETTLED : q);
+      encode(f, false, wantKey && settled ? settledQ() : q);
       return;
     }
   }
@@ -144,12 +164,12 @@ function tick() {
     if (changed(keyThumb, lastThumb) >= SETTLE_AREA) {
       keyThumb = lastThumb;
       lastSettle = now;
-      encode(f, true, Q_SETTLED);
+      encode(f, true, settledQ());
       return;
     }
   }
   // A viewer asked for a fresh start while nothing moves.
-  if (wantKey) encode(f, true, settled ? Q_SETTLED : q);
+  if (wantKey) encode(f, true, settled ? settledQ() : q);
 }
 
 async function start(video: ReadableStream<VideoFrame>) {
