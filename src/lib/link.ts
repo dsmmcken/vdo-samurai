@@ -44,6 +44,8 @@ export class Link {
   /** Since when the control channel isn't open (from birth until it first opens), and whether it ever was. */
   downSince: number | null = this.born;
   wasOpen = false;
+  /** When anything last arrived on the control channel (both sides ping every 5 s). */
+  lastHeard = 0;
   unstableSince: number | null = null;
   disconnectedSince: number | null = null;
   /** When the mesh last tried to unstick a negotiation (see unstick). */
@@ -123,6 +125,7 @@ export class Link {
 
     this.ctl = pc.createDataChannel('ctl', { negotiated: true, id: 0 });
     this.ctl.onopen = () => {
+      this.lastHeard = performance.now();
       this.downSince = null;
       this.wasOpen = true;
       this.transport = 'ctl';
@@ -135,6 +138,7 @@ export class Link {
       this.emit('state');
     };
     this.ctl.onmessage = (e) => {
+      this.lastHeard = performance.now();
       const m = JSON.parse(e.data);
       if (m.sig) this.receiveSignal(m.sig);
       else if (m.relay) this.onRelay?.(m.relay);

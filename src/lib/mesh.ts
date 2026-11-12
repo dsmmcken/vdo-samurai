@@ -26,6 +26,13 @@ const REOPEN_MS = 5_000;
 const STUCK_MS = 10_000;
 /** Connection 'disconnected' this long: rebuild. */
 const DISCONNECTED_MS = 15_000;
+/**
+ * An open link that's carried nothing for this long (pings go both ways every
+ * 5 s) is stuck: after a network drop, SCTP can sit in retransmit backoff for
+ * tens of seconds while ICE says connected, and the screen share and control
+ * messages ride on it.
+ */
+const SILENT_MS = 12_000;
 /** A roster older than this no longer counts. */
 const ROSTER_MS = 15_000;
 
@@ -33,6 +40,8 @@ const ROSTER_MS = 15_000;
 type Wire = {
   hello?: PeerId;
   reply?: boolean;
+  /** On a reply: they kept the link they already had instead of building ours. */
+  kept?: boolean;
   /** Per page load: a hello from the session we're already linked with isn't a reload. */
   session?: string;
   link?: string;
@@ -155,12 +164,18 @@ export class Mesh {
         // reload: keep a link that works.
         if (!m.fresh && sameSession && cur?.open) {
           this.log(`hello from ${peer} again (same session): keeping link ${cur.id}`);
-          this.sendTo(peer, { hello: this.me, reply: true, session: this.session, link: cur.id });
+          this.sendTo(peer, { hello: this.me, reply: true, kept: true, session: this.session, link: cur.id });
           return;
         }
         this.log(`hello from ${peer}${m.fresh ? ' (rebuild)' : ''}${via ? ` via ${via}` : ''}: link ${id}`);
         this.sendTo(peer, { hello: this.me, reply: true, session: this.session, link: id });
         this.build(peer, id);
+      } else if (m.kept && cur?.id !== id) {
+        // They kept a link we no longer have (they stalled while we gave up on
+        // it). Building one under its id would talk to their dead one: start fresh.
+        this.log(`${peer} kept link ${id}, ours is ${cur?.id ?? 'gone'}: rebuilding`);
+        if (this.me > peer) this.rebuildNow(peer, `they kept link ${id}`);
+        else this.sendTo(peer, { rebuild: this.me, why: `you kept link ${id}, ours is ${cur?.id ?? 'gone'}` });
       } else if (!cur || cur.id !== id || cur.pc.connectionState === 'closed' || cur.pc.connectionState === 'failed') {
         // A reply to our hello: build unless we already did (rebuilds build eagerly).
         this.build(peer, id);
@@ -282,6 +297,7 @@ export class Mesh {
         if (l.unstuckAt === null) l.unstick();
         else if (t - l.unstuckAt > STUCK_MS) this.repair(peer, `negotiation stuck in ${l.pc.signalingState}`);
       } else if (l.disconnectedSince !== null && t - l.disconnectedSince > DISCONNECTED_MS) this.repair(peer, 'disconnected');
+      else if (l.open && t - l.lastHeard > SILENT_MS) this.repair(peer, `nothing heard for ${Math.round((t - l.lastHeard) / 1000)} s (${l.pc.connectionState})`);
     }
     // Missing: someone others reach and we don't.
     const reported = new Set<PeerId>();

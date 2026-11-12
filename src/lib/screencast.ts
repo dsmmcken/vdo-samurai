@@ -19,6 +19,12 @@ const HEADER = 20; // flags u8, part u8, parts u8, -, seq u32, width u16, height
 const PIECE = 60_000; // under every browser's data channel message limit
 /** A viewer whose channel holds more than this skips to the next key frame. */
 const BACKLOG = 1_500_000;
+/**
+ * A viewer with more frames than this waiting to decode is showing the past
+ * (a stalled channel flushing at once, say): it skips to a fresh key frame
+ * instead of replaying them all.
+ */
+const BEHIND = 12;
 
 const hasProcessor = () => typeof (globalThis as any).MediaStreamTrackProcessor !== 'undefined';
 
@@ -206,6 +212,12 @@ export class ScreenView {
       this.decoder.configure({ codec: CAST_CODEC, codedWidth: w, codedHeight: h, optimizeForLatency: true });
     }
     if (!this.decoder || this.decoder.state !== 'configured') return;
+    if (this.decoder.decodeQueueSize > BEHIND) {
+      // Behind: drop what's queued; the next key frame starts a new decoder.
+      this.decoder.close();
+      this.decoder = null;
+      return this.lost();
+    }
     this.waitKey = false;
     try {
       this.decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: ts, data }));
