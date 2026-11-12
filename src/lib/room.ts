@@ -1515,6 +1515,9 @@ export class Room {
       const peer = link.peer;
       const p = this.presences.get(peer);
       if (!p) continue;
+      // Mid-negotiation, tracks can't have arrived yet; a negotiation that never
+      // finishes is the mesh's to unstick (a rollback) before anything gets rebuilt.
+      if (link.unstableSince !== null) continue;
       if (p.camStreamId && !p.camOff && !link.remoteStreams.get(p.camStreamId)?.getVideoTracks().length) out.push([peer, 'camera']);
       if (!p.hasScreen) continue;
       if (this.viaCast(peer)) {

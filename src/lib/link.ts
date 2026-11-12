@@ -51,6 +51,7 @@ export class Link {
   /** Relayed mesh messages (see mesh.ts), never shown to the room. */
   onRelay: ((r: Relay) => void) | null = null;
   private makingOffer = false;
+  private settingAnswer = false;
   private answeredFirst = false;
   private ignoreOffer = false;
   /** Outgoing senders by role, so a track can be swapped (or paused with null) without renegotiating. */
@@ -179,10 +180,20 @@ export class Link {
     this.log(`rx ${description?.type ?? 'cand'} in ${pc.signalingState}`);
     try {
       if (description) {
-        const collision = description.type === 'offer' && (this.makingOffer || pc.signalingState !== 'stable');
+        // Signals are handled concurrently: an offer that arrives while we're still
+        // applying their answer (the polite side offers right after answering) is
+        // no collision; the browser queues it behind the answer. Treating it as one
+        // left the polite side stuck in have-local-offer, its tracks never arriving.
+        const readyForOffer = !this.makingOffer && (pc.signalingState === 'stable' || this.settingAnswer);
+        const collision = description.type === 'offer' && !readyForOffer;
         this.ignoreOffer = !this.polite && collision;
         if (this.ignoreOffer) return void this.log('ignored offer');
-        await pc.setRemoteDescription(description);
+        this.settingAnswer = description.type === 'answer';
+        try {
+          await pc.setRemoteDescription(description);
+        } finally {
+          this.settingAnswer = false;
+        }
         if (description.type === 'offer') {
           await pc.setLocalDescription();
           this.signal({ description: pc.localDescription!.toJSON() });
