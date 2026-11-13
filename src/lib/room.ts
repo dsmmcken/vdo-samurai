@@ -185,6 +185,9 @@ export class Room {
   private denoiser: { raw: MediaStreamTrack; out: Denoised } | null = null;
   /** Mic changes, one at a time (noise reduction takes a moment to start). */
   private micQueue: Promise<unknown> = Promise.resolve();
+  /** Mic recovery (see recoverMic): one at a time; after a failed reopen, wait for a device change or unmute. */
+  private micFix = { busy: false, lastReattach: 0, lastReopen: 0, lastTold: 0, gaveUp: false };
+  private watchedMics = new WeakSet<MediaStreamTrack>();
   private camOff = false;
   private head: Head | null = null;
   private faceWatch = new FaceWatch((h) => this.onHead(h));
@@ -285,6 +288,7 @@ export class Room {
     this.micMuted = !!opts.micMuted;
     this.camOff = !!opts.camOff || cam.getVideoTracks().length === 0;
     cam.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
+    this.watchMic(cam.getAudioTracks()[0] ?? null);
     if (this.denoise) this.routeMic().catch((e) => this.say(`Couldn't reopen the microphone: ${(e as Error).message}`));
     this.watchFace();
     this.refreshDevices();
@@ -292,7 +296,13 @@ export class Room {
       this.cast = c;
       this.announce();
     });
-    navigator.mediaDevices.addEventListener?.('devicechange', () => this.refreshDevices());
+    navigator.mediaDevices.addEventListener?.('devicechange', () => {
+      this.refreshDevices();
+      // A mic plugged (back) in: worth another try.
+      this.micFix.gaveUp = false;
+      const why = this.micProblem();
+      if (why) this.recoverMic(why);
+    });
     await this.restore();
     this.timers.push(setInterval(() => this.pingAll(), 5000));
     this.timers.push(setInterval(() => this.checkMedia(), 2000));
@@ -1024,7 +1034,92 @@ export class Room {
     this.micMuted = !this.micMuted;
     this.cam?.getAudioTracks().forEach((t) => (t.enabled = !this.micMuted));
     if (this.denoiser) this.denoiser.raw.enabled = !this.micMuted;
+    // The recorder holds its own clone of the mic, which doesn't follow ours.
+    this.recorderFor('cam')?.setMicEnabled?.(!this.micMuted);
     this.announce();
+    if (!this.micMuted) {
+      this.micFix.gaveUp = false;
+      const why = this.micProblem();
+      if (why) this.recoverMic(why);
+    }
+  }
+
+  /** What's wrong with our mic, if anything (phrased to follow "Your microphone"). */
+  private micProblem() {
+    const raw = this.rawMic();
+    if (!raw) return 'is missing';
+    if (raw.readyState === 'ended') return 'was disconnected';
+    if (raw.muted) return 'was muted by the system or another app';
+    return null;
+  }
+
+  /** Notice when the mic goes away or the system mutes it, and recover. */
+  private watchMic(t: MediaStreamTrack | null) {
+    if (!t || this.watchedMics.has(t)) return;
+    this.watchedMics.add(t);
+    // stop() doesn't fire 'ended', so this is only the device going away.
+    t.addEventListener('ended', () => this.rawMic() === t && this.recoverMic('was disconnected'));
+    let later: ReturnType<typeof setTimeout> | null = null;
+    t.addEventListener('mute', () => {
+      later ??= setTimeout(() => {
+        later = null;
+        if (t.muted && this.rawMic() === t) this.recoverMic('was muted by the system or another app');
+      }, 2000);
+    });
+    t.addEventListener('unmute', () => {
+      if (later) clearTimeout(later);
+      later = null;
+    });
+  }
+
+  /**
+   * Best effort to keep our sound reaching the call and the recording while
+   * we're unmuted. If the mic itself looks fine, the recorder gets a fresh
+   * copy of it first (its copy can go wrong on its own); otherwise, or if
+   * that didn't help, the mic is reopened, falling back to the default one.
+   */
+  private async recoverMic(why: string) {
+    const f = this.micFix;
+    if (this.micMuted || f.busy) return;
+    const broken = this.micProblem() !== null;
+    const rec = this.recorderFor('cam');
+    const takeId = this.active?.take.id ?? '';
+    f.busy = true;
+    try {
+      if (!broken && rec?.setAudio && performance.now() - f.lastReattach > 15_000) {
+        f.lastReattach = performance.now();
+        this.note(takeId, `microphone ${why}: recorder re-attached to the mic`);
+        rec.setAudio(this.cam?.getAudioTracks()[0] ?? null);
+        rec.setMicEnabled?.(!this.micMuted);
+        return;
+      }
+      // After a failed reopen, wait for a device change or an unmute; a mic
+      // that looks fine but stays silent gets a reopen at most every 20 s.
+      if (f.gaveUp || (!broken && performance.now() - f.lastReopen < 20_000)) return;
+      f.lastReopen = performance.now();
+      this.note(takeId, `microphone ${why}: reopening it`);
+      const mic = await this.routeMic(undefined, true);
+      const name = mic?.label || 'the default microphone';
+      this.note(takeId, `microphone reopened: ${name}`);
+      // A mic that's there but silent (a hardware mute switch?) shouldn't nag every 20 s.
+      if (broken || performance.now() - f.lastTold > 120_000) {
+        f.lastTold = performance.now();
+        this.say(`Your microphone ${why}; now using ${name}.`);
+      }
+      // The backup recorder can't swap tracks: carry on in a new file.
+      const a = this.active;
+      if (rec && !rec.setAudio && a && !a.stopping) {
+        await this.finishRecorder(rec);
+        if (this.active === a && !a.stopping) this.startRecorder('cam');
+      }
+    } catch (e) {
+      f.gaveUp = true;
+      const msg = (e as Error)?.message ?? String(e);
+      this.note(takeId, `microphone ${why}: couldn't reopen it (${msg})`);
+      this.say(`Your microphone ${why}, and it couldn't be reopened (${msg}). Plug one in or pick one from the device menu.`);
+    } finally {
+      f.busy = false;
+    }
   }
 
   /** Anyone can mute anyone (not unmute: that's theirs to do). */
@@ -1068,14 +1163,14 @@ export class Room {
    * has open, so changing it means letting go of the mic, every copy too
    * (the recorder holds one), and opening it again: a short gap.
    */
-  private routeMic(deviceId?: string) {
+  private routeMic(deviceId?: string, force = false) {
     const run = async (): Promise<MediaStreamTrack | null> => {
       const cur = this.rawMic();
-      if (!cur && deviceId === undefined) return null;
+      if (!cur && deviceId === undefined && !force) return null;
       // Load the model before letting go of the mic, so the gap stays short.
       if (this.denoise) await loadDenoiser().catch((e) => this.denoiseFailed(e));
       const switching = deviceId !== undefined && deviceId !== cur?.getSettings().deviceId;
-      const reopen = !cur || switching || cur.getSettings().noiseSuppression !== !this.denoise;
+      const reopen = force || !cur || cur.readyState === 'ended' || switching || cur.getSettings().noiseSuppression !== !this.denoise;
       if (!reopen && !!this.denoiser === this.denoise) return cur;
       const rec = this.recorderFor('cam');
       const prev = this.denoiser;
@@ -1100,6 +1195,7 @@ export class Room {
       }
       const send = out?.track ?? mic;
       mic.enabled = send.enabled = !this.micMuted;
+      this.watchMic(mic);
       if (old !== send) {
         if (old) this.cam!.removeTrack(old);
         this.cam?.addTrack(send);
@@ -1108,6 +1204,7 @@ export class Room {
       prev?.out.stop();
       for (const t of [old, prev?.raw]) if (t && t !== mic && t !== send) t.stop();
       rec?.setAudio?.(send);
+      this.micFix.gaveUp = false;
       this.note(this.active?.take.id ?? '', `noise reduction ${out ? 'on' : 'off'}; browser noise suppression ${mic.getSettings().noiseSuppression ? 'on' : 'off'}`);
       this.pushAll();
       this.announce();
@@ -1277,7 +1374,8 @@ export class Room {
         const live = (kind === 'cam' ? this.cam : this.screen)?.getVideoTracks().some((t) => t.readyState === 'live');
         if (this.active === a && !a.stopping && live) this.startRecorder(kind);
       },
-    });
+      audioDead: (why) => this.recoverMic(why),
+    }, !this.micMuted);
     this.note(a.take.id, `${kind}: recording ${name} with ${rec.mime === 'video/mp4' && captureStatus() !== false ? 'WebCodecs capture' : `MediaRecorder (${rec.mime})`}`);
     a.recorders.push(rec);
     const m = this.mine.get(a.take.id)!;

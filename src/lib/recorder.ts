@@ -28,6 +28,12 @@ export interface Recorder {
   /** Swap the camera / mic mid-recording (null = camera off). Capture recorder only. */
   setVideo?(track: MediaStreamTrack | null): void;
   setAudio?(track: MediaStreamTrack | null): void;
+  /**
+   * Mute / unmute the recorded mic. The capture recorder records a clone of
+   * the mic, and a clone's `enabled` doesn't follow the original's, so the
+   * room has to pass mute changes on. (MediaRecorder records the live track.)
+   */
+  setMicEnabled?(on: boolean): void;
 }
 
 /** What a recorder tells the room: plain info for the report, warnings, and fatal failures. */
@@ -36,6 +42,8 @@ export interface RecorderEvents {
   warn?: (msg: string) => void;
   /** The recorder died mid-take; the room should carry on with another one. */
   fail?: (msg: string) => void;
+  /** Unmuted, but no sound is reaching the file (capture recorder only); `why` reads after "microphone". */
+  audioDead?: (why: string) => void;
 }
 
 // The camera mostly ends up small (a tile or the overlay); the screen keeps detail for text.
@@ -67,8 +75,8 @@ export const canCapture = () =>
   typeof VideoEncoder !== 'undefined' &&
   typeof AudioEncoder !== 'undefined';
 
-export function startRecorder(takeId: string, name: string, stream: MediaStream, kind: 'cam' | 'screen', events: RecorderEvents = {}): Recorder {
-  return canCapture() ? new CaptureRecorder(takeId, name, stream, kind, events) : new FileRecorder(takeId, name, stream, kind);
+export function startRecorder(takeId: string, name: string, stream: MediaStream, kind: 'cam' | 'screen', events: RecorderEvents = {}, micOn = true): Recorder {
+  return canCapture() ? new CaptureRecorder(takeId, name, stream, kind, events, micOn) : new FileRecorder(takeId, name, stream, kind);
 }
 
 export function fileExtension(kind: 'cam' | 'screen') {
@@ -91,6 +99,7 @@ class CaptureRecorder implements Recorder {
     stream: MediaStream,
     readonly kind: 'cam' | 'screen',
     events: RecorderEvents,
+    micOn: boolean,
   ) {
     // Clones, so stopping the recorder never touches the live meeting tracks.
     const v = stream.getVideoTracks()[0]?.clone() ?? null;
@@ -113,6 +122,7 @@ class CaptureRecorder implements Recorder {
         const m = e.data;
         if (m.t === 'started') resolveStarted(calledAt);
         if (m.t === 'info') events.info?.(m.message);
+        if (m.t === 'audio-dead') events.audioDead?.(m.reason);
         if (m.t === 'warn') {
           console.warn('[recorder]', name, m.message);
           events.warn?.(m.message);
@@ -131,15 +141,17 @@ class CaptureRecorder implements Recorder {
           const st = m.stats;
           events.info?.(
             `done: ${(m.size / 1e6).toFixed(1)} MB, video ${m.videoEnd?.toFixed(1) ?? '–'} s (${st.framesOut} frames written: ${st.framesIn} captured + ${st.framesRepeated} held repeats), ` +
-              `audio ${m.audioEnd?.toFixed(1) ?? '–'} s (${st.audioOut}/${st.audioIn} chunks, ${st.audioGaps} gaps, audio lateness at the end ${st.audioDriftMs} ms)`,
+              `audio ${m.audioEnd?.toFixed(1) ?? '–'} s (${st.audioOut}/${st.audioIn} chunks, ${st.audioGaps} gaps, audio lateness at the end ${st.audioDriftMs} ms, ` +
+              `${st.audioFilledS.toFixed(1)} s of silence filled in for a missing mic)`,
           );
-          if (a && m.videoEnd && (m.audioEnd ?? 0) < m.videoEnd - 1.5) events.warn?.(`audio stops ${Math.round(m.videoEnd - (m.audioEnd ?? 0))} s before the video`);
+          if (st.audioDeadS >= 2) events.warn?.(`no sound for ${Math.round(st.audioDeadS)} s while unmuted (see the report)`);
+          if (kind === 'cam' && m.videoEnd && (m.audioEnd ?? 0) < m.videoEnd - 1.5) events.warn?.(`audio stops ${Math.round(m.videoEnd - (m.audioEnd ?? 0))} s before the video`);
           resolve({ size: m.size, videoZero: zero, audioZero: zero, timing: 'capture' });
         }
       };
     });
     this.worker.postMessage(
-      { t: 'start', takeId, name, video, audio, videoBitrate: BITRATE[kind], screen: kind === 'screen', failAudioAfter: testHook('failAudioAfter') },
+      { t: 'start', takeId, name, video, audio, videoBitrate: BITRATE[kind], screen: kind === 'screen', micOn, failAudioAfter: testHook('failAudioAfter') },
       [video, audio].filter(Boolean) as unknown as Transferable[],
     );
   }
@@ -167,6 +179,10 @@ class CaptureRecorder implements Recorder {
   }
   setAudio(track: MediaStreamTrack | null) {
     this.swap('audio', track);
+  }
+  setMicEnabled(on: boolean) {
+    for (const t of this.clones) if (t.kind === 'audio') t.enabled = on;
+    this.worker.postMessage({ t: 'mic', on });
   }
 
   async stop() {
