@@ -396,7 +396,11 @@ export class ScreenView {
     f.close();
     this.frames++;
     this.lastFrameAt = performance.now();
-    this.track.requestFrame();
+    // Chrome has requestFrame on the track; Firefox only on the stream
+    // (CanvasCaptureMediaStream). Calling the missing one threw in this decoder
+    // callback, so Firefox viewers saw the first frame and nothing after.
+    if (this.track.requestFrame) this.track.requestFrame();
+    else (this.stream as MediaStream & { requestFrame?: () => void }).requestFrame?.();
   }
 
   /** Out of step: drop everything until the next key frame, and ask for one. */
