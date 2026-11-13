@@ -172,9 +172,11 @@ export class Mesh {
       this.gone.delete(peer);
       if (!m.reply) {
         // The same session saying hello again is VDO.Ninja reconnecting, not a
-        // reload: keep a link that works.
-        if (!m.fresh && sameSession && cur?.open) {
-          this.log(`hello from ${peer} again (same session): keeping link ${cur.id}`);
+        // reload: keep a link that works or is still coming up. (VDO.Ninja's own
+        // connection often comes back just as ours connects, before its control
+        // channel opens; rebuilding then throws away a link that just got through.)
+        if (!m.fresh && sameSession && cur && this.live(cur)) {
+          this.log(`hello from ${peer} again (same session): keeping link ${cur.id} (${cur.open ? 'open' : cur.pc.connectionState})`);
           this.sendTo(peer, { hello: this.me, reply: true, kept: true, session: this.session, link: cur.id });
           return;
         }
@@ -331,6 +333,13 @@ export class Mesh {
     return true;
   }
 
+  /** Open, connected, or still coming up within its time to connect: worth keeping. */
+  private live(l: Link) {
+    if (l.open || l.pc.connectionState === 'connected') return true;
+    const st = l.pc.connectionState;
+    return !l.wasOpen && (st === 'new' || st === 'connecting') && performance.now() - l.born < OPEN_MS;
+  }
+
   private sentHello(id: string) {
     const t = performance.now();
     this.myHellos.set(id, t);
@@ -364,7 +373,7 @@ export class Mesh {
   private tick() {
     const t = performance.now();
     for (const [peer, l] of this.links) {
-      if (l.open && l.openedAt !== null && t - l.openedAt > 60_000 && this.repairs.has(peer)) {
+      if (l.open && l.openedAt !== null && t - l.openedAt > 60_000 && t - l.lastHeard < SILENT_MS && this.repairs.has(peer)) {
         this.log(`repair ${peer}: link ${l.id} up for a minute, repair count cleared (was ${this.repairs.get(peer)!.n})`);
         this.repairs.delete(peer);
       }

@@ -95,6 +95,9 @@ export class Link {
       this.handlers.stream?.(stream);
     };
     pc.ondatachannel = ({ channel }) => {
+      // Anything arriving proves the link alive: a file upload fills the
+      // association, and their pings on ctl can queue behind it for many seconds.
+      channel.addEventListener('message', () => (this.lastHeard = performance.now()));
       if (channel.label.startsWith('f:')) this.handlers.fileChannel?.(channel);
       else if (channel.label.startsWith('sc:')) this.handlers.animationChannel?.(channel);
     };
@@ -113,12 +116,14 @@ export class Link {
 
     // Watchdog: after offer glare Chrome occasionally never emits fresh ICE
     // candidates, leaving both sides "stable" but unconnected. An ICE restart from
-    // the impolite side forces a new offer with new candidates.
+    // the impolite side forces a new offer with new candidates. Only while ICE
+    // hasn't started ('new'): a link that's 'connecting' is checking pairs, and
+    // restarting it throws that progress away on a slow or lossy path.
     let restarts = 0;
     const watchdog = setInterval(() => {
       const st = pc.connectionState;
       if (st === 'connected' || st === 'closed' || restarts >= 4) return clearInterval(watchdog);
-      if (!this.polite && pc.signalingState === 'stable') {
+      if (!this.polite && pc.signalingState === 'stable' && st === 'new') {
         restarts++;
         this.log('watchdog ice restart');
         pc.restartIce();
@@ -148,7 +153,10 @@ export class Link {
     };
     this.scr = pc.createDataChannel('scr', { negotiated: true, id: 1 });
     this.scr.binaryType = 'arraybuffer';
-    this.scr.onmessage = (e) => this.handlers.screenData?.(e.data);
+    this.scr.onmessage = (e) => {
+      this.lastHeard = performance.now();
+      this.handlers.screenData?.(e.data);
+    };
   }
 
   private log(line: string) {
