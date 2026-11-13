@@ -12,6 +12,8 @@ type Start = {
   audio: ReadableStream<AudioData> | null;
   videoBitrate: number;
   screen: boolean;
+  /** Whether the person is unmuted; silence is only a problem then. */
+  micOn: boolean;
   /** Test hook: make the audio encoder fail after this many chunks. */
   failAudioAfter?: number;
 };
@@ -31,9 +33,12 @@ let stopRequested: (() => void) | null = null;
 let swapVideo: ((s: ReadableStream<VideoFrame> | null) => void) | null = null;
 let swapAudio: ((s: ReadableStream<AudioData> | null) => void) | null = null;
 
+let setMicOn: ((on: boolean) => void) | null = null;
+
 type Swap = { t: 'video'; stream: ReadableStream<VideoFrame> | null } | { t: 'audio'; stream: ReadableStream<AudioData> | null };
-self.onmessage = (e: MessageEvent<Start | Swap | { t: 'stop' }>) => {
+self.onmessage = (e: MessageEvent<Start | Swap | { t: 'stop' } | { t: 'mic'; on: boolean }>) => {
   if (e.data.t === 'stop') stopRequested?.();
+  else if (e.data.t === 'mic') setMicOn?.(e.data.on);
   else if (e.data.t === 'video') swapVideo?.(e.data.stream);
   else if (e.data.t === 'audio') swapAudio?.(e.data.stream);
   else record(e.data).catch((err) => post({ t: 'error', error: `${err?.name ?? 'Error'}: ${err?.message ?? err}`, stack: String(err?.stack ?? '') }));
@@ -72,7 +77,9 @@ async function record(job: Start) {
   // Foundation on Windows). Only our compositor reads these files; the final
   // cut still uses AAC where available.
   const audioCodec = 'opus' as const;
-  const audio = job.audio ? new AudioSampleSource({ codec: audioCodec, bitrate: 128_000 }) : null;
+  // A camera recording always has an audio track, even with no mic at the
+  // start: one can be picked (or come back) mid-take.
+  const audio = !job.screen ? new AudioSampleSource({ codec: audioCodec, bitrate: 128_000 }) : null;
   // No frameRate: it snaps every timestamp to a 1/30 s grid, and two frames in
   // one slot (a screen sends frames whenever it changes; cameras jitter) end up
   // with the same timestamp, which makes looking frames up by time ambiguous.
@@ -80,7 +87,7 @@ async function record(job: Start) {
   if (audio) output.addAudioTrack(audio);
   await output.start();
   // Counters for the recording report.
-  const stats = { framesIn: 0, framesOut: 0, framesRepeated: 0, audioIn: 0, audioOut: 0, audioGaps: 0, audioDriftMs: 0 };
+  const stats = { framesIn: 0, framesOut: 0, framesRepeated: 0, audioIn: 0, audioOut: 0, audioGaps: 0, audioDriftMs: 0, audioFilledS: 0, audioDeadS: 0 };
   post({ t: 'info', message: `encoders: video ${video ? `avc ${job.videoBitrate / 1e6} Mbps` : 'none'}, audio ${audio ? `${audioCodec} 128 kbps` : 'none'}` });
 
   // Timing, kept deliberately simple: we never trust absolute timestamps from
@@ -223,6 +230,7 @@ async function record(job: Start) {
 
   let audioZero: number | null = null; // wall ms of audio sample 0
   let flushAudio: (() => Promise<void>) | null = null;
+  let endAudio: (() => Promise<void>) | null = null;
   if (!job.screen && audio) {
     let written = 0; // samples placed so far, including forward jumps for dropped audio
     let fileOffset = 0; // file seconds of audio sample 0 (relative to the file's zero)
@@ -267,13 +275,30 @@ async function record(job: Start) {
       post({ t: 'info', message: `audio starts ${Math.round(fileOffset * 1000)} ms after the video's first frame` });
       for (const p of pending.splice(0)) await write(p.planar, p.ch, p.n, p.rate);
     };
-    flushAudio = settle;
 
     let resync = false; // set when a new mic stream takes over
     let current: ReturnType<typeof read> | null = null;
     const conform = conformer();
     let inShape = '';
+    // The mic reader and the silence filler both write; one at a time.
+    let chain = Promise.resolve();
+    const serial = (fn: () => Promise<void>) => (chain = chain.then(fn, fn));
+
+    // Watching for "unmuted, but no sound reaching the file".
+    let micOn = job.micOn;
+    let lastChunkAt = wallNow();
+    let zeroSince: number | null = null; // start of a run of exact-zero samples (a disabled track)
+    let deadSince: number | null = null;
+    let deadWhy = '';
+    let lastDeadPost = 0;
+    const fileTime = (t: number) => ((t - (videoZero ?? audioZero ?? t)) / 1000).toFixed(1);
+    setMicOn = (on) => {
+      micOn = on;
+      zeroSince = null; // a track just enabled still sends zeros for a moment
+    };
+
     const onAudio = async (data: AudioData) => {
+        lastChunkAt = wallNow();
         if (stats.audioIn++ === 0) {
           post({ t: 'info', message: `audio in: ${data.sampleRate} Hz, ${data.numberOfChannels} ch, ${data.format}, ${data.numberOfFrames} frames/chunk` });
           if (!hasVideo) post({ t: 'started' });
@@ -283,6 +308,9 @@ async function record(job: Start) {
         // Copy out of the AudioData so our timestamp is the one that's encoded.
         const raw = new Float32Array(inCh * inN);
         for (let c = 0; c < inCh; c++) data.copyTo(raw.subarray(c * inN, (c + 1) * inN), { planeIndex: c, format: 'f32-planar' });
+        // A real mic is never exactly zero; a disabled or dead track is.
+        if (raw.some((v) => v !== 0)) zeroSince = null;
+        else zeroSince ??= lastChunkAt;
         const shape = `${data.sampleRate} Hz, ${inCh} ch`;
         if (inShape && shape !== inShape) post({ t: 'info', message: `audio in changed to ${shape} (another mic, or noise reduction): fitted to the file's ${conform.shape()}` });
         inShape = shape;
@@ -320,13 +348,93 @@ async function record(job: Start) {
         }
         await write(planar, ch, n, rate);
     };
+    /**
+     * No mic delivering (none yet, unplugged, between mics): keep the audio
+     * track going with silence up to `upTo` (wall ms). The muxer interleaves
+     * tracks, so an audio track that falls behind would hold all video back.
+     */
+    const fill = async (upTo: number) => {
+      if (fatal) return;
+      if (!settled) {
+        if (videoZero === null) return; // no file time yet
+        if (pending.length) await settle();
+        else {
+          audioZero = videoZero;
+          settled = true;
+          fileOffset = 0;
+        }
+      }
+      if (!conform.ready()) conform(new Float32Array(480), 1, 480, 48_000); // file shape, if nothing set it
+      const { ch, rate } = conform.format();
+      const target = Math.round(((upTo - audioZero!) / 1000) * rate);
+      const from = written;
+      while (written < target && !fatal) {
+        const n = Math.min(target - written, Math.floor(rate / 10));
+        await write(new Float32Array(ch * n), ch, n, rate);
+      }
+      if (written > from) {
+        stats.audioFilledS += (written - from) / rate;
+        resync = true; // a mic that starts sending again carries on from the clock
+      }
+    };
+
+    const tickAudio = async () => {
+      if (stopping) return;
+      const now = wallNow();
+      const stalled = !current || now - lastChunkAt > 1500;
+      if (stalled) await fill(now);
+      let why = '';
+      if (micOn) {
+        if (!current) why = 'is missing';
+        else if (stalled) why = 'stopped sending sound';
+        else if (zeroSince !== null && now - zeroSince > 3000) why = 'is sending only silence';
+      }
+      if (why) {
+        if (deadSince === null) (deadSince = now), (deadWhy = why);
+        // Short gaps (switching mics) heal themselves; tell the room about the rest.
+        if (now - deadSince > 1500 && now - lastDeadPost > 5000) {
+          lastDeadPost = now;
+          post({ t: 'audio-dead', reason: why });
+        }
+      } else closeDead(now);
+    };
+    const closeDead = (now: number) => {
+      if (deadSince === null) return;
+      if (now - deadSince > 1500) {
+        stats.audioDeadS += (now - deadSince) / 1000;
+        post({ t: 'info', message: `no sound while unmuted from ${fileTime(deadSince)} s to ${fileTime(now)} s (microphone ${deadWhy})` });
+      }
+      deadSince = null;
+    };
+    const audioTimer = setInterval(() => void serial(tickAudio), 250);
+
     const start = (stream: ReadableStream<AudioData> | null) => {
       current?.cancel();
       current = null;
       if (!stream) return;
-      current = read(stream, onAudio);
-      pumps.push(current.done);
+      lastChunkAt = wallNow();
+      zeroSince = null;
+      const r = read(stream, (d) => serial(() => onAudio(d)));
+      current = r;
+      // The track ended (unplugged): silence fills in until another arrives.
+      r.done.then(() => {
+        if (current === r && !stopping) {
+          current = null;
+          post({ t: 'info', message: 'microphone ended' });
+        }
+      });
+      pumps.push(r.done);
     };
+    // Through the queue, so a silence fill already under way can't interleave.
+    flushAudio = () => serial(settle);
+    endAudio = () =>
+      serial(async () => {
+        clearInterval(audioTimer);
+        const now = wallNow();
+        closeDead(now);
+        // Carry the audio track up to the stop if the mic wasn't delivering.
+        if (!current || now - lastChunkAt > 1500) await fill(now);
+      });
     swapAudio = (stream) => {
       post({ t: 'info', message: stream ? 'microphone switched' : 'microphone stopped' });
       if (settled) resync = true;
@@ -342,6 +450,7 @@ async function record(job: Start) {
     await Promise.allSettled(pumps);
   }
   await flushAudio?.(); // a take shorter than a second never settled its anchor
+  await endAudio?.();
   await finishVideo?.();
   if (fatal) {
     // Keep what's on disk (fragmented MP4 stays readable) and report the failure.
@@ -419,5 +528,9 @@ function conformer() {
     for (let c = 0; c < fileCh; c++) packed.set(out.subarray(c * cap, c * cap + k), c * k);
     return { planar: packed, ch: fileCh, n: k, rate: fileRate };
   };
-  return Object.assign(fit, { shape: () => `${fileRate} Hz, ${fileCh} ch` });
+  return Object.assign(fit, {
+    shape: () => `${fileRate} Hz, ${fileCh} ch`,
+    ready: () => fileCh > 0,
+    format: () => ({ ch: fileCh, rate: fileRate }),
+  });
 }
