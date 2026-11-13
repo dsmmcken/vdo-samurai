@@ -4,8 +4,8 @@ import { drawInk, fitContain, PLAYBACK_MS, type InkStroke } from '../lib/ink';
 import type { PeerId } from '../lib/types';
 
 /**
- * Ink over the stage: a transparent canvas, redrawn every animation frame with
- * the same drawInk as the render. On a shared screen it lies on the screen's
+ * Ink over the stage: a transparent canvas, redrawn every animation frame while
+ * there's ink, with the same drawInk as the render. On a shared screen it lies on the screen's
  * picture (under the camera overlay); on anything else, on the whole stage.
  * It sits under the controls, and only takes the pointer while the pen is on.
  */
@@ -27,17 +27,22 @@ export function Ink({ room, pen, name, onScreen }: { room: Room; pen: boolean; n
     const c = ref.current!;
     const ctx = c.getContext('2d')!;
     let raf = 0;
+    // Nothing drawn: leave the canvas alone, or the browser repaints it every frame for nothing.
+    let blank = true;
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const dpr = devicePixelRatio || 1;
       const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
-      if (c.width !== w || c.height !== h) (c.width = w), (c.height = h);
+      if (c.width !== w || c.height !== h) (c.width = w), (c.height = h), (blank = true);
+      const mine: InkStroke[] = [], theirs: InkStroke[] = [];
+      for (const s of room.liveInk()) (s.by === room.me ? mine : theirs).push(s);
+      if (!mine.length && !theirs.length && blank) return;
       ctx.clearRect(0, 0, w, h);
+      blank = !mine.length && !theirs.length;
+      if (blank) return;
       const r = picture();
       const rect = { x: r.x * dpr, y: r.y * dpr, w: r.w * dpr, h: r.h * dpr };
       const t = performance.timeOrigin + performance.now();
-      const mine: InkStroke[] = [], theirs: InkStroke[] = [];
-      for (const s of room.liveInk()) (s.by === room.me ? mine : theirs).push(s);
       // Ours as we draw it; everyone else's a moment behind, played back smoothly.
       const labels = { name: (id: PeerId) => names.current(id), self: room.me };
       drawInk(ctx, theirs, t - PLAYBACK_MS, rect, labels);
